@@ -1,0 +1,13 @@
+services:
+  time-memory-service:
+    build: .
+    container_name: time_memory_service
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('https://letta2.oculair.ca/v1/agents')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s

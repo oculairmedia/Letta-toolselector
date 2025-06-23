@@ -1,0 +1,102 @@
+services:
+  weaviate:
+    image: semitechnologies/weaviate:1.24.0
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+      DEFAULT_VECTORIZER_MODULE: "text2vec-openai"
+      ENABLE_MODULES: "text2vec-openai"
+      OPENAI_APIKEY: ${OPENAI_API_KEY}
+      CLUSTER_HOSTNAME: "node1"
+      READINESS_MAX_WAIT_SECS: 300
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z localhost 8080 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - letta-tools
+
+  api-server:
+    image: oculair/lettaaugment:latest
+    container_name: weaviate-tools-api
+    ports:
+      - "8020:3001"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LETTA_API_URL=${LETTA_API_URL}
+      - LETTA_PASSWORD=${LETTA_PASSWORD}
+      - WEAVIATE_URL=http://weaviate:8080/
+      - WEAVIATE_API_KEY=${WEAVIATE_API_KEY}
+      - PORT=3001
+      - DEFAULT_DROP_RATE=${DEFAULT_DROP_RATE:-0.1}
+    restart: unless-stopped
+    volumes:
+      - ./.env:/app/.env:ro
+      - tool_cache_volume:/app/runtime_cache # Mount shared volume to the correct path
+    # healthcheck:
+    #   test: ["CMD", "python", "-c", "import socket; s = socket.socket(); s.settimeout(3); s.connect(('localhost', 3001)); s.close()"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 5
+    #   start_period: 120s
+    depends_on:
+      weaviate:
+        condition: service_healthy
+    networks:
+      - letta-tools
+
+  sync-service:
+    image: oculair/lettaaugment:latest
+    container_name: weaviate-tools-sync
+    command: python sync_service.py
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LETTA_API_URL=${LETTA_API_URL}
+      - LETTA_PASSWORD=${LETTA_PASSWORD}
+      - API_URL=http://api-server:3001
+      - SYNC_INTERVAL=300
+    volumes:
+      - ./.env:/app/.env:ro
+      - tool_cache_volume:/app/runtime_cache # CORRECTED PATH
+    restart: unless-stopped
+    depends_on:
+      api-server:
+        condition: service_started
+    networks:
+      - letta-tools
+
+  time-service:
+    image: oculair/lettaaugment:latest
+    container_name: weaviate-tools-time
+    command: python time_memory_service.py
+    environment:
+      - WEAVIATE_URL=http://weaviate:8080/
+      - WEAVIATE_API_KEY=${WEAVIATE_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LETTA_API_URL=https://letta2.oculair.ca/v1
+      - LETTA_PASSWORD=${LETTA_PASSWORD}
+      - UPDATE_INTERVAL=60
+    volumes:
+      - ./.env:/app/.env:ro
+    restart: unless-stopped
+    depends_on:
+      weaviate:
+        condition: service_healthy
+    networks:
+      - letta-tools
+
+networks:
+  letta-tools:
+    driver: bridge
+
+volumes:
+  weaviate_data:
+  tool_cache_volume: # Define the shared volume

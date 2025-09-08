@@ -28,7 +28,7 @@ services:
     networks:
       - letta-tools
   api-server:
-    build: ./lettaaugment-source
+    image: ghcr.io/oculairmedia/letta-toolselector-api-server:latest
     container_name: weaviate-tools-api
     ports:
       - 8020:3001
@@ -69,7 +69,7 @@ services:
     networks:
       - letta-tools
   sync-service:
-    image: oculair/lettaaugment:latest
+    image: ghcr.io/oculairmedia/letta-toolselector-sync-service:latest
     container_name: weaviate-tools-sync
     command: python sync_service.py
     environment:
@@ -89,7 +89,7 @@ services:
     networks:
       - letta-tools
   time-service:
-    image: oculair/lettaaugment:latest
+    image: ghcr.io/oculairmedia/letta-toolselector-api-server:latest
     container_name: weaviate-tools-time
     command: python time_memory_service.py
     environment:
@@ -108,7 +108,7 @@ services:
     networks:
       - letta-tools
   mcp-server:
-    build: .
+    image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:latest
     container_name: toolselector-mcp
     ports:
       - 3020:3020

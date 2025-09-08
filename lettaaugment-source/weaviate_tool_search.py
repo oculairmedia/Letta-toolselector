@@ -149,46 +149,29 @@ def search_tools(query: str, limit: int = 10) -> list:
             except Exception as e:
                 print(f"Error closing client: {e}")
 
-def _get_embedding_direct_openai(text: str) -> List[float]:
+def _get_embedding_direct_provider(text: str) -> List[float]:
     """
-    Fallback function to get embeddings directly from OpenAI API
+    Fallback function to get embeddings using the unified embedding provider system
     when Weaviate's vectorizer fails.
     """
     try:
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        if not openai_api_key:
-            print("OpenAI API key not found for direct embedding")
-            return []
-            
-        # Make direct request to OpenAI API
-        headers = {
-            "Authorization": f"Bearer {openai_api_key}",
-            "Content-Type": "application/json"
-        }
+        import asyncio
+        from embedding_providers import EmbeddingProviderFactory
         
-        data = {
-            "model": "text-embedding-3-small",
-            "input": text
-        }
+        async def get_embedding_async():
+            provider = EmbeddingProviderFactory.create_from_env()
+            try:
+                return await provider.get_single_embedding(text)
+            finally:
+                await provider.close()
         
-        response = requests.post(
-            "https://api.openai.com/v1/embeddings",
-            headers=headers,
-            json=data,
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            if "data" in result and len(result["data"]) > 0:
-                embedding = result["data"][0]["embedding"]
-                print(f"✅ Direct OpenAI embedding successful, length: {len(embedding)}")
-                return embedding
-        else:
-            print(f"OpenAI API error: {response.status_code} - {response.text}")
+        embedding = asyncio.run(get_embedding_async())
+        if embedding:
+            print(f"✅ Unified provider embedding successful, length: {len(embedding)}")
+        return embedding
             
     except Exception as e:
-        print(f"Error getting direct OpenAI embedding: {e}")
+        print(f"Error getting embedding via unified provider: {e}")
         
     return []
 
@@ -259,15 +242,15 @@ def get_embedding_for_text(text: str) -> list:
         if hasattr(result, 'errors') and result.errors:
             print(f"GraphQL errors: {result.errors}")
         
-        # If GraphQL approach fails, use direct OpenAI fallback
-        print("GraphQL approach failed, using direct OpenAI fallback...")
-        return _get_embedding_direct_openai(text)
+        # If GraphQL approach fails, use unified provider fallback
+        print("GraphQL approach failed, using unified provider fallback...")
+        return _get_embedding_direct_provider(text)
         
     except Exception as e:
         print(f"Error getting embedding for text: {e}")
-        # Final fallback: Use OpenAI directly
-        print("Exception occurred, using direct OpenAI fallback...")
-        return _get_embedding_direct_openai(text)
+        # Final fallback: Use unified provider system
+        print("Exception occurred, using unified provider fallback...")
+        return _get_embedding_direct_provider(text)
         
     finally:
         if client:

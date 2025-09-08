@@ -1,39 +1,36 @@
 #!/usr/bin/env python3
 """
-Fallback embedding function that uses OpenAI directly instead of Weaviate's vectorizer
+Fallback embedding function that uses the new unified embedding provider system
 """
 
-import os
-import openai
+import asyncio
 from typing import List
-from embedding_config import OPENAI_EMBEDDING_MODEL
+from embedding_providers import EmbeddingProviderFactory
 
 def get_embedding_for_text_direct(text: str) -> List[float]:
     """
-    Get embedding directly from OpenAI API as a fallback when Weaviate vectorizer fails
+    Get embedding using the unified embedding provider system as a fallback when Weaviate vectorizer fails
     """
     try:
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        if not openai_api_key:
-            print("OpenAI API key not found in environment")
-            return []
-            
-        # Initialize OpenAI client
-        client = openai.OpenAI(api_key=openai_api_key)
-        
-        # Get embedding using the same model as Weaviate
-        response = client.embeddings.create(
-            model=OPENAI_EMBEDDING_MODEL,
-            input=text
-        )
-        
-        # Extract the embedding vector
-        embedding = response.data[0].embedding
-        return embedding
+        # Use the unified embedding provider system
+        return asyncio.run(_get_embedding_async(text))
         
     except Exception as e:
-        print(f"Error getting embedding from OpenAI directly: {e}")
+        print(f"Error getting embedding using provider system: {e}")
         return []
+
+async def _get_embedding_async(text: str) -> List[float]:
+    """
+    Async helper function to get embeddings using the provider system
+    """
+    # Create provider based on environment
+    provider = EmbeddingProviderFactory.create_from_env()
+    
+    try:
+        embedding = await provider.get_single_embedding(text)
+        return embedding
+    finally:
+        await provider.close()
 
 if __name__ == "__main__":
     # Test the function

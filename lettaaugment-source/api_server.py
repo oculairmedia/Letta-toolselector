@@ -21,7 +21,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Quart(__name__)
-load_dotenv()
+# Load .env file - try container path first, then current directory
+if os.path.exists('/app/.env'):
+    load_dotenv('/app/.env')
+else:
+    load_dotenv()
 
 LETTA_URL = os.getenv('LETTA_API_URL', 'https://letta2.oculair.ca/v1').replace('http://', 'https://')
 if not LETTA_URL.endswith('/v1'):

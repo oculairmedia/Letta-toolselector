@@ -28,7 +28,7 @@ services:
     networks:
       - letta-tools
   api-server:
-    image: oculair/lettaaugment:latest
+    build: ./lettaaugment-source
     container_name: weaviate-tools-api
     ports:
       - 8020:3001
@@ -46,11 +46,17 @@ services:
       - EXCLUDE_LETTA_CORE_TOOLS=${EXCLUDE_LETTA_CORE_TOOLS:-true}
       - EXCLUDE_OFFICIAL_TOOLS=${EXCLUDE_OFFICIAL_TOOLS:-true}
       - MANAGE_ONLY_MCP_TOOLS=${MANAGE_ONLY_MCP_TOOLS:-true}
+      # Embedding Provider Configuration
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-ollama}
+      - OLLAMA_EMBEDDING_HOST=${OLLAMA_EMBEDDING_HOST:-192.168.50.80}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-dengcao/Qwen3-Embedding-4B:Q4_K_M}
+      - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-2560}
+      - USE_OLLAMA_EMBEDDINGS=${USE_OLLAMA_EMBEDDINGS:-true}
     restart: unless-stopped
     volumes:
       - ./.env:/app/.env:ro
       - tool_cache_volume:/app/runtime_cache # Mount shared volume to the correct path
-      - ./lettaaugment-source/api_server.py:/app/api_server.py:ro # Mount local source with fixes
+      - ./lettaaugment-source:/app:rw # Mount entire source directory with our embedding providers
     # healthcheck:
     #   test: ["CMD", "python", "-c", "import socket; s = socket.socket(); s.settimeout(3); s.connect(('localhost', 3001)); s.close()"]
     #   interval: 30s
@@ -75,6 +81,7 @@ services:
     volumes:
       - ./.env:/app/.env:ro
       - tool_cache_volume:/app/runtime_cache # CORRECTED PATH
+      - ./lettaaugment-source:/app:rw # Mount entire source directory with embedding providers
     restart: unless-stopped
     depends_on:
       api-server:

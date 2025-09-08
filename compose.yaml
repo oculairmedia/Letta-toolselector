@@ -42,6 +42,7 @@ services:
       - DEFAULT_DROP_RATE=${DEFAULT_DROP_RATE:-0.6}
       - MAX_TOTAL_TOOLS=${MAX_TOTAL_TOOLS:-20}
       - MAX_MCP_TOOLS=${MAX_MCP_TOOLS:-15}
+      - MIN_MCP_TOOLS=${MIN_MCP_TOOLS:-7}
       - EXCLUDE_LETTA_CORE_TOOLS=${EXCLUDE_LETTA_CORE_TOOLS:-true}
       - EXCLUDE_OFFICIAL_TOOLS=${EXCLUDE_OFFICIAL_TOOLS:-true}
       - MANAGE_ONLY_MCP_TOOLS=${MANAGE_ONLY_MCP_TOOLS:-true}
@@ -49,6 +50,7 @@ services:
     volumes:
       - ./.env:/app/.env:ro
       - tool_cache_volume:/app/runtime_cache # Mount shared volume to the correct path
+      - ./lettaaugment-source/api_server.py:/app/api_server.py:ro # Mount local source with fixes
     # healthcheck:
     #   test: ["CMD", "python", "-c", "import socket; s = socket.socket(); s.settimeout(3); s.connect(('localhost', 3001)); s.close()"]
     #   interval: 30s
@@ -96,6 +98,35 @@ services:
     depends_on:
       weaviate:
         condition: service_healthy
+    networks:
+      - letta-tools
+  mcp-server:
+    build: .
+    container_name: toolselector-mcp
+    ports:
+      - 3020:3020
+    environment:
+      - PORT=3020
+      - NODE_ENV=production
+      - LETTA_API_URL=${LETTA_API_URL}
+      - LETTA_PASSWORD=${LETTA_PASSWORD}
+    restart: unless-stopped
+    labels:
+      - homepage.group=MCP Services
+      - homepage.name=Letta Toolselector MCP
+      - homepage.icon=
+      - homepage.href=http://192.168.50.90:3020/mcp
+      - homepage.description=mcp server for the letta toolselector
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:3020/health
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     networks:
       - letta-tools
 networks:

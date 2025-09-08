@@ -13,6 +13,7 @@ import aiofiles # Import aiofiles
 from weaviate.classes.init import Auth, AdditionalConfig, Timeout
 import weaviate.classes.query as wq
 # Import the new async function
+from embedding_config import OPENAI_EMBEDDING_MODEL
 from fetch_all_tools import fetch_all_tools_async
 
 # Configure logging
@@ -84,7 +85,7 @@ async def get_or_create_tool_schema(client) -> weaviate.collections.Collection: 
                 name="Tool",
                 description="A Letta tool with its metadata and description",
                 vectorizer_config=weaviate.classes.config.Configure.Vectorizer.text2vec_openai(
-                    model="ada", model_version="002"
+                    model=OPENAI_EMBEDDING_MODEL
                 ),
                 properties=[
                     weaviate.classes.config.Property(name="tool_id", data_type=weaviate.classes.config.DataType.TEXT),

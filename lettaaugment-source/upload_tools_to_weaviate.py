@@ -8,6 +8,8 @@ import weaviate.classes.query as wq
 from dotenv import load_dotenv
 # Import the new async function
 from fetch_all_tools import fetch_all_tools_async
+# Import embedding configuration constants
+from embedding_config import OPENAI_EMBEDDING_MODEL, WEAVIATE_VECTORIZER
 
 def get_or_create_tool_schema(client) -> Collection:
     """Get existing schema or create new one if it doesn't exist."""
@@ -34,8 +36,7 @@ def get_or_create_tool_schema(client) -> Collection:
             name="Tool",
             description="A Letta tool with its metadata and description",
             vectorizer_config=weaviate.classes.config.Configure.Vectorizer.text2vec_openai(
-                model="ada",
-                model_version="002"
+                model=OPENAI_EMBEDDING_MODEL
             ),
             properties=[
                 weaviate.classes.config.Property(

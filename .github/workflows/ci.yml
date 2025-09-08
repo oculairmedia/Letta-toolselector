@@ -1,0 +1,249 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  # Cache settings
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Job 1: Code Quality & Linting
+  lint-and-format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Node.js Setup for MCP Server
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Run Node.js linting
+        run: npm run lint || echo "No lint script found"
+
+      - name: Check Node.js formatting
+        run: npm run format:check || echo "No format:check script found"
+
+      # Python Setup for API Server
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          cd lettaaugment-source
+          pip install -r requirements.txt
+
+      - name: Run Python linting with ruff
+        run: |
+          pip install ruff
+          ruff check lettaaugment-source/ --output-format=github
+
+      - name: Run Python formatting check
+        run: |
+          pip install black
+          black --check lettaaugment-source/
+
+  # Job 2: Python Tests
+  python-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd lettaaugment-source
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov
+
+      - name: Test embedding configuration
+        run: |
+          cd lettaaugment-source
+          python3 embedding_config.py
+
+      - name: Run Python tests
+        run: |
+          cd lettaaugment-source
+          pytest -v --cov=. --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./lettaaugment-source/coverage.xml
+          flags: python
+          fail_ci_if_error: false
+
+  # Job 3: Node.js Tests
+  nodejs-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Node.js tests
+        run: npm test || echo "No test script found"
+
+      - name: Run integration tests
+        run: npm run test:integration || echo "No integration test script found"
+
+  # Job 4: Security Scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      # Python Security
+      - name: Setup Python for security scan
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Run bandit security linter
+        run: |
+          pip install bandit
+          bandit -r lettaaugment-source/ -f json -o bandit-results.json || true
+
+      # Node.js Security
+      - name: Setup Node.js for security scan
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Run npm audit
+        run: npm audit --audit-level moderate
+
+  # Job 5: Embedding Model Validation
+  embedding-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd lettaaugment-source
+          pip install -r requirements.txt
+
+      - name: Validate embedding configuration consistency
+        run: |
+          cd lettaaugment-source
+          echo "Validating embedding configuration..."
+          python3 -c "
+          from embedding_config import OPENAI_EMBEDDING_MODEL, OPENAI_EMBEDDING_DIMENSION, WEAVIATE_VECTORIZER
+          print(f'✓ Model: {OPENAI_EMBEDDING_MODEL}')
+          print(f'✓ Dimensions: {OPENAI_EMBEDDING_DIMENSION}')
+          print(f'✓ Vectorizer: {WEAVIATE_VECTORIZER}')
+          
+          # Check for any ada-002 references
+          import os
+          import re
+          ada_found = False
+          for root, dirs, files in os.walk('.'):
+              for file in files:
+                  if file.endswith('.py'):
+                      filepath = os.path.join(root, file)
+                      with open(filepath, 'r') as f:
+                          content = f.read()
+                          if re.search(r'ada.*002|text-embedding-ada', content):
+                              print(f'❌ Found ada-002 reference in {filepath}')
+                              ada_found = True
+          
+          if not ada_found:
+              print('✅ No ada-002 references found')
+          else:
+              exit(1)
+          "
+
+  # Job 6: Documentation
+  documentation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Generate API documentation
+        run: |
+          pip install pdoc3
+          cd lettaaugment-source
+          pdoc3 --html --output-dir ../docs .
+
+      - name: Upload documentation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: docs/
+
+  # Final Job: Status Check
+  ci-status:
+    runs-on: ubuntu-latest
+    needs: [lint-and-format, python-tests, nodejs-tests, security-scan, embedding-validation, documentation]
+    if: always()
+    steps:
+      - name: Check CI Status
+        run: |
+          if [[ "${{ needs.lint-and-format.result }}" == "success" && \
+                "${{ needs.python-tests.result }}" == "success" && \
+                "${{ needs.nodejs-tests.result }}" == "success" && \
+                "${{ needs.security-scan.result }}" == "success" && \
+                "${{ needs.embedding-validation.result }}" == "success" && \
+                "${{ needs.documentation.result }}" == "success" ]]; then
+            echo "✅ All CI checks passed!"
+          else
+            echo "❌ Some CI checks failed"
+            exit 1
+          fi

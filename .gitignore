@@ -53,4 +53,5 @@ Thumbs.db
 docker-compose.override.yml
 
 # Test files
-test_*.py
+test_*.pykeep-mcp/
+node_modules/

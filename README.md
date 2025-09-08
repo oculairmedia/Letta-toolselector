@@ -19,6 +19,11 @@ The system consists of three main services:
 2. **Sync Service** (`sync-service`): Synchronizes tools between Letta and Weaviate
 3. **Time Service** (`time-service`): Manages time-based memory updates
 
+
+## Further Documentation
+
+- Embeddings usage and architecture: see [EMBEDDINGS_USAGE.md](./EMBEDDINGS_USAGE.md)
+
 ## Quick Start
 
 1. Clone the repository:
@@ -48,6 +53,7 @@ Key environment variables:
 - `MANAGE_ONLY_MCP_TOOLS`: Set to `true` to only manage MCP tools
 - `MAX_TOTAL_TOOLS`: Maximum total tools per agent (default: 30)
 - `MAX_MCP_TOOLS`: Maximum MCP tools per agent (default: 20)
+- `MIN_MCP_TOOLS`: Minimum MCP tools per agent (default: 7)
 - `DEFAULT_DROP_RATE`: Tool pruning aggressiveness (0.0-1.0, default: 0.6)
 
 ## API Endpoints

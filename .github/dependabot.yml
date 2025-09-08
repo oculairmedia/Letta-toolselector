@@ -1,0 +1,93 @@
+version: 2
+updates:
+  # Node.js dependencies for MCP Server
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "oculairmedia"
+    assignees:
+      - "oculairmedia"
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+      include: "scope"
+    groups:
+      major-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+      minor-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Python dependencies for API Server
+  - package-ecosystem: "pip"
+    directory: "/lettaaugment-source"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "oculairmedia"
+    assignees:
+      - "oculairmedia"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # Docker dependencies
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "oculairmedia"
+    assignees:
+      - "oculairmedia"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # Docker dependencies for lettaaugment-source
+  - package-ecosystem: "docker"
+    directory: "/lettaaugment-source"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "oculairmedia"
+    assignees:
+      - "oculairmedia"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: 1
+    open-pull-requests-limit: 5
+    reviewers:
+      - "oculairmedia"
+    assignees:
+      - "oculairmedia"
+    commit-message:
+      prefix: "ci"
+      include: "scope"

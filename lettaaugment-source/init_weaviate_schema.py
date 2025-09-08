@@ -1,6 +1,7 @@
 import weaviate
 import os
 from dotenv import load_dotenv
+from embedding_config import OPENAI_EMBEDDING_MODEL, WEAVIATE_VECTORIZER
 
 def init_weaviate_schema():
     """Initialize Weaviate schema with the Tool collection."""
@@ -44,10 +45,10 @@ def init_weaviate_schema():
         client.collections.create_from_dict({
             "class": "Tool",
             "description": "A Letta tool with its metadata and description",
-            "vectorizer": "text2vec-openai",
+            "vectorizer": WEAVIATE_VECTORIZER,
             "moduleConfig": {
                 "text2vec-openai": {
-                    "model": "text-embedding-3-small",  # Updated to use a valid model
+                    "model": OPENAI_EMBEDDING_MODEL,
                     "type": "text"
                 }
             },

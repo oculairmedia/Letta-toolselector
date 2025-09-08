@@ -3,6 +3,7 @@ import json
 import weaviate
 from typing import List, Dict, Any
 from dotenv import load_dotenv
+from embedding_config import OPENAI_EMBEDDING_MODEL, WEAVIATE_VECTORIZER
 
 class WeaviateConnection:
     def __init__(self):
@@ -93,11 +94,10 @@ def upload_tools_to_weaviate(tools_file: str) -> Dict[str, Any]:
             conn.client.collections.create_from_dict({
                 "class": "Tool",
                 "description": "A Letta tool with its metadata and description",
-                "vectorizer": "text2vec-openai",
+                "vectorizer": WEAVIATE_VECTORIZER,
                 "moduleConfig": {
                     "text2vec-openai": {
-                        "model": "ada-002",
-                        "modelVersion": "002",
+                        "model": OPENAI_EMBEDDING_MODEL,
                         "type": "text"
                     }
                 },

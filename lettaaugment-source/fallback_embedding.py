@@ -6,6 +6,7 @@ Fallback embedding function that uses OpenAI directly instead of Weaviate's vect
 import os
 import openai
 from typing import List
+from embedding_config import OPENAI_EMBEDDING_MODEL
 
 def get_embedding_for_text_direct(text: str) -> List[float]:
     """
@@ -22,7 +23,7 @@ def get_embedding_for_text_direct(text: str) -> List[float]:
         
         # Get embedding using the same model as Weaviate
         response = client.embeddings.create(
-            model="text-embedding-3-small",
+            model=OPENAI_EMBEDDING_MODEL,
             input=text
         )
         

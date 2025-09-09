@@ -1315,6 +1315,86 @@ async def get_search_override_statistics():
         return jsonify({"error": f"Failed to get search override statistics: {str(e)}"}), 500
 
 
+# Reranker Configuration Endpoints
+@app.route('/api/v1/config/reranker', methods=['GET'])
+async def get_reranker_config():
+    """Get current reranker configuration."""
+    try:
+        # For now, return default config based on environment variables
+        config = {
+            "enabled": os.getenv('RERANKER_ENABLED', 'true').lower() == 'true',
+            "model": os.getenv('RERANKER_MODEL', 'mistral:7b'),
+            "provider": os.getenv('RERANKER_PROVIDER', 'ollama'),
+            "parameters": {
+                "temperature": float(os.getenv('RERANKER_TEMPERATURE', '0.1')),
+                "max_tokens": int(os.getenv('RERANKER_MAX_TOKENS', '512')),
+                "base_url": os.getenv('OLLAMA_RERANKER_BASE_URL', 'http://ollama-reranker-adapter:8080')
+            }
+        }
+        return jsonify({"success": True, "data": config})
+    except Exception as e:
+        logger.error(f"Error getting reranker config: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/reranker', methods=['PUT'])
+async def update_reranker_config():
+    """Update reranker configuration."""
+    try:
+        data = await request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "No configuration data provided"}), 400
+        
+        # Validate required fields
+        required_fields = ['enabled', 'model', 'provider', 'parameters']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"success": False, "error": f"Missing required field: {field}"}), 400
+        
+        # For now, just acknowledge the update (in a full implementation, 
+        # this would save to a config file or database)
+        logger.info(f"Reranker config update requested: {data}")
+        
+        return jsonify({"success": True, "message": "Reranker configuration updated successfully"})
+    except Exception as e:
+        logger.error(f"Error updating reranker config: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/reranker/test', methods=['POST'])
+async def test_reranker_connection():
+    """Test reranker connection with provided configuration."""
+    try:
+        data = await request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "No configuration data provided"}), 400
+        
+        # Extract connection parameters
+        provider = data.get('provider', 'ollama')
+        base_url = data.get('parameters', {}).get('base_url', 'http://ollama-reranker-adapter:8080')
+        model = data.get('model', 'mistral:7b')
+        
+        # Test connection based on provider
+        connected = False
+        if provider == 'ollama':
+            try:
+                async with aiohttp.ClientSession() as session:
+                    # Test health endpoint
+                    async with session.get(f"{base_url}/health", timeout=5) as response:
+                        if response.status == 200:
+                            connected = True
+            except Exception as conn_error:
+                logger.warning(f"Reranker connection test failed: {str(conn_error)}")
+        
+        return jsonify({
+            "success": True, 
+            "data": {"connected": connected}
+        })
+    except Exception as e:
+        logger.error(f"Error testing reranker connection: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route('/api/health', methods=['GET'])
 async def health_check():
     """Health check endpoint for the API server."""

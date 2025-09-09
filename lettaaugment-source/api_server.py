@@ -1950,6 +1950,183 @@ async def test_search_with_overrides():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# Model listing endpoints
+@app.route('/api/v1/models/embedding', methods=['GET'])
+async def get_embedding_models():
+    """Get available embedding models from all configured providers."""
+    try:
+        models = []
+        
+        # OpenAI embedding models
+        openai_models = [
+            {
+                "id": "text-embedding-3-small",
+                "name": "OpenAI Text Embedding 3 Small",
+                "provider": "openai",
+                "dimensions": 1536,
+                "max_tokens": 8191,
+                "cost_per_1k": 0.00002,
+                "recommended": True
+            },
+            {
+                "id": "text-embedding-3-large", 
+                "name": "OpenAI Text Embedding 3 Large",
+                "provider": "openai",
+                "dimensions": 3072,
+                "max_tokens": 8191,
+                "cost_per_1k": 0.00013,
+                "recommended": False
+            },
+            {
+                "id": "text-embedding-ada-002",
+                "name": "OpenAI Text Embedding Ada 002",
+                "provider": "openai", 
+                "dimensions": 1536,
+                "max_tokens": 8191,
+                "cost_per_1k": 0.0001,
+                "recommended": False
+            }
+        ]
+        
+        # Add OpenAI models if API key is available
+        if os.getenv('OPENAI_API_KEY'):
+            models.extend(openai_models)
+        
+        # Ollama embedding models - get from Ollama endpoint
+        try:
+            ollama_host = os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80')
+            ollama_url = f"http://{ollama_host}:11434"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{ollama_url}/api/tags", timeout=5) as response:
+                    if response.status == 200:
+                        ollama_data = await response.json()
+                        for model in ollama_data.get('models', []):
+                            # Filter for embedding models (heuristic based on name)
+                            model_name = model.get('name', '')
+                            if any(keyword in model_name.lower() for keyword in ['embed', 'embedding', 'bge', 'e5']):
+                                models.append({
+                                    "id": model_name,
+                                    "name": f"Ollama {model_name}",
+                                    "provider": "ollama",
+                                    "dimensions": "variable",
+                                    "max_tokens": "variable", 
+                                    "cost_per_1k": 0.0,
+                                    "recommended": False,
+                                    "size": model.get('size', 0),
+                                    "modified_at": model.get('modified_at')
+                                })
+        except Exception as e:
+            logger.warning(f"Failed to fetch Ollama embedding models: {str(e)}")
+        
+        # Add fallback local models if no models found
+        if not models:
+            models = [
+                {
+                    "id": "all-MiniLM-L6-v2",
+                    "name": "All MiniLM L6 v2 (Local)",
+                    "provider": "local",
+                    "dimensions": 384,
+                    "max_tokens": 512,
+                    "cost_per_1k": 0.0,
+                    "recommended": True
+                }
+            ]
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "models": models,
+                "total": len(models),
+                "providers": list(set(m["provider"] for m in models))
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting embedding models: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/models/reranker', methods=['GET'])  
+async def get_reranker_models():
+    """Get available reranker models from all configured providers."""
+    try:
+        models = []
+        
+        # Ollama reranker models
+        try:
+            ollama_host = os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80') 
+            ollama_url = f"http://{ollama_host}:11434"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{ollama_url}/api/tags", timeout=5) as response:
+                    if response.status == 200:
+                        ollama_data = await response.json()
+                        for model in ollama_data.get('models', []):
+                            model_name = model.get('name', '')
+                            # Filter for reranker models
+                            if any(keyword in model_name.lower() for keyword in ['rerank', 'cross-encoder', 'bge-rerank', 'colbert']):
+                                models.append({
+                                    "id": model_name,
+                                    "name": f"Ollama {model_name}",
+                                    "provider": "ollama",
+                                    "type": "cross-encoder",
+                                    "cost_per_1k": 0.0,
+                                    "recommended": True,
+                                    "size": model.get('size', 0),
+                                    "modified_at": model.get('modified_at')
+                                })
+                            # Also include general models that can be used for reranking
+                            elif any(keyword in model_name.lower() for keyword in ['mistral', 'llama', 'qwen']):
+                                models.append({
+                                    "id": model_name,
+                                    "name": f"Ollama {model_name} (General)",
+                                    "provider": "ollama",
+                                    "type": "generative",
+                                    "cost_per_1k": 0.0,
+                                    "recommended": False,
+                                    "size": model.get('size', 0),
+                                    "modified_at": model.get('modified_at')
+                                })
+        except Exception as e:
+            logger.warning(f"Failed to fetch Ollama reranker models: {str(e)}")
+        
+        # Add some common reranker models as fallback
+        if not models:
+            models = [
+                {
+                    "id": "mistral:7b",
+                    "name": "Mistral 7B (Fallback)",
+                    "provider": "ollama",
+                    "type": "generative",
+                    "cost_per_1k": 0.0,
+                    "recommended": True
+                },
+                {
+                    "id": "llama2:7b",
+                    "name": "Llama 2 7B (Fallback)",
+                    "provider": "ollama", 
+                    "type": "generative",
+                    "cost_per_1k": 0.0,
+                    "recommended": False
+                }
+            ]
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "models": models,
+                "total": len(models),
+                "providers": list(set(m["provider"] for m in models)),
+                "types": list(set(m["type"] for m in models))
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting reranker models: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # Health endpoints (both versions for compatibility)
 @app.route('/api/v1/health', methods=['GET'])
 async def health_check_v1():

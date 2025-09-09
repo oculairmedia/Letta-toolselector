@@ -1542,8 +1542,99 @@ async def get_ollama_models():
         return jsonify({
             "success": False, 
             "error": f"Failed to fetch models: {str(e)}",
-            "fallback_models": ["mistral:7b", "llama2:7b", "codellama:7b"]
+            "fallback_models": get_fallback_models()
         }), 503
+
+
+# Configuration presets endpoints
+@app.route('/api/v1/config/presets', methods=['GET'])
+async def get_configuration_presets():
+    """Get all configuration presets."""
+    try:
+        # For now, return empty array since we don't have persistent storage yet
+        # This can be extended to use a database or file storage
+        return jsonify({
+            "success": True,
+            "data": []
+        })
+    except Exception as e:
+        logger.error(f"Error getting configuration presets: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/presets', methods=['POST'])
+async def create_configuration_preset():
+    """Create a new configuration preset."""
+    try:
+        data = await request.get_json()
+        # For now, return success but don't actually store
+        # This can be extended to use a database or file storage
+        return jsonify({
+            "success": True,
+            "data": {
+                "id": "preset_" + str(int(time.time())),
+                "name": data.get("name", "Untitled Preset"),
+                "description": data.get("description", ""),
+                "config": data.get("config", {}),
+                "created_at": time.time()
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error creating configuration preset: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/presets/<preset_id>', methods=['PUT'])
+async def update_configuration_preset(preset_id):
+    """Update a configuration preset."""
+    try:
+        data = await request.get_json()
+        # For now, return success but don't actually store
+        return jsonify({
+            "success": True,
+            "data": {
+                "id": preset_id,
+                "name": data.get("name", "Updated Preset"),
+                "description": data.get("description", ""),
+                "config": data.get("config", {}),
+                "updated_at": time.time()
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error updating configuration preset: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/presets/<preset_id>', methods=['DELETE'])
+async def delete_configuration_preset(preset_id):
+    """Delete a configuration preset."""
+    try:
+        # For now, just return success
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.error(f"Error deleting configuration preset: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# Tools refresh endpoint
+@app.route('/api/v1/tools/refresh', methods=['POST'])
+async def refresh_tools():
+    """Refresh the tool index from Letta API."""
+    try:
+        logger.info("Refreshing tool index...")
+        # Force reload the tool cache
+        await read_tool_cache(force_reload=True)
+        return jsonify({"success": True, "message": "Tool index refreshed successfully"})
+    except Exception as e:
+        logger.error(f"Error refreshing tool index: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# Health endpoints (both versions for compatibility)
+@app.route('/api/v1/health', methods=['GET'])
+async def health_check_v1():
+    """Health check endpoint for the API server (v1)."""
+    return await health_check()
 
 
 @app.route('/api/health', methods=['GET'])

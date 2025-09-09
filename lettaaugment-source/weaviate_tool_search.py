@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from typing import List
 import requests
 import json
+from specialized_embedding import enhance_query_for_embedding
 
 def init_client():
     """Initialize Weaviate client using v4 API."""
@@ -96,11 +97,12 @@ def preprocess_query(query: str) -> str:
 
 def search_tools(query: str, limit: int = 10) -> list:
     """
-    Search tools by semantic similarity using hybrid search with query expansion.
+    Search tools by semantic similarity using Weaviate's native Ollama integration.
+    Uses specialized prompt enhancement with hybrid search combining vector and keyword matching.
     The result is a list of tools containing key metadata and score information.
-    Initializes and closes its own Weaviate client.
     """
     client = None
+    
     try:
         client = init_client()
         
@@ -111,13 +113,17 @@ def search_tools(query: str, limit: int = 10) -> list:
             # Expand query with related terms
             expanded_query = preprocess_query(query)
             
-            # Perform hybrid search using v4 API
+            # Enhance query with specialized prompting for better embedding matching
+            enhanced_query = enhance_query_for_embedding(expanded_query)
+            
+            # Use hybrid search with Weaviate's native Ollama vectorization
+            # This will automatically generate embeddings using the same model used for indexing
             result = collection.query.hybrid(
-                query=expanded_query,
+                query=enhanced_query,
                 alpha=0.75,  # 75% vector search, 25% keyword search
                 limit=limit,
                 fusion_type=HybridFusion.RELATIVE_SCORE,
-                query_properties=["name^2", "description^1.5", "tags"],
+                query_properties=["name^2", "enhanced_description^2", "description^1.5", "tags"],
                 return_metadata=MetadataQuery(score=True)
             )
 
@@ -126,6 +132,11 @@ def search_tools(query: str, limit: int = 10) -> list:
             if result and hasattr(result, 'objects'):
                 for obj in result.objects:
                     tool_data = obj.properties
+                    # Remove the enhanced_description from results (internal use only)
+                    if 'enhanced_description' in tool_data:
+                        del tool_data['enhanced_description']
+                    
+                    # Handle hybrid search score
                     if hasattr(obj, 'metadata') and obj.metadata is not None:
                         score = getattr(obj.metadata, 'score', 0.5)
                         tool_data["distance"] = 1 - (score if score is not None else 0.5)
@@ -175,14 +186,15 @@ def _get_embedding_direct_provider(text: str) -> List[float]:
         
     return []
 
-def get_embedding_for_text(text: str) -> list:
+def get_embedding_for_text(text: str, enhance_prompt: bool = True) -> list:
     """
-    Get vector embedding for a given text string using the Weaviate client.
-    Uses the text2vec-openai vectorizer with text-embedding-3-small model
+    Get vector embedding for a given text string using Weaviate's Ollama integration.
+    Uses the text2vec-ollama vectorizer with Qwen3-Embedding-4B model
     as configured for the Tool collection.
     
     Args:
         text (str): The text string to get embedding for
+        enhance_prompt (bool): Whether to apply specialized prompting for better embeddings
         
     Returns:
         list: Vector embedding as a list of floats, or empty list if error occurs
@@ -191,15 +203,18 @@ def get_embedding_for_text(text: str) -> list:
     try:
         client = init_client()
         
+        # Optionally enhance the text with specialized prompting for better embeddings
+        embedding_text = enhance_query_for_embedding(text) if enhance_prompt else text
+        
         # Use GraphQL to get vector representation of the text
-        # This leverages the text2vec-openai vectorizer configured for the Tool collection
+        # This leverages the text2vec-ollama vectorizer configured for the Tool collection
         query = """
         {
           Get {
             Tool(
               limit: 1
               nearText: {
-                concepts: [""" + f'"{text}"' + """]
+                concepts: [""" + f'"{embedding_text}"' + """]
               }
             ) {
               _additional {

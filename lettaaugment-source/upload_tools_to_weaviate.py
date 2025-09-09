@@ -10,6 +10,9 @@ from dotenv import load_dotenv
 from fetch_all_tools import fetch_all_tools_async
 # Import embedding configuration constants
 from embedding_config import OPENAI_EMBEDDING_MODEL, WEAVIATE_VECTORIZER
+# Import specialized embedding functionality
+from specialized_embedding import enhance_tool_for_embedding
+from embedding_providers import EmbeddingProviderFactory
 
 def get_or_create_tool_schema(client) -> Collection:
     """Get existing schema or create new one if it doesn't exist."""
@@ -31,12 +34,15 @@ def get_or_create_tool_schema(client) -> Collection:
     # Always attempt to create after checking/deleting
     try:
         print(f"Attempting to create new '{collection_name}' schema...")
-        # Create the schema
+        # Create the schema with Ollama vectorizer for automatic embedding generation
         collection = client.collections.create(
             name="Tool",
             description="A Letta tool with its metadata and description",
-            vectorizer_config=weaviate.classes.config.Configure.Vectorizer.text2vec_openai(
-                model=OPENAI_EMBEDDING_MODEL
+            # Use Ollama vectorizer with Qwen3-Embedding-4B model from environment
+            vectorizer_config=weaviate.classes.config.Configure.Vectorizer.text2vec_ollama(
+                api_endpoint=f"http://{os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80')}:11434",
+                model=os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
+                vectorize_collection_name=False  # Don't include collection name in embedding
             ),
             properties=[
                 weaviate.classes.config.Property(
@@ -53,6 +59,13 @@ def get_or_create_tool_schema(client) -> Collection:
                     name="description",
                     data_type=weaviate.classes.config.DataType.TEXT,
                     description="The description of what the tool does",
+                    vectorize_property_name=False  # Don't vectorize the property name
+                    # The property value will be vectorized as part of the object
+                ),
+                weaviate.classes.config.Property(
+                    name="enhanced_description", 
+                    data_type=weaviate.classes.config.DataType.TEXT,
+                    description="Enhanced tool description with specialized prompting for better embeddings",
                     vectorize_property_name=False
                 ),
                 weaviate.classes.config.Property(
@@ -133,8 +146,8 @@ async def upload_tools(): # Make the function async
 
         print(f"Found {len(tools)} tools fetched/registered to process for Weaviate upload")
 
-        # Prepare batch import
-        print("\nUploading tools...")
+        # Prepare batch import with Weaviate's automatic vectorization
+        print("\nUploading tools with Ollama-powered specialized embeddings...")
         successful_uploads = 0
         skipped_uploads = 0
         failed_uploads = 0
@@ -156,23 +169,34 @@ async def upload_tools(): # Make the function async
                             print(f"Progress: {i}/{len(tools)} tools processed...")
                         continue
 
-                    # Prepare tool properties
+                    # Enhanced tool description with specialized prompting
+                    raw_description = tool.get("description", "")
+                    enhanced_description = enhance_tool_for_embedding(
+                        tool_description=raw_description,
+                        tool_name=tool["name"],
+                        tool_type=tool.get("tool_type", "general"),
+                        tool_source=tool.get("source_type", "python")
+                    )
+
+                    # Prepare tool properties - Weaviate will automatically vectorize enhanced_description
                     properties = {
                         "tool_id": tool.get("id", ""),
                         "name": tool["name"],
-                        "description": tool.get("description", ""),
+                        "description": raw_description,  # Original description for display
+                        "enhanced_description": enhanced_description,  # This will be automatically vectorized by Weaviate
                         "source_type": tool.get("source_type", "python"),
                         "tool_type": tool.get("tool_type", "external_mcp"),
                         "tags": tool.get("tags", []),
                         "json_schema": json.dumps(tool.get("json_schema", {})) if tool.get("json_schema") else ""
                     }
                     
-                    # Add object to batch
+                    # Add object to batch - Weaviate will handle embedding generation
                     batch.add_object(properties=properties)
                     successful_uploads += 1
 
                     if i % 25 == 0:
                         print(f"Progress: {i}/{len(tools)} tools processed...")
+                        
                 except Exception as e:
                     failed_uploads += 1
                     print(f"Error uploading tool {tool.get('name', 'Unknown')}: {str(e)}")

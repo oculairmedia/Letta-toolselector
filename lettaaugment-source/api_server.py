@@ -1,6 +1,7 @@
 from quart import Quart, request, jsonify
 # Restore search_tools import, remove get_all_tools as cache is used for listing
 from weaviate_tool_search_with_reranking import search_tools, init_client as init_weaviate_client
+from weaviate_client_manager import get_client_manager, close_client_manager, weaviate_client
 from weaviate_tool_search import get_embedding_for_text, get_tool_embedding_by_id # Keep some functions from original
 from upload_tools_to_weaviate import upload_tools
 import os
@@ -3828,6 +3829,184 @@ def get_immediate_actions(emergency_status: dict) -> list:
     return actions or ["Monitor system status and maintain current safety measures"]
 
 
+# Weaviate Connection Management Endpoints
+
+@app.route('/api/v1/weaviate/connection-status', methods=['GET'])
+async def get_weaviate_connection_status():
+    """Get detailed Weaviate connection status and metrics."""
+    try:
+        client_manager = get_client_manager()
+        health_status = client_manager.get_health_status()
+        
+        return jsonify({
+            "success": True,
+            "data": health_status,
+            "timestamp": time.time()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting Weaviate connection status: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "fallback_status": {
+                "status": "error",
+                "message": "Connection status check failed"
+            }
+        }), 500
+
+
+@app.route('/api/v1/weaviate/connection-test', methods=['POST'])
+async def test_weaviate_connection():
+    """Test Weaviate connection with a simple query."""
+    try:
+        client_manager = get_client_manager()
+        
+        # Test with a simple collection list operation
+        async def test_operation(client):
+            # Simple test - list collections
+            try:
+                collections = client.collections.list_all()
+                return {
+                    "test_type": "list_collections",
+                    "collections_count": len(collections),
+                    "collections": [c.name for c in collections[:5]]  # First 5
+                }
+            except Exception as e:
+                return {
+                    "test_type": "list_collections",
+                    "error": str(e)
+                }
+        
+        start_time = time.time()
+        result = await client_manager.execute_query(test_operation)
+        response_time = time.time() - start_time
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "connection_test": "passed",
+                "response_time": response_time,
+                "test_result": result,
+                "timestamp": time.time()
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Weaviate connection test failed: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "data": {
+                "connection_test": "failed",
+                "timestamp": time.time()
+            }
+        }), 500
+
+
+@app.route('/api/v1/weaviate/pool-stats', methods=['GET'])
+async def get_weaviate_pool_stats():
+    """Get detailed connection pool statistics."""
+    try:
+        client_manager = get_client_manager()
+        
+        if not client_manager.pool:
+            return jsonify({
+                "success": False,
+                "error": "Connection pool not initialized"
+            }), 503
+        
+        stats = client_manager.pool.get_stats()
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "pool_statistics": stats,
+                "health_recommendations": generate_pool_recommendations(stats),
+                "timestamp": time.time()
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting pool statistics: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/v1/weaviate/connection-reset', methods=['POST'])
+async def reset_weaviate_connections():
+    """Reset Weaviate connection pool (emergency operation)."""
+    try:
+        data = await request.get_json() or {}
+        force = data.get('force', False)
+        
+        if not force:
+            return jsonify({
+                "success": False,
+                "error": "This operation requires 'force': true parameter",
+                "warning": "This will reset all connections and may cause temporary service disruption"
+            }), 400
+        
+        # Close existing manager
+        close_client_manager()
+        logger.warning("Weaviate connection pool reset requested - reinitializing")
+        
+        # Reinitialize
+        client_manager = get_client_manager()
+        health_status = client_manager.get_health_status()
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "operation": "connection_pool_reset",
+                "status": "completed",
+                "new_health_status": health_status,
+                "timestamp": time.time()
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error resetting connections: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+def generate_pool_recommendations(stats: dict) -> list:
+    """Generate recommendations based on pool statistics."""
+    recommendations = []
+    
+    success_rate = stats.get("success_rate", 0)
+    if success_rate < 0.95:
+        recommendations.append(f"Low success rate ({success_rate:.1%}) - check Weaviate server health")
+    
+    active_connections = stats.get("active_connections", 0)
+    available_connections = stats.get("available_connections", 0)
+    if available_connections == 0:
+        recommendations.append("No available connections - consider increasing pool size")
+    
+    avg_response_time = stats.get("average_response_time", 0)
+    if avg_response_time > 5.0:
+        recommendations.append(f"High response time ({avg_response_time:.2f}s) - check network or server performance")
+    
+    circuit_breaker_state = stats.get("circuit_breaker_state", "closed")
+    if circuit_breaker_state != "closed":
+        recommendations.append(f"Circuit breaker is {circuit_breaker_state} - investigate connection issues")
+    
+    failed_requests = stats.get("failed_requests", 0)
+    successful_requests = stats.get("successful_requests", 0)
+    if failed_requests > successful_requests:
+        recommendations.append("More failed than successful requests - check system health")
+    
+    if not recommendations:
+        recommendations.append("Connection pool is operating normally")
+    
+    return recommendations
+
+
 # Health endpoints (both versions for compatibility)
 @app.route('/api/v1/health', methods=['GET'])
 async def health_check_v1():
@@ -3934,28 +4113,35 @@ async def health_check():
 async def startup():
     global weaviate_client, http_session
     logger.info("API Server starting up...")
+    
     try:
-        # Initialize Weaviate client
-        # Ensure this uses the correct configuration for your deployment (Docker vs. local)
-        temp_client = init_weaviate_client() # Call it once and store in a temporary variable
+        # Initialize new Weaviate client manager
+        logger.info("Initializing Weaviate Client Manager...")
+        client_manager = get_client_manager()
         
-        if temp_client: # Check if the client object was created
-            if temp_client.is_connected() and temp_client.is_ready():
-                weaviate_client = temp_client # Assign to global only if successful and ready
-                logger.info("Weaviate client initialized and ready.")
-            elif temp_client.is_connected(): # Connected but not ready
-                logger.error("Weaviate client connected but not ready during startup. Global client will be None.")
-                weaviate_client = None # Set global to None
-            else: # Not connected
-                logger.error("Weaviate client failed to connect during startup. Global client will be None.")
-                weaviate_client = None # Set global to None
-        else: # init_weaviate_client() returned None
-            logger.error("init_weaviate_client() returned None. Weaviate client not initialized.")
-            weaviate_client = None # Ensure global client is None
+        # Test the connection manager
+        health_status = client_manager.get_health_status()
+        if health_status.get("status") in ["healthy", "warning"]:
+            logger.info(f"Weaviate Client Manager initialized: {health_status['status']}")
+        else:
+            logger.error(f"Weaviate Client Manager unhealthy: {health_status}")
+        
+        # Keep legacy client for backward compatibility (will be phased out)
+        try:
+            temp_client = init_weaviate_client()
+            if temp_client and temp_client.is_connected() and temp_client.is_ready():
+                weaviate_client = temp_client
+                logger.info("Legacy Weaviate client also initialized for compatibility.")
+            else:
+                weaviate_client = None
+                logger.warning("Legacy Weaviate client initialization failed, using only new manager.")
+        except Exception as e:
+            logger.warning(f"Legacy client initialization failed: {e}")
+            weaviate_client = None
             
-    except Exception as e: # Catch any other unexpected error during the init process
-        logger.error(f"Exception during Weaviate client initialization process in startup: {e}", exc_info=True)
-        weaviate_client = None # Ensure global client is None on any exception
+    except Exception as e:
+        logger.error(f"Exception during Weaviate client initialization: {e}", exc_info=True)
+        weaviate_client = None
 
     # Initialize global aiohttp session
     http_session = aiohttp.ClientSession()
@@ -3975,12 +4161,22 @@ async def startup():
 async def shutdown():
     global weaviate_client, http_session
     logger.info("API Server shutting down...")
+    
+    # Close new client manager
+    try:
+        close_client_manager()
+        logger.info("Weaviate Client Manager closed.")
+    except Exception as e:
+        logger.error(f"Error closing Weaviate Client Manager: {e}")
+    
+    # Close legacy client
     if weaviate_client:
         try:
             weaviate_client.close()
-            logger.info("Weaviate client closed.")
+            logger.info("Legacy Weaviate client closed.")
         except Exception as e:
-            logger.error(f"Error closing Weaviate client: {e}")
+            logger.error(f"Error closing legacy Weaviate client: {e}")
+    
     if http_session:
         await http_session.close()
         logger.info("Global aiohttp client session closed.")

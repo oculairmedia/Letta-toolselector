@@ -1,6 +1,6 @@
 services:
   weaviate:
-    image: semitechnologies/weaviate:1.24.0
+    image: semitechnologies/weaviate:1.25.0
     ports:
       - 8080:8080
       - 50051:50051
@@ -8,9 +8,8 @@ services:
       QUERY_DEFAULTS_LIMIT: 15
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
       PERSISTENCE_DATA_PATH: /var/lib/weaviate
-      DEFAULT_VECTORIZER_MODULE: text2vec-openai
-      ENABLE_MODULES: text2vec-openai
-      OPENAI_APIKEY: ${OPENAI_API_KEY}
+      DEFAULT_VECTORIZER_MODULE: text2vec-ollama
+      ENABLE_MODULES: text2vec-ollama,text2vec-openai
       CLUSTER_HOSTNAME: node1
       READINESS_MAX_WAIT_SECS: 300
     volumes:

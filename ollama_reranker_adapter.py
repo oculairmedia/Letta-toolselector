@@ -100,11 +100,7 @@ class Metrics:
 metrics = Metrics()
 
 # Instruction template for Qwen3-Reranker
-RERANK_INSTRUCTION_TEMPLATE = """Given a search query and a document, determine how relevant the document is to the query.
-Output only a single number between 0.0 and 1.0, where:
-- 0.0 means completely irrelevant
-- 1.0 means perfectly relevant
-- Consider semantic meaning, not just keyword matching
+RERANK_INSTRUCTION_TEMPLATE = """Question: How relevant is this document to the query? Answer with only a number from 0.0 to 1.0.
 
 Query: {query}
 Document: {document}
@@ -177,10 +173,9 @@ async def score_document_pair(
                 "prompt": prompt,
                 "stream": False,
                 "options": {
-                    "temperature": 0.0,
+                    "temperature": 0.1,
                     "top_p": 1.0,
-                    "num_predict": 10,
-                    "stop": ["\n", " ", "\t", ","]
+                    "num_predict": 10
                 }
             },
             timeout=TIMEOUT_SECONDS
@@ -348,6 +343,23 @@ async def health_check():
             "error": str(e),
             "model": OLLAMA_MODEL
         }
+
+@app.get("/.well-known/ready")
+async def ready():
+    """Weaviate readiness check endpoint."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
+            if response.status_code == 200:
+                return {"ready": True}
+    except Exception:
+        pass
+    
+    # Return 503 if not ready
+    return JSONResponse(
+        status_code=503,
+        content={"ready": False, "error": "Ollama backend not available"}
+    )
 
 @app.get("/metrics")
 async def get_metrics():

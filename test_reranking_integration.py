@@ -15,7 +15,7 @@ sys.path.append('/opt/stacks/lettatoolsselector/lettaaugment-source')
 
 def test_adapter_health():
     """Test if the Ollama reranker adapter is healthy"""
-    adapter_url = "http://localhost:8083"
+    adapter_url = "http://localhost:8091"
     
     try:
         response = requests.get(f"{adapter_url}/health", timeout=5)
@@ -31,12 +31,12 @@ def test_adapter_health():
             return False
     except Exception as e:
         print(f"❌ Cannot connect to adapter: {e}")
-        print("   Make sure the adapter is running on port 8083")
+        print("   Make sure the adapter is running on port 8091")
         return False
 
 def test_adapter_reranking():
     """Test the adapter's reranking functionality directly"""
-    adapter_url = "http://localhost:8083"
+    adapter_url = "http://localhost:8091"
     
     test_request = {
         "query": "tool for creating blog posts",
@@ -160,7 +160,7 @@ def test_performance():
     
     print("\n⚡ Testing Performance Characteristics...")
     
-    adapter_url = "http://localhost:8083"
+    adapter_url = "http://localhost:8091"
     
     # Test with varying document counts
     test_sizes = [5, 10, 20]

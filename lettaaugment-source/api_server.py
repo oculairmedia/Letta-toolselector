@@ -456,6 +456,85 @@ async def search():
         logger.error(f"Error during search: {str(e)}", exc_info=True)
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
+
+@app.route('/api/v1/tools/search/rerank', methods=['POST'])
+async def search_with_reranking():
+    """Search with reranking endpoint for dashboard frontend."""
+    logger.info(f"Received request for /api/v1/tools/search/rerank")
+    
+    try:
+        data = await request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "No data provided"}), 400
+        
+        # Extract query and reranker config
+        query_data = data.get('query', {})
+        reranker_config = data.get('reranker_config', {})
+        
+        # Extract query string
+        query_string = query_data.get('query', '')
+        if not query_string:
+            return jsonify({"success": False, "error": "No query provided"}), 400
+            
+        limit = query_data.get('limit', 10)
+        
+        logger.info(f"Performing reranked search for: '{query_string}' with limit: {limit}")
+        logger.info(f"Reranker config: {reranker_config}")
+        
+        # Use the same search_tools function but with reranking enabled
+        results = await asyncio.to_thread(search_tools, query=query_string, limit=limit)
+        
+        if not results:
+            logger.warning("No results returned from search_tools")
+            return jsonify({
+                "success": True,
+                "data": {
+                    "query": query_string,
+                    "results": [],
+                    "metadata": {
+                        "total_found": 0,
+                        "search_time": 0,
+                        "reranker_used": reranker_config.get('model', 'none')
+                    }
+                }
+            })
+        
+        # Convert results to frontend format
+        formatted_results = []
+        for i, result in enumerate(results):
+            formatted_result = {
+                "tool": {
+                    "id": result.get('id', ''),
+                    "name": result.get('name', ''),
+                    "description": result.get('description', ''),
+                    "source": result.get('source', 'unknown'),
+                    "category": result.get('category'),
+                    "tags": result.get('tags', [])
+                },
+                "score": result.get('score', 0),
+                "rank": i + 1,
+                "reasoning": result.get('reasoning', '')
+            }
+            formatted_results.append(formatted_result)
+        
+        response_data = {
+            "query": query_string,
+            "results": formatted_results,
+            "metadata": {
+                "total_found": len(results),
+                "search_time": 0.1,  # Placeholder
+                "reranker_used": reranker_config.get('model', 'mistral:7b')
+            }
+        }
+        
+        logger.info(f"Reranked search successful, returning {len(formatted_results)} results.")
+        return jsonify({"success": True, "data": response_data})
+        
+    except Exception as e:
+        logger.error(f"Error during reranked search: {str(e)}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route('/api/v1/tools', methods=['GET'])
 async def get_tools():
     logger.info("Received request for /api/v1/tools")

@@ -85,7 +85,7 @@ services:
       - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-dengcao/Qwen3-Embedding-4B:Q4_K_M}
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-2560}
       - USE_OLLAMA_EMBEDDINGS=${USE_OLLAMA_EMBEDDINGS:-true}
-      # NEW: Reranking Configuration
+      # Reranking Configuration
       - ENABLE_RERANKING=${ENABLE_RERANKING:-true}
       - RERANK_INITIAL_LIMIT=${RERANK_INITIAL_LIMIT:-30}
       - RERANK_TOP_K=${RERANK_TOP_K:-10}

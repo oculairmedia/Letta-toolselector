@@ -143,7 +143,7 @@ def search_tools_with_reranking(
                         prop=rerank_property,
                         query=enhanced_query
                     ),
-                    return_metadata=MetadataQuery(score=True, rerank_score=True)
+                    return_metadata=MetadataQuery(score=True)
                 )
                 
                 # Sort by rerank score and take top-k

@@ -1,6 +1,7 @@
 from quart import Quart, request, jsonify
 # Restore search_tools import, remove get_all_tools as cache is used for listing
-from weaviate_tool_search import search_tools, init_client as init_weaviate_client, get_embedding_for_text, get_tool_embedding_by_id # Import init_client
+from weaviate_tool_search_with_reranking import search_tools, init_client as init_weaviate_client
+from weaviate_tool_search import get_embedding_for_text, get_tool_embedding_by_id # Keep some functions from original
 from upload_tools_to_weaviate import upload_tools
 import os
 import requests

@@ -42,9 +42,15 @@ class RerankRequest(BaseModel):
     documents: List[str] = Field(..., description="Documents to rerank")
     k: Optional[int] = Field(None, description="Number of top results to return")
 
+class DocumentScore(BaseModel):
+    """Individual document score in Cohere format"""
+    index: int = Field(..., description="Original document index")
+    relevance_score: float = Field(..., description="Relevance score for the document")
+
 class RerankResponse(BaseModel):
-    """Weaviate reranker API response format"""
-    scores: List[float] = Field(..., description="Relevance scores in document order")
+    """Cohere-compatible reranker API response format"""
+    results: List[DocumentScore] = Field(..., description="Scored documents")
+    id: str = Field(default_factory=lambda: f"rank_{int(time.time())}", description="Request ID")
 
 # Cache implementation
 class SimpleCache:
@@ -219,23 +225,59 @@ async def batch_score_documents(
     documents: List[str]
 ) -> List[float]:
     """Score multiple documents in batches for efficiency"""
+    if not documents:
+        logger.warning("Empty documents list provided to batch_score_documents")
+        return []
+    
+    if not query or not query.strip():
+        logger.warning("Empty query provided to batch_score_documents, returning zeros")
+        return [0.0] * len(documents)
+    
     scores = []
     
-    async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as session:
-        # Process in batches
-        for i in range(0, len(documents), BATCH_SIZE):
-            batch = documents[i:i + BATCH_SIZE]
-            
-            # Score batch concurrently
-            tasks = [
-                score_document_pair(query, doc, session)
-                for doc in batch
-            ]
-            
-            batch_scores = await asyncio.gather(*tasks)
-            scores.extend(batch_scores)
-    
-    return scores
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as session:
+            # Process in batches
+            for i in range(0, len(documents), BATCH_SIZE):
+                batch = documents[i:i + BATCH_SIZE]
+                
+                # Score batch concurrently
+                tasks = [
+                    score_document_pair(query, doc, session)
+                    for doc in batch
+                ]
+                
+                batch_scores = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Handle any exceptions in the batch and ensure all scores are floats
+                validated_scores = []
+                for score in batch_scores:
+                    if isinstance(score, Exception):
+                        logger.warning(f"Exception in batch scoring: {score}, using 0.0")
+                        validated_scores.append(0.0)
+                    elif isinstance(score, (int, float)) and not (score < 0 or score > 1):
+                        validated_scores.append(float(score))
+                    else:
+                        logger.warning(f"Invalid score {score}, using 0.0")
+                        validated_scores.append(0.0)
+                
+                scores.extend(validated_scores)
+        
+        # Final validation: ensure we have the right number of scores
+        if len(scores) != len(documents):
+            logger.error(f"Score count mismatch: got {len(scores)}, expected {len(documents)}")
+            # Pad or truncate to match document count
+            if len(scores) < len(documents):
+                scores.extend([0.0] * (len(documents) - len(scores)))
+            else:
+                scores = scores[:len(documents)]
+        
+        return scores
+        
+    except Exception as e:
+        logger.error(f"Critical error in batch_score_documents: {e}")
+        # Return all zeros as fallback
+        return [0.0] * len(documents)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -280,36 +322,61 @@ async def rerank_documents(request: RerankRequest):
         if not request.documents:
             raise HTTPException(status_code=400, detail="Documents list cannot be empty")
         
-        # Limit k to reasonable bounds
-        k = min(request.k, len(request.documents)) if request.k else len(request.documents)
+        # Filter out empty or invalid documents
+        valid_documents = []
+        document_index_mapping = []  # Track original indices
+        for idx, doc in enumerate(request.documents):
+            if doc and isinstance(doc, str) and doc.strip():
+                valid_documents.append(doc.strip())
+                document_index_mapping.append(idx)
+            else:
+                logger.warning(f"Skipping empty or invalid document at index {idx}")
+        
+        if not valid_documents:
+            raise HTTPException(status_code=400, detail="No valid documents found after filtering")
+        
+        # Limit k to reasonable bounds (use valid documents count)
+        k = min(request.k, len(valid_documents)) if request.k else len(valid_documents)
         k = min(k, 100)  # Maximum 100 results
         
-        logger.info(f"Reranking {len(request.documents)} documents for query: '{request.query[:50]}...'")
+        logger.info(f"Reranking {len(valid_documents)} valid documents (from {len(request.documents)} total) for query: '{request.query[:50]}...'")
         
-        # Score all documents
-        scores = await batch_score_documents(request.query, request.documents)
+        # Score all valid documents
+        scores = await batch_score_documents(request.query, valid_documents)
         
-        # If k is specified and less than total documents, set lower scores to 0
-        if request.k and request.k < len(scores):
-            # Get indices of top-k scores
-            indexed_scores = [(score, idx) for idx, score in enumerate(scores)]
-            indexed_scores.sort(reverse=True, key=lambda x: x[0])
-            top_k_indices = set(idx for _, idx in indexed_scores[:k])
-            
-            # Set non-top-k scores to 0
-            scores = [
-                score if idx in top_k_indices else 0.0
-                for idx, score in enumerate(scores)
-            ]
+        # Create indexed scores for sorting and selection (map back to original indices)
+        indexed_scores = [(score, document_index_mapping[idx]) for idx, score in enumerate(scores)]
+        indexed_scores.sort(reverse=True, key=lambda x: x[0])
+        
+        # Apply k-filtering by only including top-k results
+        if request.k and request.k < len(indexed_scores):
+            top_k_results = indexed_scores[:k]
+        else:
+            top_k_results = indexed_scores
+        
+        # Defensive validation: ensure we have at least one result
+        if not top_k_results:
+            # If no results, return a single 0.0 score for the first original document
+            logger.warning("No rerank results available, returning single 0.0 score")
+            first_original_idx = document_index_mapping[0] if document_index_mapping else 0
+            top_k_results = [(0.0, first_original_idx)]
         
         # Track metrics
         elapsed = time.time() - start_time
         metrics.successful_requests += 1
         metrics.total_latency += elapsed
         
-        logger.info(f"Reranking completed in {elapsed:.2f}s")
+        logger.info(f"Reranking completed in {elapsed:.2f}s, returning {len(top_k_results)} results")
         
-        return RerankResponse(scores=scores)
+        # Format response in Cohere-compatible format with consecutive indices
+        # Note: Using consecutive indices (0, 1, 2...) instead of original document indices
+        # This may be required for Weaviate compatibility
+        results = [
+            DocumentScore(index=i, relevance_score=score)
+            for i, (score, original_idx) in enumerate(top_k_results)
+        ]
+        
+        return RerankResponse(results=results)
     
     except HTTPException:
         metrics.failed_requests += 1

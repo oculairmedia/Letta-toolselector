@@ -14,8 +14,11 @@ import {
 export const queryKeys = {
   tools: ['tools'] as const,
   search: (query: SearchQuery) => ['search', query] as const,
+  searchWithOverrides: (query: string, options: any) => ['searchWithOverrides', query, options] as const,
   rerankerConfig: ['rerankerConfig'] as const,
   ollamaModels: ['ollamaModels'] as const,
+  embeddingModels: ['embeddingModels'] as const,
+  rerankerModels: ['rerankerModels'] as const,
   configPresets: ['configPresets'] as const,
   evaluations: (query?: string, limit?: number) => ['evaluations', query, limit] as const,
   analytics: (dateRange?: { start: string; end: string }) => ['analytics', dateRange] as const,
@@ -165,6 +168,59 @@ export const useAnalytics = (dateRange?: { start: string; end: string }) => {
     queryKey: queryKeys.analytics(dateRange),
     queryFn: () => apiService.getAnalytics(dateRange),
     staleTime: 2 * 60 * 1000, // 2 minutes
+  });
+};
+
+// Advanced search hooks
+export const useSearchWithOverrides = (
+  query: string, 
+  options: {
+    limit?: number;
+    alpha?: number;
+    distance_metric?: string;
+    reranker_enabled?: boolean;
+    reranker_model?: string;
+  },
+  enabled: boolean = true
+) => {
+  return useQuery({
+    queryKey: queryKeys.searchWithOverrides(query, options),
+    queryFn: () => apiService.searchWithOverrides(query, options),
+    enabled: enabled && !!query.trim(),
+    staleTime: 30 * 1000, // 30 seconds
+  });
+};
+
+export const useCompareRankerConfigurations = () => {
+  return useMutation({
+    mutationFn: ({ 
+      query, 
+      configA, 
+      configB, 
+      limit 
+    }: { 
+      query: string; 
+      configA: RerankerConfig; 
+      configB: RerankerConfig; 
+      limit?: number;
+    }) => apiService.compareRankerConfigurations(query, configA, configB, limit),
+  });
+};
+
+// Model discovery hooks
+export const useEmbeddingModels = () => {
+  return useQuery({
+    queryKey: queryKeys.embeddingModels,
+    queryFn: () => apiService.getEmbeddingModels(),
+    staleTime: 10 * 60 * 1000, // 10 minutes
+  });
+};
+
+export const useRerankerModels = () => {
+  return useQuery({
+    queryKey: queryKeys.rerankerModels,
+    queryFn: () => apiService.getRerankerModels(),
+    staleTime: 10 * 60 * 1000, // 10 minutes
   });
 };
 

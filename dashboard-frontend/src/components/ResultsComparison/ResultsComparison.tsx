@@ -31,7 +31,7 @@ import {
   Timeline as TimelineIcon,
 } from '@mui/icons-material';
 
-import { useSearch, useSearchWithReranking, useRerankerConfig } from '../../hooks/useApi';
+import { useSearch, useSearchWithReranking, useRerankerConfig, useCompareRankerConfigurations } from '../../hooks/useApi';
 import { SearchQuery, SearchResult } from '../../types';
 import { formatScore, getScoreColor, debounce } from '../../utils';
 import SearchResultCard from '../SearchInterface/SearchResultCard';

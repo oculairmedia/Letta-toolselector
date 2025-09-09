@@ -184,6 +184,102 @@ class ApiService {
     }
   }
 
+  // Advanced search endpoints
+  async searchWithOverrides(query: string, options: {
+    limit?: number;
+    alpha?: number;
+    distance_metric?: string;
+    reranker_enabled?: boolean;
+    reranker_model?: string;
+  }): Promise<SearchResponse & { metadata: any }> {
+    const params = new URLSearchParams();
+    params.append('query', query);
+    if (options.limit) params.append('limit', options.limit.toString());
+    if (options.alpha !== undefined) params.append('alpha', options.alpha.toString());
+    if (options.distance_metric) params.append('distance_metric', options.distance_metric);
+    if (options.reranker_enabled !== undefined) params.append('reranker_enabled', options.reranker_enabled.toString());
+    if (options.reranker_model) params.append('reranker_model', options.reranker_model);
+
+    const response = await this.client.get<ApiResponse<SearchResponse & { metadata: any }>>(`/search/test?${params}`);
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Search with overrides failed');
+    }
+    return response.data.data!;
+  }
+
+  async compareRankerConfigurations(query: string, configA: RerankerConfig, configB: RerankerConfig, limit?: number): Promise<{
+    query: string;
+    results_a: any[];
+    results_b: any[];
+    comparison_metrics: {
+      total_results_a: number;
+      total_results_b: number;
+      avg_score_a: number;
+      avg_score_b: number;
+      top_5_overlap: number;
+      rank_correlation: number;
+    };
+    config_a_name: string;
+    config_b_name: string;
+    timestamp: number;
+  }> {
+    const response = await this.client.post<ApiResponse<any>>('/rerank/compare', {
+      query,
+      config_a: configA,
+      config_b: configB,
+      limit: limit || 10
+    });
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Reranker comparison failed');
+    }
+    return response.data.data!;
+  }
+
+  // Model discovery endpoints
+  async getEmbeddingModels(): Promise<{
+    models: Array<{
+      id: string;
+      name: string;
+      provider: string;
+      dimensions: number | string;
+      max_tokens: number | string;
+      cost_per_1k: number;
+      recommended: boolean;
+      size?: number;
+      modified_at?: string;
+    }>;
+    total: number;
+    providers: string[];
+  }> {
+    const response = await this.client.get<ApiResponse<any>>('/models/embedding');
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get embedding models');
+    }
+    return response.data.data!;
+  }
+
+  async getRerankerModels(): Promise<{
+    models: Array<{
+      id: string;
+      name: string;
+      provider: string;
+      type: string;
+      cost_per_1k: number;
+      recommended: boolean;
+      size?: number;
+      modified_at?: string;
+    }>;
+    total: number;
+    providers: string[];
+    types: string[];
+  }> {
+    const response = await this.client.get<ApiResponse<any>>('/models/reranker');
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get reranker models');
+    }
+    return response.data.data!;
+  }
+
   // Health check
   async healthCheck(): Promise<{ status: string; version?: string }> {
     const response = await this.client.get<ApiResponse<{ status: string; version?: string }>>('/health');

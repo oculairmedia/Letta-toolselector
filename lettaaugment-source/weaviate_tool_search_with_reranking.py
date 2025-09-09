@@ -130,36 +130,72 @@ def search_tools_with_reranking(
             
             # Build base query
             if use_reranking:
-                print(f"Using reranking: retrieving {rerank_initial_limit} candidates for top-{limit} results")
+                print(f"Using client-side reranking: retrieving {rerank_initial_limit} candidates for top-{limit} results")
                 
-                # Two-stage retrieval with reranking
+                # Get initial results without Weaviate reranking to avoid panics
                 result = collection.query.hybrid(
                     query=enhanced_query,
                     alpha=0.75,  # 75% vector search, 25% keyword search
                     limit=rerank_initial_limit,  # Get more candidates for reranking
                     fusion_type=HybridFusion.RELATIVE_SCORE,
                     query_properties=["name^2", "enhanced_description^2", "description^1.5", "tags"],
-                    rerank=Rerank(
-                        prop=rerank_property,
-                        query=enhanced_query
-                    ),
                     return_metadata=MetadataQuery(score=True)
                 )
                 
-                # Sort by rerank score and take top-k
-                if result and hasattr(result, 'objects'):
-                    # Extract objects with rerank scores
-                    scored_objects = []
-                    for obj in result.objects:
-                        if hasattr(obj, 'metadata') and obj.metadata:
-                            rerank_score = getattr(obj.metadata, 'rerank_score', 0.0)
-                        else:
-                            rerank_score = 0.0
-                        scored_objects.append((rerank_score, obj))
-                    
-                    # Sort by rerank score (descending) and take top-k
-                    scored_objects.sort(key=lambda x: x[0], reverse=True)
-                    result.objects = [obj for _, obj in scored_objects[:limit]]
+                # Apply client-side reranking
+                if result and hasattr(result, 'objects') and result.objects:
+                    try:
+                        # Prepare documents for reranking
+                        documents = []
+                        for obj in result.objects:
+                            # Create document text from tool properties
+                            doc_text = f"{obj.properties.get('name', '')} - {obj.properties.get('enhanced_description', obj.properties.get('description', ''))}"
+                            documents.append(doc_text.strip())
+                        
+                        if documents:
+                            # Call our reranker adapter
+                            import httpx
+                            reranker_url = "http://reranker-ollama-adapter:8080/rerank"
+                            payload = {
+                                "query": query,  # Use original query, not enhanced
+                                "documents": documents,
+                                "k": min(limit, len(documents))
+                            }
+                            
+                            response = httpx.post(reranker_url, json=payload, timeout=30.0)
+                            if response.status_code == 200:
+                                rerank_data = response.json()
+                                rerank_results = rerank_data.get('results', [])
+                                
+                                # Create mapping from rerank indices to original objects with scores
+                                scored_objects = []
+                                for rerank_result in rerank_results:
+                                    original_idx = rerank_result['index']
+                                    if original_idx < len(result.objects):
+                                        obj = result.objects[original_idx]
+                                        score = rerank_result['relevance_score']
+                                        scored_objects.append((score, obj))
+                                
+                                # Sort by rerank score and take top-k  
+                                scored_objects.sort(key=lambda x: x[0], reverse=True)
+                                
+                                # Store rerank scores on the objects for later use
+                                for score, obj in scored_objects[:limit]:
+                                    if not hasattr(obj, 'rerank_score'):
+                                        obj.rerank_score = score
+                                
+                                result.objects = [obj for _, obj in scored_objects[:limit]]
+                                
+                                print(f"Client-side reranking completed: {len(scored_objects)} results reranked")
+                            else:
+                                print(f"Reranker request failed: {response.status_code}, falling back to original order")
+                                result.objects = result.objects[:limit]
+                    except Exception as e:
+                        print(f"Client-side reranking failed: {e}, falling back to original order")
+                        result.objects = result.objects[:limit]
+                else:
+                    print("No results to rerank, proceeding with standard search")
+                    use_reranking = False  # Fall back to standard search
                     
             else:
                 print(f"Standard search without reranking for {limit} results")
@@ -185,13 +221,13 @@ def search_tools_with_reranking(
                         del tool_data['enhanced_description']
                     
                     # Handle scoring
-                    if hasattr(obj, 'metadata') and obj.metadata is not None:
-                        # Use rerank score if available, otherwise hybrid score
-                        if use_reranking:
-                            score = getattr(obj.metadata, 'rerank_score', 0.5)
-                            tool_data["rerank_score"] = score
-                        else:
-                            score = getattr(obj.metadata, 'score', 0.5)
+                    if hasattr(obj, 'rerank_score'):
+                        # Client-side reranking was used
+                        tool_data["rerank_score"] = obj.rerank_score
+                        score = obj.rerank_score
+                    elif hasattr(obj, 'metadata') and obj.metadata is not None:
+                        # Standard Weaviate scoring
+                        score = getattr(obj.metadata, 'score', 0.5)
                         
                         tool_data["distance"] = 1 - (score if score is not None else 0.5)
                         tool_data["score"] = score if score is not None else 0.5

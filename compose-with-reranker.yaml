@@ -1,6 +1,6 @@
 services:
   weaviate:
-    image: semitechnologies/weaviate:1.25.0
+    image: semitechnologies/weaviate:1.32.7
     ports:
       - 8080:8080
       - 50051:50051
@@ -35,10 +35,8 @@ services:
 
   # NEW: Ollama Reranker Adapter Service
   reranker-ollama-adapter:
-    # Build locally with the fix for .well-known/ready endpoint
-    build:
-      context: .
-      dockerfile: Dockerfile.reranker
+    # Use published container with panic fixes
+    image: ghcr.io/oculairmedia/letta-toolselector-reranker-adapter:latest
     container_name: ollama-reranker-adapter
     ports:
       - 8091:8080  # Expose on 8091 for debugging

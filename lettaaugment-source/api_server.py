@@ -573,6 +573,7 @@ async def attach_tools():
         limit = data.get('limit', 10)
         agent_id = data.get('agent_id')
         keep_tools = data.get('keep_tools', [])
+        min_score = data.get('min_score', 50.0)  # Add min_score parameter (default 50.0)
 
         if not agent_id:
             logger.warning("Attach request missing 'agent_id'.")
@@ -631,12 +632,31 @@ async def attach_tools():
             )
             
             logger.info(f"Found {len(matching_tools_from_search)} matching tools from Weaviate search.")
+            
+            # 3.5. Filter tools by min_score threshold
+            filtered_tools = []
+            for tool in matching_tools_from_search:
+                # Get the score - check for rerank_score first, then fall back to score
+                tool_score = tool.get('rerank_score')
+                if tool_score is None:
+                    tool_score = tool.get('score', 0)
+                
+                # Convert score from 0-1 to 0-100 scale
+                tool_score_percent = tool_score * 100
+                
+                if tool_score_percent >= min_score:
+                    filtered_tools.append(tool)
+                    logger.debug(f"Tool '{tool.get('name')}' passed filter with score {tool_score_percent:.1f}% >= {min_score}%")
+                else:
+                    logger.debug(f"Tool '{tool.get('name')}' filtered out with score {tool_score_percent:.1f}% < {min_score}%")
+            
+            logger.info(f"Score filtering: {len(filtered_tools)} of {len(matching_tools_from_search)} tools passed min_score threshold of {min_score}%")
 
             # 4. Process matching tools (check cache, register if needed)
             letta_tools_cache = await read_tool_cache() # Load main cache
             mcp_servers = await read_mcp_servers_cache() # Load MCP servers
 
-            process_tasks = [process_matching_tool(tool, letta_tools_cache, mcp_servers) for tool in matching_tools_from_search]
+            process_tasks = [process_matching_tool(tool, letta_tools_cache, mcp_servers) for tool in filtered_tools]
             processed_tools_results = await asyncio.gather(*process_tasks, return_exceptions=True)
             
             processed_tools = []
@@ -687,12 +707,12 @@ async def attach_tools():
 
             return jsonify({
                 "success": True,
-                "message": f"Successfully processed {len(matching_tools_from_search)} candidates, attached {len(results['successful_attachments'])} tool(s) to agent {agent_id}",
+                "message": f"Successfully processed {len(matching_tools_from_search)} candidates ({len(filtered_tools)} passed min_score={min_score}%), attached {len(results['successful_attachments'])} tool(s) to agent {agent_id}",
                 "details": {
                     "detached_tools": results["detached_tools"],
                     "failed_detachments": results["failed_detachments"],
                     "processed_count": len(matching_tools_from_search), # Candidates from search
-                    "passed_filter_count": len(processed_tools), # Tools ready for attach/detach logic
+                    "passed_filter_count": len(filtered_tools), # Tools that passed min_score filter
                     "success_count": len(results["successful_attachments"]),
                     "failure_count": len(results["failed_attachments"]),
                     "successful_attachments": results["successful_attachments"],

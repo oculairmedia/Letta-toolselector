@@ -4181,6 +4181,440 @@ async def shutdown():
         await http_session.close()
         logger.info("Global aiohttp client session closed.")
 
+# ================================================================================
+# LDTS-58: Cost Control and Budget Management API Endpoints
+# ================================================================================
+
+from cost_control_manager import (
+    get_cost_manager, CostCategory, BudgetPeriod, AlertLevel,
+    record_embedding_cost, record_weaviate_cost, record_letta_api_cost
+)
+
+@app.route('/api/v1/cost-control/status', methods=['GET'])
+async def get_cost_control_status():
+    """Get overall cost control system status"""
+    try:
+        manager = get_cost_manager()
+        
+        # Get budget status
+        budget_status = await manager.get_budget_status()
+        
+        # Get recent alerts
+        recent_alerts = await manager.get_recent_alerts(hours=24)
+        alert_count = len(recent_alerts)
+        critical_alerts = len([a for a in recent_alerts if a.level in [AlertLevel.CRITICAL, AlertLevel.EMERGENCY]])
+        
+        # Get daily summary
+        daily_summary = await manager.get_cost_summary(BudgetPeriod.DAILY)
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'budget_status': budget_status,
+                'daily_summary': daily_summary.to_dict(),
+                'alert_summary': {
+                    'total_alerts_24h': alert_count,
+                    'critical_alerts_24h': critical_alerts
+                },
+                'system_status': 'healthy' if critical_alerts == 0 else 'warning'
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Cost control status error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/v1/cost-control/summary', methods=['GET'])
+async def get_cost_summary():
+    """Get cost summary for specified period"""
+    try:
+        period_str = request.args.get('period', 'daily').lower()
+        
+        try:
+            period = BudgetPeriod(period_str)
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid period: {period_str}. Valid periods: {[p.value for p in BudgetPeriod]}'
+            }), 400
+        
+        manager = get_cost_manager()
+        summary = await manager.get_cost_summary(period)
+        
+        return jsonify({
+            'success': True,
+            'data': summary.to_dict()
+        })
+        
+    except Exception as e:
+        logger.error(f"Cost summary error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/v1/cost-control/budget', methods=['GET'])
+async def get_budget_limits():
+    """Get all budget limits and their status"""
+    try:
+        manager = get_cost_manager()
+        budget_status = await manager.get_budget_status()
+        
+        return jsonify({
+            'success': True,
+            'data': budget_status
+        })
+        
+    except Exception as e:
+        logger.error(f"Budget limits error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/v1/cost-control/budget', methods=['POST'])
+async def set_budget_limit():
+    """Set or update a budget limit"""
+    try:
+        data = await request.get_json()
+        
+        # Validate required fields
+        required_fields = ['period', 'limit']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    'success': False,
+                    'error': f'Missing required field: {field}'
+                }), 400
+        
+        # Parse period
+        try:
+            period = BudgetPeriod(data['period'].lower())
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid period: {data["period"]}. Valid periods: {[p.value for p in BudgetPeriod]}'
+            }), 400
+        
+        # Parse category (optional)
+        category = None
+        if 'category' in data and data['category']:
+            try:
+                category = CostCategory(data['category'].lower())
+            except ValueError:
+                return jsonify({
+                    'success': False,
+                    'error': f'Invalid category: {data["category"]}. Valid categories: {[c.value for c in CostCategory]}'
+                }), 400
+        
+        # Parse limit
+        try:
+            limit = float(data['limit'])
+            if limit < 0:
+                raise ValueError("Limit must be non-negative")
+        except (ValueError, TypeError):
+            return jsonify({
+                'success': False,
+                'error': 'Invalid limit value. Must be a non-negative number.'
+            }), 400
+        
+        manager = get_cost_manager()
+        
+        # Set budget limit
+        budget_key = await manager.set_budget_limit(
+            category=category,
+            period=period,
+            limit=limit,
+            hard_limit=data.get('hard_limit', False),
+            alert_thresholds=data.get('alert_thresholds', [0.5, 0.8, 0.95]),
+            enabled=data.get('enabled', True)
+        )
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'budget_key': budget_key,
+                'message': f'Budget limit set for {category.value if category else "overall"} - {period.value}'
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Set budget limit error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/v1/cost-control/budget', methods=['DELETE'])
+async def remove_budget_limit():
+    """Remove a budget limit"""
+    try:
+        data = await request.get_json()
+        
+        # Validate required fields
+        if 'period' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing required field: period'
+            }), 400
+        
+        # Parse period
+        try:
+            period = BudgetPeriod(data['period'].lower())
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid period: {data["period"]}. Valid periods: {[p.value for p in BudgetPeriod]}'
+            }), 400
+        
+        # Parse category (optional)
+        category = None
+        if 'category' in data and data['category']:
+            try:
+                category = CostCategory(data['category'].lower())
+            except ValueError:
+                return jsonify({
+                    'success': False,
+                    'error': f'Invalid category: {data["category"]}. Valid categories: {[c.value for c in CostCategory]}'
+                }), 400
+        
+        manager = get_cost_manager()
+        removed = await manager.remove_budget_limit(category, period)
+        
+        if removed:
+            return jsonify({
+                'success': True,
+                'data': {
+                    'message': f'Budget limit removed for {category.value if category else "overall"} - {period.value}'
+                }
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Budget limit not found'
+            }), 404
+        
+    except Exception as e:
+        logger.error(f"Remove budget limit error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/v1/cost-control/alerts', methods=['GET'])
+async def get_cost_alerts():
+    """Get recent cost alerts"""
+    try:
+        hours = int(request.args.get('hours', 24))
+        if hours < 1 or hours > 168:  # Limit to 1 hour - 1 week
+            hours = 24
+            
+        manager = get_cost_manager()
+        alerts = await manager.get_recent_alerts(hours=hours)
+        
+        # Convert alerts to dict format
+        alert_data = [alert.to_dict() for alert in alerts]
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'alerts': alert_data,
+                'count': len(alert_data),
+                'hours_requested': hours
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Cost alerts error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/v1/cost-control/record', methods=['POST'])
+async def record_manual_cost():
+    """Manually record a cost entry"""
+    try:
+        data = await request.get_json()
+        
+        # Validate required fields
+        required_fields = ['category', 'operation', 'cost']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    'success': False,
+                    'error': f'Missing required field: {field}'
+                }), 400
+        
+        # Parse category
+        try:
+            category = CostCategory(data['category'].lower())
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid category: {data["category"]}. Valid categories: {[c.value for c in CostCategory]}'
+            }), 400
+        
+        # Parse cost
+        try:
+            cost = float(data['cost'])
+            if cost < 0:
+                raise ValueError("Cost must be non-negative")
+        except (ValueError, TypeError):
+            return jsonify({
+                'success': False,
+                'error': 'Invalid cost value. Must be a non-negative number.'
+            }), 400
+        
+        manager = get_cost_manager()
+        
+        # Record the cost
+        allowed = await manager.record_cost(
+            category=category,
+            operation=data['operation'],
+            cost=cost,
+            metadata=data.get('metadata', {})
+        )
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'recorded': True,
+                'allowed': allowed,
+                'message': 'Cost recorded successfully' if allowed else 'Cost recorded but operation would be blocked by hard limits'
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Record manual cost error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/v1/cost-control/estimate', methods=['POST'])
+async def estimate_operation_cost():
+    """Estimate cost for a planned operation"""
+    try:
+        data = await request.get_json()
+        
+        if 'operation_type' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing required field: operation_type'
+            }), 400
+        
+        operation_type = data['operation_type']
+        params = data.get('params', {})
+        
+        manager = get_cost_manager()
+        estimated_cost = await manager.estimate_operation_cost(operation_type, **params)
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'operation_type': operation_type,
+                'estimated_cost': estimated_cost,
+                'currency': 'USD',
+                'params_used': params
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Estimate operation cost error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/v1/cost-control/reset', methods=['POST'])
+async def reset_period_costs():
+    """Reset costs for a specific period and category (admin function)"""
+    try:
+        data = await request.get_json()
+        
+        if 'period' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing required field: period'
+            }), 400
+        
+        # Parse period
+        try:
+            period = BudgetPeriod(data['period'].lower())
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid period: {data["period"]}. Valid periods: {[p.value for p in BudgetPeriod]}'
+            }), 400
+        
+        # Parse category (optional)
+        category = None
+        if 'category' in data and data['category']:
+            try:
+                category = CostCategory(data['category'].lower())
+            except ValueError:
+                return jsonify({
+                    'success': False,
+                    'error': f'Invalid category: {data["category"]}. Valid categories: {[c.value for c in CostCategory]}'
+                }), 400
+        
+        manager = get_cost_manager()
+        await manager.reset_period_costs(category, period)
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'message': f'Costs reset for {category.value if category else "all categories"} in period {period.value}'
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Reset period costs error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# Add cost tracking to existing operations
+async def track_embedding_cost(operation: str, token_count: int, provider: str = "openai"):
+    """Helper function to track embedding costs in existing operations"""
+    try:
+        await record_embedding_cost(operation, token_count, provider)
+    except Exception as e:
+        logger.warning(f"Failed to track embedding cost: {e}")
+
+
+async def track_weaviate_operation_cost(operation: str, operation_type: str, count: int = 1):
+    """Helper function to track Weaviate operation costs"""
+    try:
+        await record_weaviate_cost(operation, operation_type, count)
+    except Exception as e:
+        logger.warning(f"Failed to track Weaviate cost: {e}")
+
+
+async def track_letta_api_cost(operation: str, call_count: int = 1):
+    """Helper function to track Letta API costs"""
+    try:
+        await record_letta_api_cost(operation, call_count)
+    except Exception as e:
+        logger.warning(f"Failed to track Letta API cost: {e}")
+
+
+# ================================================================================
+
 if __name__ == '__main__':
     # Use Hypercorn for serving
     # Ensure PORT is an integer

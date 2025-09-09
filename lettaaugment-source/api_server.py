@@ -1630,6 +1630,100 @@ async def refresh_tools():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# Evaluation endpoints
+@app.route('/api/v1/evaluations', methods=['POST'])
+async def submit_evaluation():
+    """Submit an evaluation rating."""
+    try:
+        data = await request.get_json()
+        
+        # Validate required fields
+        required_fields = ['query', 'result_id', 'rating']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"success": False, "error": f"Missing required field: {field}"}), 400
+        
+        # Create evaluation record
+        evaluation = {
+            "id": "eval_" + str(int(time.time())),
+            "query": data.get("query"),
+            "result_id": data.get("result_id"),
+            "rating": data.get("rating"),
+            "feedback": data.get("feedback", ""),
+            "timestamp": time.time(),
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+        }
+        
+        # For now, just log the evaluation (can be extended to store in database)
+        logger.info(f"Evaluation submitted: {evaluation}")
+        
+        return jsonify({
+            "success": True,
+            "data": evaluation
+        })
+    except Exception as e:
+        logger.error(f"Error submitting evaluation: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/evaluations', methods=['GET'])
+async def get_evaluations():
+    """Get evaluations with optional query and limit parameters."""
+    try:
+        query = request.args.get('query')
+        limit = request.args.get('limit', 50, type=int)
+        
+        # For now, return empty array since we don't have persistent storage
+        # This can be extended to query from database
+        evaluations = []
+        
+        # If we had stored evaluations, we would filter and limit them here
+        logger.info(f"Evaluations requested - query: {query}, limit: {limit}")
+        
+        return jsonify({
+            "success": True,
+            "data": evaluations,
+            "total": len(evaluations)
+        })
+    except Exception as e:
+        logger.error(f"Error getting evaluations: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# Analytics endpoint
+@app.route('/api/v1/analytics', methods=['GET'])
+async def get_analytics():
+    """Get analytics with optional date range parameters."""
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # For now, return mock analytics data
+        # This can be extended to calculate real metrics
+        analytics_data = {
+            "search_count": 0,
+            "tool_usage": {},
+            "avg_rating": 0.0,
+            "total_evaluations": 0,
+            "date_range": {
+                "start": start_date,
+                "end": end_date
+            },
+            "top_tools": [],
+            "recent_searches": []
+        }
+        
+        logger.info(f"Analytics requested - start: {start_date}, end: {end_date}")
+        
+        return jsonify({
+            "success": True,
+            "data": analytics_data
+        })
+    except Exception as e:
+        logger.error(f"Error getting analytics: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # Health endpoints (both versions for compatibility)
 @app.route('/api/v1/health', methods=['GET'])
 async def health_check_v1():

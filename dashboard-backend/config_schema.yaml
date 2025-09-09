@@ -1,0 +1,420 @@
+# LDTS-33: Comprehensive YAML Configuration Schema
+# LDTS Reranker Testing Dashboard Configuration Schema
+
+# This schema defines the complete configuration structure for the LDTS dashboard
+# supporting multi-provider embeddings, reranker models, Weaviate settings, and more
+
+# =============================================================================
+# EMBEDDING PROVIDERS CONFIGURATION
+# =============================================================================
+embedding_providers:
+  # OpenAI Embedding Provider
+  openai:
+    enabled: true
+    api_key: "${OPENAI_API_KEY}"
+    model: "text-embedding-3-small"
+    dimensions: 1536
+    batch_size: 100
+    timeout_seconds: 30
+    retry_attempts: 3
+    rate_limit:
+      requests_per_minute: 3000
+      tokens_per_minute: 1000000
+    cost_tracking:
+      cost_per_1k_tokens: 0.00002
+      budget_limit_usd: 100.0
+    
+  # Ollama Embedding Provider
+  ollama:
+    enabled: true
+    base_url: "${OLLAMA_BASE_URL:-http://192.168.50.80:11434}"
+    model: "nomic-embed-text"
+    dimensions: 768
+    batch_size: 50
+    timeout_seconds: 60
+    retry_attempts: 2
+    keep_alive: "10m"
+    num_thread: 4
+    
+  # Hugging Face Embedding Provider (Future)
+  huggingface:
+    enabled: false
+    api_key: "${HUGGINGFACE_API_KEY}"
+    model: "sentence-transformers/all-MiniLM-L6-v2"
+    dimensions: 384
+    batch_size: 32
+    
+  # Default provider selection
+  default_provider: "openai"
+  fallback_provider: "ollama"
+
+# =============================================================================
+# RERANKER MODELS CONFIGURATION
+# =============================================================================
+reranker_models:
+  # Ollama Reranker
+  ollama_reranker:
+    enabled: true
+    provider: "ollama"
+    base_url: "${OLLAMA_BASE_URL:-http://192.168.50.80:11434}"
+    model: "dengcao/Qwen3-Reranker-4B:Q5_K_M"
+    timeout_seconds: 30
+    max_batch_size: 16
+    temperature: 0.1
+    num_predict: 1
+    keep_alive: "5m"
+    
+  # Cohere Reranker (Future)
+  cohere_reranker:
+    enabled: false
+    api_key: "${COHERE_API_KEY}"
+    model: "rerank-english-v2.0"
+    max_chunks_per_doc: 10
+    
+  # Default reranker
+  default_reranker: "ollama_reranker"
+
+# =============================================================================
+# WEAVIATE DATABASE CONFIGURATION
+# =============================================================================
+weaviate:
+  # Connection settings
+  url: "${WEAVIATE_URL:-http://weaviate:8080}"
+  timeout_config:
+    query: 60
+    insert: 120
+    init: 20
+  
+  # Schema configuration
+  schema:
+    class_name: "Tool"
+    vectorizer: "none"  # Using external embeddings
+    distance_metric: "cosine"
+    ef: 64
+    ef_construction: 128
+    max_connections: 64
+    
+  # Index settings
+  index:
+    cleanup_interval_seconds: 300
+    max_import_goroutines: 8
+    
+  # Search parameters
+  search:
+    # Hybrid search configuration
+    hybrid:
+      alpha: 0.75  # 75% vector, 25% keyword
+      query_expansion: true
+      max_expanded_terms: 5
+      
+    # Vector search settings
+    vector:
+      certainty: 0.6
+      distance: 0.4
+      
+    # BM25 keyword search settings
+    keyword:
+      properties: ["name", "description", "category"]
+      
+  # Query limits and performance
+  limits:
+    max_results: 1000
+    default_limit: 50
+    offset_limit: 10000
+
+# =============================================================================
+# SEARCH AND RANKING CONFIGURATION  
+# =============================================================================
+search_config:
+  # Query processing
+  query_processing:
+    enable_query_expansion: true
+    expand_with_synonyms: true
+    max_query_length: 500
+    stopwords_removal: true
+    stemming: false
+    
+  # Search strategy
+  search_strategy:
+    use_hybrid_search: true
+    hybrid_alpha: 0.75
+    enable_reranking: true
+    rerank_top_k: 50
+    final_results_limit: 20
+    
+  # Filters and facets
+  filters:
+    enable_category_filter: true
+    enable_source_filter: true
+    enable_tag_filter: true
+    enable_date_range_filter: true
+    
+  # Result scoring
+  scoring:
+    boost_exact_matches: 1.5
+    boost_name_matches: 1.3
+    boost_recent_tools: 1.1
+    decay_function: "exponential"
+
+# =============================================================================
+# EVALUATION AND TESTING CONFIGURATION
+# =============================================================================
+evaluation:
+  # Metrics configuration
+  metrics:
+    precision_at_k: [1, 3, 5, 10, 20]
+    recall_at_k: [1, 3, 5, 10, 20]
+    ndcg_at_k: [1, 3, 5, 10, 20]
+    mrr: true
+    map: true
+    
+  # Test datasets
+  test_datasets:
+    manual_evaluations: "config/manual_evaluations.yaml"
+    benchmark_queries: "config/benchmark_queries.yaml"
+    golden_standard: "config/golden_standard.yaml"
+    
+  # A/B testing
+  ab_testing:
+    enabled: true
+    traffic_split: 0.5  # 50/50 split
+    minimum_sample_size: 100
+    significance_level: 0.05
+    
+  # Automated evaluation
+  automated_evaluation:
+    enabled: true
+    schedule_cron: "0 2 * * *"  # Daily at 2 AM
+    batch_size: 100
+    timeout_minutes: 60
+
+# =============================================================================
+# DASHBOARD INTERFACE CONFIGURATION
+# =============================================================================
+dashboard:
+  # UI settings
+  ui:
+    theme: "light"  # light, dark, auto
+    results_per_page: 20
+    max_results_display: 100
+    enable_dark_mode: true
+    show_debug_info: false
+    
+  # Search interface
+  search_interface:
+    enable_query_suggestions: true
+    enable_search_history: true
+    enable_saved_searches: true
+    max_search_history: 50
+    
+  # Results display
+  results_display:
+    show_scores: true
+    show_metadata: true
+    show_comparison_view: true
+    enable_result_export: true
+    highlight_differences: true
+    
+  # Configuration panel
+  configuration_panel:
+    show_advanced_options: false
+    enable_preset_management: true
+    show_cost_estimates: true
+    enable_real_time_updates: true
+
+# =============================================================================
+# PERFORMANCE AND MONITORING CONFIGURATION
+# =============================================================================
+performance:
+  # Caching
+  caching:
+    enabled: true
+    cache_type: "redis"  # redis, memory, file
+    ttl_seconds: 3600
+    max_cache_size_mb: 512
+    
+  # Rate limiting
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 60
+    search_requests_per_minute: 30
+    rerank_requests_per_minute: 15
+    concurrent_requests: 10
+    
+  # Resource monitoring
+  monitoring:
+    enabled: true
+    metrics_collection_interval: 60
+    max_memory_usage_mb: 2048
+    max_cpu_usage_percent: 80.0
+    
+  # Logging
+  logging:
+    level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+    format: "structured"  # structured, simple
+    enable_request_logging: true
+    enable_performance_logging: true
+
+# =============================================================================
+# SECURITY AND SAFETY CONFIGURATION
+# =============================================================================
+security:
+  # Safety mode
+  safety_mode:
+    enabled: true
+    read_only_mode: true
+    block_production_access: true
+    allowed_operations: ["search", "evaluate", "configure"]
+    
+  # API security
+  api_security:
+    require_api_key: false
+    enable_cors: true
+    allowed_origins: ["http://localhost:3000", "http://localhost:3001"]
+    max_request_size_mb: 10
+    
+  # Audit logging
+  audit_logging:
+    enabled: true
+    log_all_requests: true
+    log_configuration_changes: true
+    retention_days: 90
+
+# =============================================================================
+# DATA MANAGEMENT CONFIGURATION
+# =============================================================================
+data_management:
+  # Tool inventory
+  tool_inventory:
+    sync_interval_minutes: 5
+    enable_auto_sync: true
+    backup_before_sync: true
+    
+  # Embeddings management
+  embeddings:
+    enable_versioning: true
+    batch_update_size: 1000
+    enable_migration_support: true
+    backup_before_migration: true
+    
+  # Data validation
+  validation:
+    enable_schema_validation: true
+    enable_content_validation: true
+    max_description_length: 5000
+    required_fields: ["name", "description", "category"]
+
+# =============================================================================
+# INTEGRATION CONFIGURATION
+# =============================================================================
+integration:
+  # Letta API integration
+  letta_api:
+    base_url: "${LETTA_API_URL}"
+    api_key: "${LETTA_PASSWORD}"
+    timeout_seconds: 30
+    retry_attempts: 3
+    
+  # MCP servers
+  mcp_servers:
+    enabled: true
+    discovery_interval_minutes: 10
+    tool_registration_auto: true
+    
+  # External services
+  external_services:
+    context7:
+      enabled: false
+      api_key: "${CONTEXT7_API_KEY}"
+    
+# =============================================================================
+# PRESETS AND TEMPLATES
+# =============================================================================
+presets:
+  # Quick start presets
+  quick_start:
+    "fast_search":
+      embedding_provider: "ollama"
+      reranker: null
+      search_limit: 10
+      description: "Fast local search without reranking"
+      
+    "high_quality":
+      embedding_provider: "openai"
+      reranker: "ollama_reranker"
+      search_limit: 20
+      description: "High-quality search with reranking"
+      
+    "development":
+      embedding_provider: "ollama"
+      reranker: "ollama_reranker"
+      search_limit: 5
+      enable_debug: true
+      description: "Development and testing configuration"
+      
+  # Advanced presets
+  advanced:
+    "benchmark_evaluation":
+      embedding_provider: "openai"
+      reranker: "ollama_reranker"
+      search_limit: 50
+      enable_all_metrics: true
+      description: "Comprehensive benchmark evaluation"
+      
+    "cost_optimized":
+      embedding_provider: "ollama"
+      reranker: null
+      search_limit: 10
+      enable_caching: true
+      description: "Cost-optimized configuration"
+
+# =============================================================================
+# EXPERIMENTAL FEATURES
+# =============================================================================
+experimental:
+  # Feature flags
+  features:
+    enable_multi_model_ensemble: false
+    enable_adaptive_reranking: false
+    enable_query_understanding: false
+    enable_personalization: false
+    
+  # Research settings
+  research:
+    enable_experiment_tracking: true
+    enable_hyperparameter_tuning: false
+    enable_model_comparison: true
+    
+# =============================================================================
+# ENVIRONMENT-SPECIFIC OVERRIDES
+# =============================================================================
+environments:
+  development:
+    logging:
+      level: "DEBUG"
+    performance:
+      caching:
+        enabled: false
+    dashboard:
+      ui:
+        show_debug_info: true
+        
+  testing:
+    security:
+      safety_mode:
+        read_only_mode: true
+    performance:
+      rate_limiting:
+        requests_per_minute: 1000
+        
+  production:
+    logging:
+      level: "WARNING"
+    security:
+      safety_mode:
+        block_production_access: true
+    performance:
+      monitoring:
+        enabled: true
+      caching:
+        enabled: true

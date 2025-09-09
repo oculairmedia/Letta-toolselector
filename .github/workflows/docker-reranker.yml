@@ -1,0 +1,138 @@
+name: Docker Build & Deploy - Reranker Adapter
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'ollama_reranker_adapter.py'
+      - 'Dockerfile.reranker'
+      - 'requirements-reranker.txt'
+      - '.github/workflows/docker-reranker.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ollama_reranker_adapter.py'
+      - 'Dockerfile.reranker'
+      - 'requirements-reranker.txt'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}-reranker-adapter
+
+jobs:
+  # Build and Push Reranker Adapter
+  build-reranker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.12.0
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Reranker Adapter
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.reranker
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64
+          build-args: |
+            BUILDKIT_CONTEXT_KEEP_GIT_DIR=1
+
+  # Test Reranker Adapter
+  test-reranker:
+    runs-on: ubuntu-latest
+    needs: build-reranker
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install test dependencies
+        run: |
+          pip install httpx pytest
+      
+      - name: Pull and run reranker adapter
+        run: |
+          docker run -d \
+            --name reranker-adapter \
+            -p 8083:8080 \
+            -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+            -e OLLAMA_MODEL=dengcao/Qwen3-Reranker-4B:Q5_K_M \
+            -e LOG_LEVEL=INFO \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${GITHUB_SHA::7}
+          
+          # Wait for service to be ready
+          sleep 10
+      
+      - name: Test adapter health
+        run: |
+          curl -f http://localhost:8083/health || exit 1
+      
+      - name: Test adapter metrics
+        run: |
+          curl -f http://localhost:8083/metrics || exit 1
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop reranker-adapter || true
+          docker rm reranker-adapter || true
+
+  # Security scan for reranker
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: build-reranker
+    continue-on-error: true
+    
+    steps:
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-reranker.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        with:
+          sarif_file: 'trivy-reranker.sarif'

@@ -1,0 +1,180 @@
+services:
+  weaviate:
+    image: semitechnologies/weaviate:1.25.0
+    ports:
+      - 8080:8080
+      - 50051:50051
+    environment:
+      QUERY_DEFAULTS_LIMIT: 15
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      DEFAULT_VECTORIZER_MODULE: text2vec-ollama
+      # Enable reranker-transformers module
+      ENABLE_MODULES: text2vec-ollama,text2vec-openai,reranker-transformers
+      # Point to our Ollama adapter
+      RERANKER_INFERENCE_API: http://reranker-ollama-adapter:8080
+      CLUSTER_HOSTNAME: node1
+      READINESS_MAX_WAIT_SECS: 300
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    healthcheck:
+      test:
+        - CMD
+        - sh
+        - -c
+        - nc -z localhost 8080 || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    depends_on:
+      reranker-ollama-adapter:
+        condition: service_healthy
+    networks:
+      - letta-tools
+
+  # NEW: Ollama Reranker Adapter Service
+  reranker-ollama-adapter:
+    build:
+      context: .
+      dockerfile: Dockerfile.reranker
+    image: lettatoolsselector/reranker-ollama-adapter:latest
+    container_name: ollama-reranker-adapter
+    ports:
+      - 8083:8080  # Expose on 8083 for debugging
+    environment:
+      - OLLAMA_BASE_URL=http://192.168.50.80:11434
+      - OLLAMA_MODEL=dengcao/Qwen3-Reranker-4B:Q5_K_M
+      - BATCH_SIZE=10
+      - TIMEOUT_SECONDS=30
+      - LOG_LEVEL=INFO
+      - ENABLE_CACHE=true
+      - CACHE_TTL=300
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - letta-tools
+
+  api-server:
+    image: ghcr.io/oculairmedia/letta-toolselector-api-server:latest
+    container_name: weaviate-tools-api
+    ports:
+      - 8020:3001
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LETTA_API_URL=${LETTA_API_URL}
+      - LETTA_PASSWORD=${LETTA_PASSWORD}
+      - WEAVIATE_URL=http://weaviate:8080/
+      - WEAVIATE_API_KEY=${WEAVIATE_API_KEY}
+      - PORT=3001
+      - DEFAULT_DROP_RATE=${DEFAULT_DROP_RATE:-0.6}
+      - MAX_TOTAL_TOOLS=${MAX_TOTAL_TOOLS:-20}
+      - MAX_MCP_TOOLS=${MAX_MCP_TOOLS:-15}
+      - MIN_MCP_TOOLS=${MIN_MCP_TOOLS:-7}
+      - EXCLUDE_LETTA_CORE_TOOLS=${EXCLUDE_LETTA_CORE_TOOLS:-true}
+      - EXCLUDE_OFFICIAL_TOOLS=${EXCLUDE_OFFICIAL_TOOLS:-true}
+      - MANAGE_ONLY_MCP_TOOLS=${MANAGE_ONLY_MCP_TOOLS:-true}
+      # Embedding Provider Configuration
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-ollama}
+      - OLLAMA_EMBEDDING_HOST=${OLLAMA_EMBEDDING_HOST:-192.168.50.80}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-dengcao/Qwen3-Embedding-4B:Q4_K_M}
+      - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-2560}
+      - USE_OLLAMA_EMBEDDINGS=${USE_OLLAMA_EMBEDDINGS:-true}
+      # NEW: Reranking Configuration
+      - ENABLE_RERANKING=${ENABLE_RERANKING:-true}
+      - RERANK_INITIAL_LIMIT=${RERANK_INITIAL_LIMIT:-30}
+      - RERANK_TOP_K=${RERANK_TOP_K:-10}
+    restart: unless-stopped
+    volumes:
+      - ./.env:/app/.env:ro
+      - tool_cache_volume:/app/runtime_cache
+      - ./lettaaugment-source:/app:rw
+    depends_on:
+      weaviate:
+        condition: service_healthy
+    networks:
+      - letta-tools
+
+  sync-service:
+    image: ghcr.io/oculairmedia/letta-toolselector-sync-service:latest
+    container_name: weaviate-tools-sync
+    command: python sync_service.py
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LETTA_API_URL=${LETTA_API_URL}
+      - LETTA_PASSWORD=${LETTA_PASSWORD}
+      - API_URL=http://api-server:3001
+      - SYNC_INTERVAL=300
+    volumes:
+      - ./.env:/app/.env:ro
+      - tool_cache_volume:/app/runtime_cache
+      - ./lettaaugment-source:/app:rw
+    restart: unless-stopped
+    depends_on:
+      api-server:
+        condition: service_started
+    networks:
+      - letta-tools
+
+  time-service:
+    image: ghcr.io/oculairmedia/letta-toolselector-api-server:latest
+    container_name: weaviate-tools-time
+    command: python time_memory_service.py
+    environment:
+      - WEAVIATE_URL=http://weaviate:8080/
+      - WEAVIATE_API_KEY=${WEAVIATE_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LETTA_API_URL=https://letta2.oculair.ca/v1
+      - LETTA_PASSWORD=${LETTA_PASSWORD}
+      - UPDATE_INTERVAL=60
+    volumes:
+      - ./.env:/app/.env:ro
+    restart: unless-stopped
+    depends_on:
+      weaviate:
+        condition: service_healthy
+    networks:
+      - letta-tools
+
+  mcp-server:
+    image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:latest
+    container_name: toolselector-mcp
+    ports:
+      - 3020:3020
+    environment:
+      - PORT=3020
+      - NODE_ENV=production
+      - LETTA_API_URL=${LETTA_API_URL}
+      - LETTA_PASSWORD=${LETTA_PASSWORD}
+    restart: unless-stopped
+    labels:
+      - homepage.group=MCP Services
+      - homepage.name=Letta Toolselector MCP
+      - homepage.icon=
+      - homepage.href=http://192.168.50.90:3020/mcp
+      - homepage.description=mcp server for the letta toolselector
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:3020/health
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - letta-tools
+
+networks:
+  letta-tools:
+    driver: bridge
+
+volumes:
+  weaviate_data:
+  tool_cache_volume:

@@ -18,7 +18,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}-reranker-adapter
+  IMAGE_NAME: oculairmedia/letta-toolselector-reranker-adapter
 
 jobs:
   # Build and Push Reranker Adapter

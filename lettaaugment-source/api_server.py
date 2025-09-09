@@ -1724,6 +1724,232 @@ async def get_analytics():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# Rerank comparison endpoint
+@app.route('/api/v1/rerank/compare', methods=['POST'])
+async def compare_rerank_configurations():
+    """Compare two reranker configurations side-by-side."""
+    try:
+        data = await request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "No data provided"}), 400
+        
+        # Validate required fields
+        query = data.get('query')
+        config_a = data.get('config_a')
+        config_b = data.get('config_b')
+        limit = data.get('limit', 10)
+        
+        if not query or not config_a or not config_b:
+            return jsonify({"success": False, "error": "Missing required fields: query, config_a, config_b"}), 400
+        
+        # Perform search with both configurations
+        results_a = []
+        results_b = []
+        
+        try:
+            # Search with configuration A
+            search_results_a = search_tools(query, limit=limit, reranker_config=config_a)
+            for i, result in enumerate(search_results_a):
+                formatted_result = {
+                    "tool": {
+                        "id": result.get('id', ''),
+                        "name": result.get('name', ''),
+                        "description": result.get('description', ''),
+                        "source": result.get('source', 'unknown'),
+                        "category": result.get('category'),
+                        "tags": result.get('tags', [])
+                    },
+                    "score": result.get('score', 0),
+                    "rank": i + 1,
+                    "reasoning": result.get('reasoning', ''),
+                    "config": "A"
+                }
+                results_a.append(formatted_result)
+        except Exception as e:
+            logger.error(f"Error with configuration A: {str(e)}")
+            results_a = []
+            
+        try:
+            # Search with configuration B
+            search_results_b = search_tools(query, limit=limit, reranker_config=config_b)
+            for i, result in enumerate(search_results_b):
+                formatted_result = {
+                    "tool": {
+                        "id": result.get('id', ''),
+                        "name": result.get('name', ''),
+                        "description": result.get('description', ''),
+                        "source": result.get('source', 'unknown'),
+                        "category": result.get('category'),
+                        "tags": result.get('tags', [])
+                    },
+                    "score": result.get('score', 0),
+                    "rank": i + 1,
+                    "reasoning": result.get('reasoning', ''),
+                    "config": "B"
+                }
+                results_b.append(formatted_result)
+        except Exception as e:
+            logger.error(f"Error with configuration B: {str(e)}")
+            results_b = []
+        
+        # Calculate comparison metrics
+        comparison_metrics = {
+            "total_results_a": len(results_a),
+            "total_results_b": len(results_b),
+            "avg_score_a": sum(r.get('score', 0) for r in results_a) / max(len(results_a), 1),
+            "avg_score_b": sum(r.get('score', 0) for r in results_b) / max(len(results_b), 1),
+            "top_5_overlap": calculate_overlap([r['tool']['id'] for r in results_a[:5]], 
+                                               [r['tool']['id'] for r in results_b[:5]]),
+            "rank_correlation": calculate_rank_correlation(results_a, results_b)
+        }
+        
+        response_data = {
+            "query": query,
+            "results_a": results_a,
+            "results_b": results_b,
+            "comparison_metrics": comparison_metrics,
+            "config_a_name": config_a.get('name', 'Configuration A'),
+            "config_b_name": config_b.get('name', 'Configuration B'),
+            "timestamp": time.time()
+        }
+        
+        logger.info(f"Rerank comparison completed for query: {query}")
+        return jsonify({"success": True, "data": response_data})
+        
+    except Exception as e:
+        logger.error(f"Error during rerank comparison: {str(e)}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def calculate_overlap(list_a, list_b):
+    """Calculate the overlap percentage between two lists."""
+    if not list_a or not list_b:
+        return 0.0
+    set_a = set(list_a)
+    set_b = set(list_b)
+    intersection = len(set_a & set_b)
+    union = len(set_a | set_b)
+    return (intersection / union) * 100 if union > 0 else 0.0
+
+
+def calculate_rank_correlation(results_a, results_b):
+    """Calculate rank correlation between two result sets."""
+    try:
+        # Create rank mappings
+        rank_map_a = {r['tool']['id']: r['rank'] for r in results_a}
+        rank_map_b = {r['tool']['id']: r['rank'] for r in results_b}
+        
+        # Find common tools
+        common_tools = set(rank_map_a.keys()) & set(rank_map_b.keys())
+        if len(common_tools) < 2:
+            return 0.0
+        
+        # Calculate Spearman correlation
+        ranks_a = [rank_map_a[tool_id] for tool_id in common_tools]
+        ranks_b = [rank_map_b[tool_id] for tool_id in common_tools]
+        
+        n = len(ranks_a)
+        sum_d_squared = sum((a - b) ** 2 for a, b in zip(ranks_a, ranks_b))
+        correlation = 1 - (6 * sum_d_squared) / (n * (n**2 - 1))
+        
+        return round(correlation, 3)
+    except Exception:
+        return 0.0
+
+
+# Search test endpoint with parameter overrides
+@app.route('/api/v1/search/test', methods=['GET'])
+async def test_search_with_overrides():
+    """Test search functionality with parameter overrides and detailed rankings."""
+    try:
+        query = request.args.get('query')
+        if not query:
+            return jsonify({"success": False, "error": "Query parameter is required"}), 400
+            
+        # Parse optional override parameters
+        limit = request.args.get('limit', 10, type=int)
+        alpha = request.args.get('alpha', type=float)  # Weaviate hybrid search alpha
+        distance_metric = request.args.get('distance_metric')  # e.g., 'cosine', 'euclidean'
+        reranker_enabled = request.args.get('reranker_enabled', 'true').lower() == 'true'
+        reranker_model = request.args.get('reranker_model')
+        
+        # Build configuration overrides
+        weaviate_overrides = {}
+        if alpha is not None:
+            weaviate_overrides['alpha'] = alpha
+        if distance_metric:
+            weaviate_overrides['distance_metric'] = distance_metric
+            
+        reranker_overrides = {
+            'enabled': reranker_enabled
+        }
+        if reranker_model:
+            reranker_overrides['model'] = reranker_model
+            
+        # Perform search with overrides
+        start_time = time.time()
+        
+        # Use the BM25/vector override service if needed
+        if weaviate_overrides:
+            search_results = bm25_vector_override_service(
+                query, 
+                limit=limit, 
+                overrides=weaviate_overrides,
+                reranker_config=reranker_overrides if reranker_enabled else None
+            )
+        else:
+            search_results = search_tools(query, limit=limit, reranker_config=reranker_overrides)
+        
+        search_time = time.time() - start_time
+        
+        # Format results with detailed rankings
+        formatted_results = []
+        for i, result in enumerate(search_results):
+            formatted_result = {
+                "tool": {
+                    "id": result.get('id', ''),
+                    "name": result.get('name', ''),
+                    "description": result.get('description', ''),
+                    "source": result.get('source', 'unknown'),
+                    "category": result.get('category'),
+                    "tags": result.get('tags', [])
+                },
+                "score": result.get('score', 0),
+                "rank": i + 1,
+                "reasoning": result.get('reasoning', ''),
+                "vector_score": result.get('vector_score', 0),
+                "keyword_score": result.get('keyword_score', 0),
+                "rerank_score": result.get('rerank_score', 0) if reranker_enabled else None,
+                "original_rank": result.get('original_rank', i + 1)
+            }
+            formatted_results.append(formatted_result)
+        
+        response_data = {
+            "query": query,
+            "results": formatted_results,
+            "metadata": {
+                "total_found": len(formatted_results),
+                "search_time": round(search_time, 3),
+                "parameters_used": {
+                    "limit": limit,
+                    "alpha": alpha,
+                    "distance_metric": distance_metric,
+                    "reranker_enabled": reranker_enabled,
+                    "reranker_model": reranker_model
+                },
+                "weaviate_overrides": weaviate_overrides,
+                "reranker_overrides": reranker_overrides
+            }
+        }
+        
+        logger.info(f"Test search completed for query: {query} with overrides")
+        return jsonify({"success": True, "data": response_data})
+        
+    except Exception as e:
+        logger.error(f"Error during test search: {str(e)}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # Health endpoints (both versions for compatibility)
 @app.route('/api/v1/health', methods=['GET'])
 async def health_check_v1():

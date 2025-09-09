@@ -1474,6 +1474,69 @@ async def test_reranker_connection():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route('/api/v1/ollama/models', methods=['GET'])
+async def get_ollama_models():
+    """Get available models from Ollama instance."""
+    try:
+        # Get base URL from reranker config or environment
+        base_url = os.getenv('OLLAMA_RERANKER_BASE_URL', 'http://ollama-reranker-adapter:8080')
+        
+        # Try to query Ollama API for models
+        logger.info(f"Fetching Ollama models from: {base_url}")
+        
+        async with aiohttp.ClientSession() as session:
+            # Query the Ollama API tags endpoint
+            ollama_url = f"{base_url}/api/tags"
+            async with session.get(ollama_url, timeout=10) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    models = data.get('models', [])
+                    
+                    # Format models for frontend
+                    formatted_models = []
+                    for model in models:
+                        formatted_model = {
+                            "name": model.get('name', ''),
+                            "size": model.get('size', 0),
+                            "modified_at": model.get('modified_at', ''),
+                            "digest": model.get('digest', ''),
+                            "details": model.get('details', {})
+                        }
+                        formatted_models.append(formatted_model)
+                    
+                    logger.info(f"Successfully fetched {len(formatted_models)} models from Ollama")
+                    return jsonify({
+                        "success": True, 
+                        "data": {
+                            "models": formatted_models,
+                            "base_url": base_url,
+                            "total": len(formatted_models)
+                        }
+                    })
+                else:
+                    logger.warning(f"Ollama API returned status {response.status}")
+                    return jsonify({
+                        "success": False, 
+                        "error": f"Ollama API returned status {response.status}",
+                        "fallback_models": ["mistral:7b", "llama2:7b", "codellama:7b"]
+                    }), 503
+                    
+    except asyncio.TimeoutError:
+        logger.error("Timeout connecting to Ollama API")
+        return jsonify({
+            "success": False, 
+            "error": "Timeout connecting to Ollama instance",
+            "fallback_models": ["mistral:7b", "llama2:7b", "codellama:7b"]
+        }), 503
+    except Exception as e:
+        logger.error(f"Error fetching Ollama models: {str(e)}")
+        return jsonify({
+            "success": False, 
+            "error": f"Failed to fetch models: {str(e)}",
+            "fallback_models": ["mistral:7b", "llama2:7b", "codellama:7b"]
+        }), 503
+
+
 @app.route('/api/health', methods=['GET'])
 async def health_check():
     """Health check endpoint for the API server."""

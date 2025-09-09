@@ -15,6 +15,7 @@ export const queryKeys = {
   tools: ['tools'] as const,
   search: (query: SearchQuery) => ['search', query] as const,
   rerankerConfig: ['rerankerConfig'] as const,
+  ollamaModels: ['ollamaModels'] as const,
   configPresets: ['configPresets'] as const,
   evaluations: (query?: string, limit?: number) => ['evaluations', query, limit] as const,
   analytics: (dateRange?: { start: string; end: string }) => ['analytics', dateRange] as const,
@@ -81,6 +82,14 @@ export const useUpdateRerankerConfig = () => {
 export const useTestRerankerConnection = () => {
   return useMutation({
     mutationFn: (config: RerankerConfig) => apiService.testRerankerConnection(config),
+  });
+};
+
+export const useOllamaModels = () => {
+  return useQuery({
+    queryKey: queryKeys.ollamaModels,
+    queryFn: () => apiService.getOllamaModels(),
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 };
 

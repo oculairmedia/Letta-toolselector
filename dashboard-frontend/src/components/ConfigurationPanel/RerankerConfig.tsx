@@ -29,7 +29,7 @@ import {
 } from '@mui/icons-material';
 
 import { RerankerConfig as RerankerConfigType } from '../../types';
-import { useUpdateRerankerConfig, useTestRerankerConnection } from '../../hooks/useApi';
+import { useUpdateRerankerConfig, useTestRerankerConnection, useOllamaModels } from '../../hooks/useApi';
 
 interface RerankerConfigProps {
   config?: RerankerConfigType;
@@ -66,6 +66,7 @@ const RerankerConfig: React.FC<RerankerConfigProps> = ({ config, isLoading }) =>
 
   const updateConfigMutation = useUpdateRerankerConfig();
   const testConnectionMutation = useTestRerankerConnection();
+  const { data: ollamaModelsData, isLoading: ollamaModelsLoading } = useOllamaModels();
 
   // Update form data when config loads
   useEffect(() => {
@@ -95,7 +96,13 @@ const RerankerConfig: React.FC<RerankerConfigProps> = ({ config, isLoading }) =>
   };
 
   const handleProviderChange = (provider: string) => {
-    const defaultModel = MODEL_OPTIONS[provider]?.[0] || '';
+    let defaultModel = '';
+    if (provider === 'ollama' && ollamaModelsData?.models && ollamaModelsData.models.length > 0) {
+      defaultModel = ollamaModelsData.models[0].name;
+    } else {
+      defaultModel = MODEL_OPTIONS[provider]?.[0] || '';
+    }
+    
     setFormData(prev => ({
       ...prev,
       provider,
@@ -128,7 +135,15 @@ const RerankerConfig: React.FC<RerankerConfigProps> = ({ config, isLoading }) =>
     }
   };
 
-  const availableModels = MODEL_OPTIONS[formData.provider] || [];
+  // Get available models based on provider
+  const getAvailableModels = () => {
+    if (formData.provider === 'ollama' && ollamaModelsData?.models) {
+      return ollamaModelsData.models.map(model => model.name);
+    }
+    return MODEL_OPTIONS[formData.provider] || [];
+  };
+  
+  const availableModels = getAvailableModels();
 
   if (isLoading) {
     return (
@@ -240,12 +255,31 @@ const RerankerConfig: React.FC<RerankerConfigProps> = ({ config, isLoading }) =>
                     options={availableModels}
                     value={formData.model}
                     onChange={(_, value) => handleChange('model', value || '')}
+                    loading={formData.provider === 'ollama' && ollamaModelsLoading}
                     renderInput={(params) => (
                       <TextField
                         {...params}
                         label="Model"
                         required
                         disabled={!formData.enabled}
+                        helperText={
+                          formData.provider === 'ollama' && ollamaModelsLoading
+                            ? 'Loading models from Ollama...'
+                            : formData.provider === 'ollama'
+                            ? `${availableModels.length} models available`
+                            : undefined
+                        }
+                        InputProps={{
+                          ...params.InputProps,
+                          endAdornment: (
+                            <>
+                              {formData.provider === 'ollama' && ollamaModelsLoading && (
+                                <CircularProgress color="inherit" size={20} />
+                              )}
+                              {params.InputProps.endAdornment}
+                            </>
+                          ),
+                        }}
                       />
                     )}
                     freeSolo

@@ -92,6 +92,14 @@ class ApiService {
     return response.data.data!.connected;
   }
 
+  async getOllamaModels(): Promise<{ models: Array<{ name: string; size: number; modified_at: string; details: any }>, base_url: string, total: number }> {
+    const response = await this.client.get<ApiResponse<{ models: Array<{ name: string; size: number; modified_at: string; details: any }>, base_url: string, total: number }>>('/ollama/models');
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get Ollama models');
+    }
+    return response.data.data!;
+  }
+
   // Configuration presets
   async getConfigurationPresets(): Promise<ConfigurationPreset[]> {
     const response = await this.client.get<ApiResponse<ConfigurationPreset[]>>('/config/presets');

@@ -1477,9 +1477,18 @@ async def test_reranker_connection():
 @app.route('/api/v1/ollama/models', methods=['GET'])
 async def get_ollama_models():
     """Get available models from Ollama instance."""
+    
+    def get_fallback_models():
+        """Get fallback models including configured embedding model"""
+        configured_model = os.getenv('OLLAMA_EMBEDDING_MODEL', 'llama2:7b')
+        fallback_models = [configured_model, "mistral:7b", "llama2:7b", "codellama:7b"]
+        # Remove duplicates while preserving order
+        return list(dict.fromkeys(fallback_models))
+    
     try:
-        # Get base URL from reranker config or environment
-        base_url = os.getenv('OLLAMA_RERANKER_BASE_URL', 'http://ollama-reranker-adapter:8080')
+        # Get base URL from environment configuration
+        ollama_host = os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80')
+        base_url = f"http://{ollama_host}:11434"
         
         # Try to query Ollama API for models
         logger.info(f"Fetching Ollama models from: {base_url}")
@@ -1518,7 +1527,7 @@ async def get_ollama_models():
                     return jsonify({
                         "success": False, 
                         "error": f"Ollama API returned status {response.status}",
-                        "fallback_models": ["mistral:7b", "llama2:7b", "codellama:7b"]
+                        "fallback_models": get_fallback_models()
                     }), 503
                     
     except asyncio.TimeoutError:

@@ -265,15 +265,20 @@ def search_tools_with_reranking(
             except Exception as e:
                 print(f"Error closing client: {e}")
 
-def search_tools(query: str, limit: int = 10) -> list:
+def search_tools(query: str, limit: int = 10, reranker_config: Optional[Dict[str, Any]] = None) -> list:
     """
     Backward-compatible wrapper that uses reranking if enabled.
     Maintains the original API signature while adding reranking capabilities.
     """
+    # Determine if reranking should be used
+    use_reranking = True
+    if reranker_config is not None:
+        use_reranking = reranker_config.get('enabled', True)
+        
     return search_tools_with_reranking(
         query=query,
         limit=limit,
-        use_reranking=True  # Will check ENABLE_RERANKING env var internally
+        use_reranking=use_reranking  # Will check ENABLE_RERANKING env var internally
     )
 
 def test_reranking_capability() -> Dict[str, Any]:

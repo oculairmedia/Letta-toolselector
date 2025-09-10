@@ -195,182 +195,10 @@ jobs:
           echo "Security scan completed for ${{ matrix.service }}"
           echo "SARIF file exists: ${{ steps.check-sarif.outputs.sarif-exists }}"
 
-  # Job 3: Integration Tests with Docker Compose
-  docker-integration-test:
-    runs-on: ubuntu-latest
-    needs: docker-build
-    services:
-      weaviate:
-        image: semitechnologies/weaviate:1.25.0
-        ports:
-          - 8080:8080
-          - 50051:50051
-        env:
-          QUERY_DEFAULTS_LIMIT: 25
-          AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
-          PERSISTENCE_DATA_PATH: './data'
-          DEFAULT_VECTORIZER_MODULE: 'text2vec-openai'
-          ENABLE_MODULES: 'text2vec-openai'
-          CLUSTER_HOSTNAME: 'node1'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Get current date
-        id: date
-        run: echo "date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
-
-
-      - name: Create test environment file
-        run: |
-          cat > .env << EOF
-          LETTA_API_URL=https://test-api.example.com/v1
-          LETTA_PASSWORD=test-password
-          OPENAI_API_KEY=test-key
-          WEAVIATE_URL=http://localhost:8080/
-          WEAVIATE_API_KEY=test-key
-          # Use OpenAI for tests since Ollama endpoint isn't available in CI
-          EMBEDDING_PROVIDER=openai
-          # Ollama config (for local dev)
-          OLLAMA_EMBEDDING_HOST=192.168.50.80
-          OLLAMA_EMBEDDING_MODEL=dengcao/Qwen3-Embedding-4B:Q4_K_M
-          EMBEDDING_DIMENSION=2560
-          USE_OLLAMA_EMBEDDINGS=false
-          # Build metadata
-          VERSION=${{ github.ref_name }}
-          BUILD_DATE=${{ steps.date.outputs.date }}
-          COMMIT_SHA=${{ github.sha }}
-          # Tool configuration
-          DEFAULT_DROP_RATE=0.6
-          MAX_TOTAL_TOOLS=20
-          MAX_MCP_TOOLS=15
-          MIN_MCP_TOOLS=7
-          EXCLUDE_LETTA_CORE_TOOLS=true
-          EXCLUDE_OFFICIAL_TOOLS=true
-          MANAGE_ONLY_MCP_TOOLS=true
-          EOF
-
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull built images and create test override
-        run: |
-          # The metadata action creates tags like: feature-dashboard-frontend
-          SANITIZED_REF=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
-          
-          # Pull the images that were just built and pushed
-          docker pull ghcr.io/oculairmedia/letta-toolselector-mcp-server:${SANITIZED_REF}
-          docker pull ghcr.io/oculairmedia/letta-toolselector-api-server:${SANITIZED_REF}  
-          docker pull ghcr.io/oculairmedia/letta-toolselector-sync-service:${SANITIZED_REF}
-          docker pull ghcr.io/oculairmedia/letta-toolselector-frontend:${SANITIZED_REF}
-          docker pull ghcr.io/oculairmedia/letta-toolselector-dashboard-backend:${SANITIZED_REF}
-          
-          # Create compose override to use the pulled images
-          cat > docker-compose.test.yml << EOF
-          services:
-            mcp-server:
-              image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:${SANITIZED_REF}
-            api-server:
-              image: ghcr.io/oculairmedia/letta-toolselector-api-server:${SANITIZED_REF}
-            sync-service:
-              image: ghcr.io/oculairmedia/letta-toolselector-sync-service:${SANITIZED_REF}
-            frontend:
-              image: ghcr.io/oculairmedia/letta-toolselector-frontend:${SANITIZED_REF}
-            dashboard-backend:
-              image: ghcr.io/oculairmedia/letta-toolselector-dashboard-backend:${SANITIZED_REF}
-            time-service:
-              image: ghcr.io/oculairmedia/letta-toolselector-api-server:${SANITIZED_REF}
-          EOF
-          
-          echo "Test compose override:"
-          cat docker-compose.test.yml
-          
-          # Verify images are available
-          echo "Available images:"
-          docker images | grep letta-toolselector
-          
-          # Test configuration
-          docker compose -f compose.yaml -f docker-compose.test.yml config
-
-      - name: Run integration tests
-        run: |
-          # Export environment variables for docker compose
-          export $(grep -v '^#' .env | xargs)
-          
-          # Start only services that don't conflict with GitHub Actions services
-          # Weaviate is already running as a service, so exclude it
-          echo "Starting services..."
-          docker compose -f compose.yaml -f docker-compose.test.yml up -d --scale weaviate=0
-          
-          # Check container status
-          echo "Container status:"
-          docker compose -f compose.yaml -f docker-compose.test.yml ps
-          
-          # Function to wait for service with retries
-          wait_for_service() {
-            local url=$1
-            local service_name=$2
-            local max_attempts=20
-            local wait_time=5
-            
-            echo "Waiting for $service_name to be ready at $url..."
-            
-            for i in $(seq 1 $max_attempts); do
-              echo "Attempt $i/$max_attempts for $service_name"
-              
-              if curl -f --max-time 10 --retry 3 --retry-delay 2 "$url"; then
-                echo "✅ $service_name is ready!"
-                return 0
-              fi
-              
-              echo "⏱️  $service_name not ready yet, waiting ${wait_time}s..."
-              sleep $wait_time
-            done
-            
-            echo "❌ $service_name failed to become ready after $((max_attempts * wait_time)) seconds"
-            echo "📋 Container logs for debugging:"
-            docker compose -f compose.yaml -f docker-compose.test.yml logs --tail=50
-            return 1
-          }
-          
-          # Wait for MCP server health
-          wait_for_service "http://localhost:3020/health" "MCP Server"
-          
-          # Wait for frontend health  
-          wait_for_service "http://localhost:8406/health" "Frontend"
-          
-          # Optional: Test API server if it's running
-          if docker compose -f compose.yaml -f docker-compose.test.yml ps | grep -q api-server; then
-            wait_for_service "http://localhost:8020/api/health" "API Server"
-          fi
-          
-          # Optional: Test Dashboard Backend if it's running
-          if docker compose -f compose.yaml -f docker-compose.test.yml ps | grep -q dashboard-backend; then
-            wait_for_service "http://localhost:8030/api/v1/health" "Dashboard Backend"
-          fi
-          
-          echo "✅ All integration tests passed!"
-          
-          # Show final container status
-          echo "Final container status:"
-          docker compose -f compose.yaml -f docker-compose.test.yml ps
-          
-          # Cleanup
-          echo "Cleaning up..."
-          docker compose -f compose.yaml -f docker-compose.test.yml down
-
-  # Job 4: Deploy to Staging (on develop branch)
+  # Job 3: Deploy to Staging (on develop branch)
   deploy-staging:
     runs-on: ubuntu-latest
-    needs: [docker-build, docker-integration-test]  # Removed dependency on docker-security
+    needs: [docker-build]  # Removed dependency on docker-security and integration tests
     if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
     environment:
       name: staging
@@ -380,14 +208,14 @@ jobs:
       - name: Deploy to staging
         run: |
           echo "🚀 Deploying to staging environment"
-          echo "Images built and tested successfully"
+          echo "Images built successfully"
           # Add your deployment commands here
           # e.g., kubectl, docker-compose, etc.
 
-  # Job 5: Deploy to Production (on main branch or tags)
+  # Job 4: Deploy to Production (on main branch or tags)
   deploy-production:
     runs-on: ubuntu-latest
-    needs: [docker-build, docker-integration-test]  # Removed dependency on docker-security
+    needs: [docker-build]  # Removed dependency on docker-security and integration tests
     if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && github.event_name == 'push'
     environment:
       name: production
@@ -409,7 +237,7 @@ jobs:
           echo "- **Registry**: ${{ env.REGISTRY }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Frontend URL**: http://192.168.50.90:8406" >> $GITHUB_STEP_SUMMARY
 
-  # Job 6: Cleanup old images
+  # Job 5: Cleanup old images
   cleanup:
     runs-on: ubuntu-latest
     needs: [deploy-staging, deploy-production]

@@ -19,6 +19,7 @@ import RerankerConfig from './RerankerConfig';
 import PresetsManager from './PresetsManager';
 import SystemSettings from './SystemSettings';
 import ModelRegistryManager from './ModelRegistryManager';
+import ModelIndicator from '../ModelIndicator';
 import { useRerankerConfig } from '../../hooks/useApi';
 
 interface TabPanelProps {
@@ -70,9 +71,12 @@ const ConfigurationPanel: React.FC = () => {
           <SettingsIcon />
           Configuration Panel
         </Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Configure reranker models, manage presets, and adjust system settings for optimal tool search performance.
         </Typography>
+        
+        {/* Current Model Status */}
+        <ModelIndicator showDetails={false} />
       </Paper>
 
       {/* Error Display */}

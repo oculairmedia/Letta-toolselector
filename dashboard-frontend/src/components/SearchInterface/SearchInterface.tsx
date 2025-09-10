@@ -39,6 +39,7 @@ import { SearchQuery, SearchResult, RerankerConfig } from '../../types';
 import { debounce, formatDuration, getScoreColor, truncateText } from '../../utils';
 import SearchResultCard from './SearchResultCard';
 import SearchFilters from './SearchFilters';
+import ModelIndicator from '../ModelIndicator';
 
 interface SearchInterfaceProps {}
 
@@ -239,14 +240,7 @@ const SearchInterface: React.FC<SearchInterfaceProps> = () => {
             }
           />
           
-          {rerankerConfig && (
-            <Chip
-              label={`Model: ${rerankerConfig.model}`}
-              size="small"
-              icon={<SettingsIcon />}
-              variant="outlined"
-            />
-          )}
+          <ModelIndicator compact={true} />
         </Box>
 
         {/* Recent Queries */}

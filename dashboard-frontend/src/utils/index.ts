@@ -1,7 +1,12 @@
 import { SearchResult } from '../types';
 
 // Format numbers with proper units
-export const formatNumber = (num: number): string => {
+export const formatNumber = (num: number | undefined | null): string => {
+  // Handle null/undefined values
+  if (num === undefined || num === null || isNaN(num)) {
+    return '0';
+  }
+  
   if (num >= 1000000) {
     return (num / 1000000).toFixed(1) + 'M';
   } else if (num >= 1000) {
@@ -12,7 +17,12 @@ export const formatNumber = (num: number): string => {
 };
 
 // Format duration in milliseconds to human readable format
-export const formatDuration = (ms: number): string => {
+export const formatDuration = (ms: number | undefined | null): string => {
+  // Handle null/undefined values
+  if (ms === undefined || ms === null || isNaN(ms)) {
+    return '0ms';
+  }
+  
   if (ms < 1000) {
     return `${ms}ms`;
   } else if (ms < 60000) {

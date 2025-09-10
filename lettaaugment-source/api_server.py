@@ -511,10 +511,50 @@ async def search_with_reranking():
         logger.info(f"Reranker config: {reranker_config}")
         
         # Use the same search_tools function but with reranking enabled
-        results = await asyncio.to_thread(search_tools, query=query_string, limit=limit)
+        # If MANAGE_ONLY_MCP_TOOLS is enabled, search with higher limit and filter for MCP tools first
+        if MANAGE_ONLY_MCP_TOOLS:
+            # Search with a higher limit to ensure we get enough MCP tools
+            search_limit = limit * 5  # Get 5x more results to filter from
+            logger.info(f"MANAGE_ONLY_MCP_TOOLS enabled - searching with limit {search_limit} to filter for MCP tools (rerank endpoint)")
+            results = await asyncio.to_thread(search_tools, query=query_string, limit=search_limit)
+        else:
+            results = await asyncio.to_thread(search_tools, query=query_string, limit=limit)
+        
+        # Filter results if MANAGE_ONLY_MCP_TOOLS is enabled
+        if MANAGE_ONLY_MCP_TOOLS:
+            # Load tool cache to check tool types
+            tools_cache = await read_tool_cache()
+            filtered_results = []
+            
+            logger.info(f"DEBUG: Starting MCP filtering with {len(results)} results (rerank endpoint)")
+            for i, result in enumerate(results):
+                tool_name = result.get('name')
+                if tool_name:
+                    # Find the tool in cache to check its type
+                    cached_tool = next((t for t in tools_cache if t.get('name') == tool_name), None)
+                    if cached_tool:
+                        tool_type = cached_tool.get("tool_type")
+                        is_letta_core = _is_letta_core_tool(cached_tool)
+                        is_mcp_tool = (tool_type == "external_mcp" or 
+                                     (not is_letta_core and tool_type == "custom"))
+                        if is_mcp_tool:
+                            filtered_results.append(result)
+                            # Stop when we have enough results
+                            if len(filtered_results) >= limit:
+                                break
+                    else:
+                        # If not in cache, it might be an MCP tool that needs registration
+                        if result.get("mcp_server_name"):
+                            filtered_results.append(result)
+                            # Stop when we have enough results
+                            if len(filtered_results) >= limit:
+                                break
+            
+            logger.info(f"Weaviate search (rerank): {len(results)} total results, {len(filtered_results)} after MCP filtering.")
+            results = filtered_results[:limit]  # Ensure we don't return more than requested
         
         if not results:
-            logger.warning("No results returned from search_tools")
+            logger.warning("No results returned from search_tools after filtering")
             return jsonify({
                 "success": True,
                 "data": {

@@ -76,9 +76,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          # Temporarily disable cache due to GitHub issues
-          # cache-from: type=gha
-          # cache-to: type=gha,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           build-args: |
             SERVICE=mcp-server
 
@@ -94,9 +93,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          # Temporarily disable cache due to GitHub issues
-          # cache-from: type=gha
-          # cache-to: type=gha,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       # Build Sync Service
       - name: Build and push Sync Service
@@ -110,9 +108,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          # Temporarily disable cache due to GitHub issues
-          # cache-from: type=gha
-          # cache-to: type=gha,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       # Build Frontend
       - name: Build and push Frontend
@@ -127,13 +124,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
           build-args: |
-            REACT_APP_API_BASE_URL=http://localhost:8020
+            REACT_APP_API_BASE_URL=http://localhost:8030
             REACT_APP_VERSION=${{ github.ref_name }}
             REACT_APP_BUILD_DATE=${{ steps.date.outputs.date }}
             REACT_APP_COMMIT_SHA=${{ github.sha }}
-          # Temporarily disable cache due to GitHub issues
-          # cache-from: type=gha
-          # cache-to: type=gha,mode=max
 
       # Build Dashboard Backend
       - name: Build and push Dashboard Backend
@@ -147,9 +141,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          # Temporarily disable cache due to GitHub issues
-          # cache-from: type=gha
-          # cache-to: type=gha,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # Job 2: Security Scanning for Images (Optional)
   docker-security:

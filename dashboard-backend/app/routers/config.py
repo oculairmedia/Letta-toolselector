@@ -2,11 +2,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any, List, Optional
 import time
 import logging
+import aiohttp
+from fastapi.responses import Response
 
 from config.settings import settings
+from app.services.ldts_client import LDTSClient
 
 router = APIRouter(tags=["configuration"])
 logger = logging.getLogger(__name__)
+
+async def get_ldts_client() -> LDTSClient:
+    """Dependency to get LDTS client."""
+    from app.main import ldts_client
+    if ldts_client is None:
+        raise HTTPException(status_code=503, detail="LDTS client not initialized")
+    return ldts_client
 
 @router.get("/config")
 async def get_configuration() -> Dict[str, Any]:
@@ -72,3 +82,80 @@ async def get_limits() -> Dict[str, Any]:
         },
         "timestamp": time.time()
     }
+
+# Proxy endpoints for LDTS API compatibility
+@router.get("/config/reranker")
+async def proxy_get_reranker_config(ldts_client: LDTSClient = Depends(get_ldts_client)):
+    """Proxy reranker config requests to LDTS API."""
+    try:
+        if not ldts_client.session:
+            raise HTTPException(status_code=503, detail="LDTS client not initialized")
+        
+        async with ldts_client.session.get(f"{ldts_client.api_url}/api/v1/config/reranker") as response:
+            content = await response.read()
+            return Response(
+                content=content,
+                status_code=response.status,
+                headers=dict(response.headers),
+                media_type="application/json"
+            )
+    except Exception as e:
+        logger.error(f"Proxy reranker config failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Proxy request failed: {str(e)}")
+
+@router.get("/config/embedding")
+async def proxy_get_embedding_config(ldts_client: LDTSClient = Depends(get_ldts_client)):
+    """Proxy embedding config requests to LDTS API."""
+    try:
+        if not ldts_client.session:
+            raise HTTPException(status_code=503, detail="LDTS client not initialized")
+        
+        async with ldts_client.session.get(f"{ldts_client.api_url}/api/v1/config/embedding") as response:
+            content = await response.read()
+            return Response(
+                content=content,
+                status_code=response.status,
+                headers=dict(response.headers),
+                media_type="application/json"
+            )
+    except Exception as e:
+        logger.error(f"Proxy embedding config failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Proxy request failed: {str(e)}")
+
+@router.get("/models/embedding")
+async def proxy_get_embedding_models(ldts_client: LDTSClient = Depends(get_ldts_client)):
+    """Proxy embedding models requests to LDTS API."""
+    try:
+        if not ldts_client.session:
+            raise HTTPException(status_code=503, detail="LDTS client not initialized")
+        
+        async with ldts_client.session.get(f"{ldts_client.api_url}/api/v1/models/embedding") as response:
+            content = await response.read()
+            return Response(
+                content=content,
+                status_code=response.status,
+                headers=dict(response.headers),
+                media_type="application/json"
+            )
+    except Exception as e:
+        logger.error(f"Proxy embedding models failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Proxy request failed: {str(e)}")
+
+@router.get("/models/reranker")
+async def proxy_get_reranker_models(ldts_client: LDTSClient = Depends(get_ldts_client)):
+    """Proxy reranker models requests to LDTS API."""
+    try:
+        if not ldts_client.session:
+            raise HTTPException(status_code=503, detail="LDTS client not initialized")
+        
+        async with ldts_client.session.get(f"{ldts_client.api_url}/api/v1/models/reranker") as response:
+            content = await response.read()
+            return Response(
+                content=content,
+                status_code=response.status,
+                headers=dict(response.headers),
+                media_type="application/json"
+            )
+    except Exception as e:
+        logger.error(f"Proxy reranker models failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Proxy request failed: {str(e)}")

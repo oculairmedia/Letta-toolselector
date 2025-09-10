@@ -153,7 +153,7 @@ class ApiService {
 
   // Configuration endpoints
   async getRerankerConfig(): Promise<RerankerConfig> {
-    const response = await this.client.get<ApiResponse<RerankerConfig>>('/rerank/config');
+    const response = await this.client.get<ApiResponse<RerankerConfig>>('/config/reranker');
     if (!response.data.success) {
       throw new Error(response.data.error || 'Failed to get reranker config');
     }
@@ -161,14 +161,14 @@ class ApiService {
   }
 
   async updateRerankerConfig(config: RerankerConfig): Promise<void> {
-    const response = await this.client.put<ApiResponse<void>>('/rerank/config', config);
+    const response = await this.client.put<ApiResponse<void>>('/config/reranker', config);
     if (!response.data.success) {
       throw new Error(response.data.error || 'Failed to update reranker config');
     }
   }
 
   async testRerankerConnection(config: RerankerConfig): Promise<boolean> {
-    const response = await this.client.post<ApiResponse<{ connected: boolean }>>('/rerank/config/test', config);
+    const response = await this.client.post<ApiResponse<{ connected: boolean }>>('/config/reranker/test', config);
     if (!response.data.success) {
       throw new Error(response.data.error || 'Failed to test reranker connection');
     }

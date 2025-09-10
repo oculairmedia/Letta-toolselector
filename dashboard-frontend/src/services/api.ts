@@ -17,9 +17,14 @@ class ApiService {
 
   constructor() {
     // Use environment variable for development, fall back to relative URL for production nginx proxy
-    const baseURL = process.env.REACT_APP_API_BASE_URL 
-      ? `${process.env.REACT_APP_API_BASE_URL}/api/v1`
-      : '/api/v1';
+    let baseURL: string;
+    if (process.env.REACT_APP_API_BASE_URL) {
+      // Check if the environment variable already includes /api/v1
+      const envUrl = process.env.REACT_APP_API_BASE_URL;
+      baseURL = envUrl.endsWith('/api/v1') ? envUrl : `${envUrl}/api/v1`;
+    } else {
+      baseURL = '/api/v1';
+    }
     
     this.client = axios.create({
       baseURL,

@@ -142,20 +142,41 @@ jobs:
     strategy:
       matrix:
         service: [mcp-server, api-server, sync-service, frontend]
+    permissions:
+      contents: read
+      security-events: write  # Required for SARIF upload
     steps:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         continue-on-error: true  # Don't fail if individual scan fails
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ github.sha }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ github.ref_name }}
           format: 'sarif'
           output: 'trivy-image-${{ matrix.service }}.sarif'
 
+      - name: Check if SARIF file exists
+        id: check-sarif
+        run: |
+          if [ -f "trivy-image-${{ matrix.service }}.sarif" ]; then
+            echo "sarif-exists=true" >> $GITHUB_OUTPUT
+            echo "✅ SARIF file exists for ${{ matrix.service }}"
+          else
+            echo "sarif-exists=false" >> $GITHUB_OUTPUT
+            echo "❌ SARIF file missing for ${{ matrix.service }}"
+          fi
+
       - name: Upload Trivy scan results
+        if: steps.check-sarif.outputs.sarif-exists == 'true'
         uses: github/codeql-action/upload-sarif@v3
         continue-on-error: true  # Don't fail if upload fails
         with:
           sarif_file: 'trivy-image-${{ matrix.service }}.sarif'
+          category: 'trivy-${{ matrix.service }}'
+
+      - name: Log security scan result
+        run: |
+          echo "Security scan completed for ${{ matrix.service }}"
+          echo "SARIF file exists: ${{ steps.check-sarif.outputs.sarif-exists }}"
 
   # Job 3: Integration Tests with Docker Compose
   docker-integration-test:
@@ -182,6 +203,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Get current date
+        id: date
+        run: echo "date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
       - name: Create test environment file
         run: |
           cat > .env << EOF
@@ -189,6 +214,7 @@ jobs:
           LETTA_PASSWORD=test-password
           OPENAI_API_KEY=test-key
           WEAVIATE_URL=http://localhost:8080/
+          WEAVIATE_API_KEY=test-key
           # Use OpenAI for tests since Ollama endpoint isn't available in CI
           EMBEDDING_PROVIDER=openai
           # Ollama config (for local dev)
@@ -196,6 +222,18 @@ jobs:
           OLLAMA_EMBEDDING_MODEL=dengcao/Qwen3-Embedding-4B:Q4_K_M
           EMBEDDING_DIMENSION=2560
           USE_OLLAMA_EMBEDDINGS=false
+          # Build metadata
+          VERSION=${{ github.ref_name }}
+          BUILD_DATE=${{ steps.date.outputs.date }}
+          COMMIT_SHA=${{ github.sha }}
+          # Tool configuration
+          DEFAULT_DROP_RATE=0.6
+          MAX_TOTAL_TOOLS=20
+          MAX_MCP_TOOLS=15
+          MIN_MCP_TOOLS=7
+          EXCLUDE_LETTA_CORE_TOOLS=true
+          EXCLUDE_OFFICIAL_TOOLS=true
+          MANAGE_ONLY_MCP_TOOLS=true
           EOF
 
       - name: Test docker-compose build
@@ -210,21 +248,59 @@ jobs:
           
           # Start only services that don't conflict with GitHub Actions services
           # Weaviate is already running as a service, so exclude it
+          echo "Starting services..."
           docker compose -f compose.yaml up -d --scale weaviate=0
           
-          # Wait for services to be ready
-          sleep 30
+          # Check container status
+          echo "Container status:"
+          docker compose -f compose.yaml ps
           
-          # Test MCP server health
-          curl -f http://localhost:3020/health || exit 1
+          # Function to wait for service with retries
+          wait_for_service() {
+            local url=$1
+            local service_name=$2
+            local max_attempts=20
+            local wait_time=5
+            
+            echo "Waiting for $service_name to be ready at $url..."
+            
+            for i in $(seq 1 $max_attempts); do
+              echo "Attempt $i/$max_attempts for $service_name"
+              
+              if curl -f --max-time 10 --retry 3 --retry-delay 2 "$url"; then
+                echo "✅ $service_name is ready!"
+                return 0
+              fi
+              
+              echo "⏱️  $service_name not ready yet, waiting ${wait_time}s..."
+              sleep $wait_time
+            done
+            
+            echo "❌ $service_name failed to become ready after $((max_attempts * wait_time)) seconds"
+            echo "📋 Container logs for debugging:"
+            docker compose -f compose.yaml logs --tail=50
+            return 1
+          }
           
-          # Test frontend health
-          curl -f http://localhost:8406/health || exit 1
+          # Wait for MCP server health
+          wait_for_service "http://localhost:3020/health" "MCP Server"
           
-          # Test that containers are running properly
+          # Wait for frontend health  
+          wait_for_service "http://localhost:8406/health" "Frontend"
+          
+          # Optional: Test API server if it's running
+          if docker compose -f compose.yaml ps | grep -q api-server; then
+            wait_for_service "http://localhost:8020/api/health" "API Server"
+          fi
+          
+          echo "✅ All integration tests passed!"
+          
+          # Show final container status
+          echo "Final container status:"
           docker compose -f compose.yaml ps
           
           # Cleanup
+          echo "Cleaning up..."
           docker compose -f compose.yaml down
 
   # Job 4: Deploy to Staging (on develop branch)

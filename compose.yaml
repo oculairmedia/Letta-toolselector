@@ -27,7 +27,7 @@ services:
     networks:
       - letta-tools
   api-server:
-    image: ghcr.io/oculairmedia/letta-toolselector-api-server:latest
+    image: ghcr.io/oculairmedia/letta-toolselector-api-server:feature-dashboard-frontend
     container_name: weaviate-tools-api
     ports:
       - 8020:3001
@@ -68,7 +68,7 @@ services:
     networks:
       - letta-tools
   sync-service:
-    image: ghcr.io/oculairmedia/letta-toolselector-sync-service:latest
+    image: ghcr.io/oculairmedia/letta-toolselector-sync-service:feature-dashboard-frontend
     container_name: weaviate-tools-sync
     command: python sync_service.py
     environment:
@@ -88,7 +88,7 @@ services:
     networks:
       - letta-tools
   time-service:
-    image: ghcr.io/oculairmedia/letta-toolselector-api-server:latest
+    image: ghcr.io/oculairmedia/letta-toolselector-api-server:feature-dashboard-frontend
     container_name: weaviate-tools-time
     command: python time_memory_service.py
     environment:
@@ -107,7 +107,7 @@ services:
     networks:
       - letta-tools
   mcp-server:
-    image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:latest
+    image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:feature-dashboard-frontend
     container_name: toolselector-mcp
     ports:
       - 3020:3020
@@ -136,7 +136,7 @@ services:
     networks:
       - letta-tools
   dashboard-backend:
-    image: ghcr.io/oculairmedia/letta-toolselector-dashboard-backend:latest
+    image: ghcr.io/oculairmedia/letta-toolselector-dashboard-backend:feature-dashboard-frontend
     container_name: letta-toolselector-dashboard-backend
     ports:
       - 8030:8030

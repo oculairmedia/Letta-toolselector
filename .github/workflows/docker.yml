@@ -163,11 +163,19 @@ jobs:
       contents: read
       security-events: write  # Required for SARIF upload
     steps:
+      - name: Sanitize branch name for Docker tag
+        id: sanitize
+        run: |
+          # Replace forward slashes with dashes for valid Docker tags
+          SANITIZED_REF=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
+          echo "tag=${SANITIZED_REF}" >> $GITHUB_OUTPUT
+          echo "Sanitized tag: ${SANITIZED_REF}"
+      
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         continue-on-error: true  # Don't fail if individual scan fails
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ github.ref_name }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ steps.sanitize.outputs.tag }}
           format: 'sarif'
           output: 'trivy-image-${{ matrix.service }}.sarif'
 

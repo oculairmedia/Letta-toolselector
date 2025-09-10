@@ -207,13 +207,6 @@ jobs:
         id: date
         run: echo "date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
 
-      - name: Sanitize branch name for image tags
-        id: sanitize
-        run: |
-          # Replace forward slashes with dashes for valid Docker tags
-          SANITIZED_REF=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
-          echo "sanitized-ref=$SANITIZED_REF" >> $GITHUB_OUTPUT
-          echo "Using sanitized tag: $SANITIZED_REF"
 
       - name: Create test environment file
         run: |
@@ -246,28 +239,36 @@ jobs:
 
       - name: Create test compose override
         run: |
+          # The metadata action automatically handles branch names with slashes
+          # For feature/dashboard-frontend it creates: feature-dashboard-frontend
+          SANITIZED_REF=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
+          
           # Create compose override to use locally built images with proper tags
           cat > docker-compose.test.yml << EOF
           services:
             mcp-server:
-              image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:${{ steps.sanitize.outputs.sanitized-ref }}
+              image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:${SANITIZED_REF}
               pull_policy: never
             api-server:
-              image: ghcr.io/oculairmedia/letta-toolselector-api-server:${{ steps.sanitize.outputs.sanitized-ref }}
+              image: ghcr.io/oculairmedia/letta-toolselector-api-server:${SANITIZED_REF}
               pull_policy: never
             sync-service:
-              image: ghcr.io/oculairmedia/letta-toolselector-sync-service:${{ steps.sanitize.outputs.sanitized-ref }}
+              image: ghcr.io/oculairmedia/letta-toolselector-sync-service:${SANITIZED_REF}
               pull_policy: never
             frontend:
-              image: ghcr.io/oculairmedia/letta-toolselector-frontend:${{ steps.sanitize.outputs.sanitized-ref }}
+              image: ghcr.io/oculairmedia/letta-toolselector-frontend:${SANITIZED_REF}
               pull_policy: never
             time-service:
-              image: ghcr.io/oculairmedia/letta-toolselector-api-server:${{ steps.sanitize.outputs.sanitized-ref }}
+              image: ghcr.io/oculairmedia/letta-toolselector-api-server:${SANITIZED_REF}
               pull_policy: never
           EOF
           
           echo "Test compose override:"
           cat docker-compose.test.yml
+          
+          # Debug: List available built images
+          echo "Available Docker images:"
+          docker images | grep -E "letta-toolselector|REPOSITORY"
           
           # Test configuration
           docker compose -f compose.yaml -f docker-compose.test.yml config

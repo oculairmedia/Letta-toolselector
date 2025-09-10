@@ -66,17 +66,23 @@ export interface EvaluationRating {
 }
 
 export interface Analytics {
-  total_searches: number;
-  average_response_time: number;
-  top_queries: { query: string; count: number }[];
-  reranker_performance: {
-    improvement_rate: number;
-    accuracy_gain: number;
+  search_count: number;
+  total_evaluations: number;
+  avg_rating: number;
+  date_range: {
+    start: string | null;
+    end: string | null;
   };
-  usage_stats: {
-    daily_searches: { date: string; count: number }[];
-    model_usage: { model: string; count: number }[];
-  };
+  recent_searches: Array<{
+    query: string;
+    timestamp: string;
+    result_count?: number;
+  }>;
+  top_tools: Array<{
+    tool_name: string;
+    usage_count: number;
+  }>;
+  tool_usage: Record<string, number>;
 }
 
 export interface ApiResponse<T> {

@@ -65,40 +65,37 @@ const Analytics: React.FC = () => {
   const theme = useTheme();
   const { data: analytics } = useAnalytics(dateRange);
 
-  // Mock data for demonstration
-  const mockAnalytics = {
-    total_searches: 1250,
-    average_response_time: 0.245,
-    top_queries: [
-      { query: 'file operations', count: 125 },
-      { query: 'data processing', count: 98 },
-      { query: 'API integration', count: 87 },
-      { query: 'authentication', count: 76 },
-      { query: 'database queries', count: 65 },
+  // Mock data for demonstration when API data is empty
+  const mockData = {
+    search_count: 1250,
+    total_evaluations: 45,
+    avg_rating: 4.2,
+    date_range: { start: null, end: null },
+    recent_searches: [
+      { query: 'file operations', timestamp: '2024-01-01T10:00:00Z', result_count: 15 },
+      { query: 'data processing', timestamp: '2024-01-01T11:00:00Z', result_count: 12 },
+      { query: 'API integration', timestamp: '2024-01-01T12:00:00Z', result_count: 18 },
+      { query: 'authentication', timestamp: '2024-01-01T13:00:00Z', result_count: 8 },
+      { query: 'database queries', timestamp: '2024-01-01T14:00:00Z', result_count: 22 },
     ],
-    reranker_performance: {
-      improvement_rate: 0.15,
-      accuracy_gain: 0.12,
-    },
-    usage_stats: {
-      daily_searches: [
-        { date: '2024-01-01', count: 45 },
-        { date: '2024-01-02', count: 52 },
-        { date: '2024-01-03', count: 38 },
-        { date: '2024-01-04', count: 61 },
-        { date: '2024-01-05', count: 49 },
-        { date: '2024-01-06', count: 55 },
-        { date: '2024-01-07', count: 42 },
-      ],
-      model_usage: [
-        { model: 'gpt-3.5-turbo', count: 780 },
-        { model: 'claude-3-haiku', count: 320 },
-        { model: 'llama2:7b', count: 150 },
-      ],
-    },
+    top_tools: [
+      { tool_name: 'search_files', usage_count: 125 },
+      { tool_name: 'read_file', usage_count: 98 },
+      { tool_name: 'api_call', usage_count: 87 },
+      { tool_name: 'auth_check', usage_count: 76 },
+      { tool_name: 'db_query', usage_count: 65 },
+    ],
+    tool_usage: {
+      'search_files': 125,
+      'read_file': 98,
+      'api_call': 87,
+      'auth_check': 76,
+      'db_query': 65,
+    }
   };
 
-  const data = analytics || mockAnalytics;
+  // Use API data if available, otherwise fall back to mock data
+  const data = analytics || mockData;
 
   const COLORS = [
     theme.palette.primary.main,
@@ -127,7 +124,7 @@ const Analytics: React.FC = () => {
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h4" color="primary" gutterBottom>
-                {formatNumber(data.total_searches)}
+                {formatNumber(data.search_count)}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
                 <SearchIcon fontSize="small" />
@@ -141,11 +138,11 @@ const Analytics: React.FC = () => {
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h4" color="success.main" gutterBottom>
-                {formatDuration(data.average_response_time * 1000)}
+                {formatNumber(data.total_evaluations)}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-                <SpeedIcon fontSize="small" />
-                Avg Response Time
+                <AssessmentIcon fontSize="small" />
+                Total Evaluations
               </Typography>
             </CardContent>
           </Card>
@@ -155,11 +152,11 @@ const Analytics: React.FC = () => {
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h4" color="info.main" gutterBottom>
-                +{(data.reranker_performance.improvement_rate * 100).toFixed(1)}%
+                {data.avg_rating.toFixed(1)}⭐
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
                 <TrendingUpIcon fontSize="small" />
-                Improvement Rate
+                Average Rating
               </Typography>
             </CardContent>
           </Card>
@@ -169,11 +166,11 @@ const Analytics: React.FC = () => {
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h4" color="secondary.main" gutterBottom>
-                +{(data.reranker_performance.accuracy_gain * 100).toFixed(1)}%
+                {formatNumber(data.top_tools.length)}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-                <AssessmentIcon fontSize="small" />
-                Accuracy Gain
+                <SpeedIcon fontSize="small" />
+                Active Tools
               </Typography>
             </CardContent>
           </Card>
@@ -184,34 +181,35 @@ const Analytics: React.FC = () => {
       <Paper elevation={1}>
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
           <Tabs value={activeTab} onChange={(_, newValue) => setActiveTab(newValue)}>
-            <Tab label="Usage Trends" />
-            <Tab label="Top Queries" />
-            <Tab label="Model Performance" />
-            <Tab label="Response Times" />
+            <Tab label="Recent Searches" />
+            <Tab label="Top Tools" />
+            <Tab label="Tool Usage" />
+            <Tab label="Search Analytics" />
           </Tabs>
         </Box>
 
         <TabPanel value={activeTab} index={0}>
-          {/* Usage Trends */}
+          {/* Recent Searches */}
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                Daily Search Volume
+                Recent Search Activity
               </Typography>
               <Box sx={{ height: 300 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={data.usage_stats.daily_searches}>
+                  <BarChart data={data.recent_searches.slice(0, 10)}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
+                    <XAxis 
+                      dataKey="query" 
+                      tick={{ fontSize: 12 }}
+                      angle={-45}
+                      textAnchor="end"
+                      height={100}
+                    />
                     <YAxis />
                     <Tooltip />
-                    <Line 
-                      type="monotone" 
-                      dataKey="count" 
-                      stroke={theme.palette.primary.main}
-                      strokeWidth={2}
-                    />
-                  </LineChart>
+                    <Bar dataKey="result_count" fill={theme.palette.primary.main} />
+                  </BarChart>
                 </ResponsiveContainer>
               </Box>
             </CardContent>
@@ -219,20 +217,26 @@ const Analytics: React.FC = () => {
         </TabPanel>
 
         <TabPanel value={activeTab} index={1}>
-          {/* Top Queries */}
+          {/* Top Tools */}
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                Most Popular Search Queries
+                Most Popular Tools
               </Typography>
               <Box sx={{ height: 300 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={data.top_queries}>
+                  <BarChart data={data.top_tools}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="query" />
+                    <XAxis 
+                      dataKey="tool_name" 
+                      tick={{ fontSize: 12 }}
+                      angle={-45}
+                      textAnchor="end"
+                      height={100}
+                    />
                     <YAxis />
                     <Tooltip />
-                    <Bar dataKey="count" fill={theme.palette.primary.main} />
+                    <Bar dataKey="usage_count" fill={theme.palette.primary.main} />
                   </BarChart>
                 </ResponsiveContainer>
               </Box>
@@ -241,27 +245,27 @@ const Analytics: React.FC = () => {
         </TabPanel>
 
         <TabPanel value={activeTab} index={2}>
-          {/* Model Performance */}
+          {/* Tool Usage */}
           <Grid container spacing={3}>
             <Grid item xs={12} md={6}>
               <Card>
                 <CardContent>
                   <Typography variant="h6" gutterBottom>
-                    Model Usage Distribution
+                    Tool Usage Distribution
                   </Typography>
                   <Box sx={{ height: 300 }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
-                          data={data.usage_stats.model_usage}
+                          data={Object.entries(data.tool_usage).map(([tool_name, count]) => ({ tool_name, count }))}
                           cx="50%"
                           cy="50%"
                           outerRadius={80}
                           fill="#8884d8"
                           dataKey="count"
-                          label={(entry: any) => `${entry.model}: ${entry.count}`}
+                          label={(entry: any) => `${entry.tool_name}: ${entry.count}`}
                         >
-                          {data.usage_stats.model_usage.map((_, index) => (
+                          {Object.entries(data.tool_usage).map((_, index) => (
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
@@ -277,16 +281,22 @@ const Analytics: React.FC = () => {
               <Card>
                 <CardContent>
                   <Typography variant="h6" gutterBottom>
-                    Model Performance Comparison
+                    Tool Usage Comparison
                   </Typography>
                   <Box sx={{ height: 300 }}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={data.usage_stats.model_usage}>
+                      <BarChart data={data.top_tools.slice(0, 5)}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="model" />
+                        <XAxis 
+                          dataKey="tool_name" 
+                          tick={{ fontSize: 12 }}
+                          angle={-45}
+                          textAnchor="end"
+                          height={100}
+                        />
                         <YAxis />
                         <Tooltip />
-                        <Bar dataKey="count" fill={theme.palette.secondary.main} />
+                        <Bar dataKey="usage_count" fill={theme.palette.secondary.main} />
                       </BarChart>
                     </ResponsiveContainer>
                   </Box>
@@ -297,28 +307,29 @@ const Analytics: React.FC = () => {
         </TabPanel>
 
         <TabPanel value={activeTab} index={3}>
-          {/* Response Times */}
+          {/* Search Analytics */}
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                Average Response Times by Day
+                Search Query Analysis
               </Typography>
               <Typography variant="body2" color="text.secondary" gutterBottom>
-                Monitor system performance and identify potential bottlenecks
+                Analyze recent search patterns and result effectiveness
               </Typography>
               <Box sx={{ height: 300 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={data.usage_stats.daily_searches.map(item => ({
+                  <LineChart data={data.recent_searches.slice(0, 10).map((item, index) => ({
                     ...item,
-                    response_time: Math.random() * 0.5 + 0.2, // Mock response time data
+                    index: index + 1,
+                    query_short: item.query.length > 15 ? item.query.substring(0, 15) + '...' : item.query
                   }))}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis tickFormatter={(value) => `${(value * 1000).toFixed(0)}ms`} />
-                    <Tooltip formatter={(value: number) => [`${(value * 1000).toFixed(0)}ms`, 'Response Time']} />
+                    <XAxis dataKey="query_short" tick={{ fontSize: 10 }} />
+                    <YAxis />
+                    <Tooltip formatter={(value: number) => [value, 'Result Count']} />
                     <Line 
                       type="monotone" 
-                      dataKey="response_time" 
+                      dataKey="result_count" 
                       stroke={theme.palette.success.main}
                       strokeWidth={2}
                     />

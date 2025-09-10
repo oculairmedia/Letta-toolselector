@@ -48,6 +48,13 @@ export interface RerankerConfig {
   };
 }
 
+export interface EmbeddingConfig {
+  embedding_model: string;
+  embedding_provider: string;
+  dimensions?: number;
+  batch_size?: number;
+}
+
 export interface ConfigurationPreset {
   id: string;
   name: string;

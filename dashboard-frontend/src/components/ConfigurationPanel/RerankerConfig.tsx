@@ -30,7 +30,7 @@ import {
   Tune as TuneIcon,
 } from '@mui/icons-material';
 
-import { RerankerConfig as RerankerConfigType } from '../../types';
+import { RerankerConfig as RerankerConfigType, EmbeddingConfig } from '../../types';
 import { 
   useUpdateRerankerConfig, 
   useTestRerankerConnection, 
@@ -39,8 +39,13 @@ import {
   useEmbeddingModels,
   useRerankerModelRegistry,
   useTestRerankerModel,
-  useRegisterRerankerModel
+  useRegisterRerankerModel,
+  useEmbeddingConfig,
+  useUpdateEmbeddingConfig,
+  useStartReembedding,
+  useReembeddingProgress
 } from '../../hooks/useApi';
+import ReembeddingProgress from '../ReembeddingProgress';
 
 interface RerankerConfigProps {
   config?: RerankerConfigType;
@@ -89,14 +94,34 @@ const RerankerConfig: React.FC<RerankerConfigProps> = ({ config, isLoading }) =>
   const { data: rerankerRegistryData, isLoading: registryLoading } = useRerankerModelRegistry();
   const testRerankerModelMutation = useTestRerankerModel();
   const registerRerankerModelMutation = useRegisterRerankerModel();
+  
+  // Embedding configuration hooks
+  const { data: embeddingConfig, isLoading: embeddingConfigLoading } = useEmbeddingConfig();
+  const updateEmbeddingConfigMutation = useUpdateEmbeddingConfig();
+  const startReembeddingMutation = useStartReembedding();
+  const { data: reembeddingProgress } = useReembeddingProgress();
 
   // Update form data when config loads
   useEffect(() => {
     if (config) {
-      setFormData(config);
+      setFormData(prev => ({
+        ...prev,
+        ...config,
+      }));
       setHasUnsavedChanges(false);
     }
   }, [config]);
+
+  // Update form data with embedding config
+  useEffect(() => {
+    if (embeddingConfig && typeof embeddingConfig === 'object' && 'model' in embeddingConfig) {
+      setFormData(prev => ({
+        ...prev,
+        embedding_model: embeddingConfig.model,
+        embedding_provider: embeddingConfig.provider,
+      }));
+    }
+  }, [embeddingConfig]);
 
   const handleChange = (field: string, value: any) => {
     setFormData(prev => ({
@@ -139,6 +164,36 @@ const RerankerConfig: React.FC<RerankerConfigProps> = ({ config, isLoading }) =>
       setHasUnsavedChanges(false);
     } catch (error) {
       console.error('Failed to save configuration:', error);
+    }
+  };
+
+  const handleEmbeddingModelChange = async (modelId: string, provider: string) => {
+    // Update form data
+    setFormData(prev => ({
+      ...prev,
+      embedding_model: modelId,
+      embedding_provider: provider,
+    }));
+    setHasUnsavedChanges(true);
+
+    try {
+      // Update embedding configuration
+      await updateEmbeddingConfigMutation.mutateAsync({
+        model: modelId,
+        provider: provider,
+      });
+
+      // Start re-embedding process
+      await startReembeddingMutation.mutateAsync({
+        embedding_model: modelId,
+        batch_size: 100, // Default batch size
+      });
+    } catch (error) {
+      console.error('Failed to update embedding model:', error);
+      setTestResult({
+        success: false,
+        message: `Failed to update embedding model: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      });
     }
   };
 
@@ -234,11 +289,11 @@ const RerankerConfig: React.FC<RerankerConfigProps> = ({ config, isLoading }) =>
     <Box>
       <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <TuneIcon />
-        Reranker Configuration
+        Model Configuration
       </Typography>
       
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Configure the reranker model settings to improve search result relevance and ranking accuracy.
+        Configure reranker and embedding models to optimize search performance. Changing the embedding model will trigger automatic re-embedding of the search index.
       </Typography>
 
       {/* Save/Test Actions */}
@@ -285,6 +340,22 @@ const RerankerConfig: React.FC<RerankerConfigProps> = ({ config, isLoading }) =>
           {testResult.message}
         </Alert>
       )}
+
+      {/* Re-embedding Progress */}
+      <ReembeddingProgress
+        onComplete={() => {
+          setTestResult({
+            success: true,
+            message: 'Re-embedding completed successfully!',
+          });
+        }}
+        onError={(error) => {
+          setTestResult({
+            success: false,
+            message: `Re-embedding failed: ${error}`,
+          });
+        }}
+      />
 
       {/* Configuration Form */}
       <Grid container spacing={3}>
@@ -413,8 +484,7 @@ const RerankerConfig: React.FC<RerankerConfigProps> = ({ config, isLoading }) =>
                         value={availableEmbeddingModels.find(model => model.id === formData.embedding_model) || null}
                         onChange={(_, value) => {
                           if (value) {
-                            handleChange('embedding_model', value.id);
-                            handleChange('embedding_provider', value.provider);
+                            handleEmbeddingModelChange(value.id, value.provider);
                           }
                         }}
                         loading={embeddingModelsLoading}

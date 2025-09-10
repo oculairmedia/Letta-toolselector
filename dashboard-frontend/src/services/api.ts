@@ -428,6 +428,85 @@ class ApiService {
     }
   }
 
+  // Embedding Configuration endpoints
+  async getEmbeddingConfig(): Promise<{
+    model: string;
+    provider: string;
+    parameters: any;
+  }> {
+    const response = await this.client.get<ApiResponse<{
+      model: string;
+      provider: string;
+      parameters: any;
+    }>>('/config/embedding');
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get embedding config');
+    }
+    return response.data.data!;
+  }
+
+  async updateEmbeddingConfig(config: {
+    model: string;
+    provider: string;
+    parameters?: any;
+  }): Promise<void> {
+    const response = await this.client.put<ApiResponse<void>>('/config/embedding', config);
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to update embedding config');
+    }
+  }
+
+  // Re-embedding endpoints
+  async getReembeddingProgress(): Promise<{
+    status: 'idle' | 'running' | 'completed' | 'error' | 'cancelled';
+    progress?: {
+      current: number;
+      total: number;
+      percentage: number;
+      eta_seconds?: number;
+      current_item?: string;
+    };
+    error?: string;
+    started_at?: string;
+    completed_at?: string;
+  }> {
+    const response = await this.client.get<ApiResponse<{
+      status: 'idle' | 'running' | 'completed' | 'error' | 'cancelled';
+      progress?: {
+        current: number;
+        total: number;
+        percentage: number;
+        eta_seconds?: number;
+        current_item?: string;
+      };
+      error?: string;
+      started_at?: string;
+      completed_at?: string;
+    }>>('/reembedding/status');
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get re-embedding progress');
+    }
+    return response.data.data!;
+  }
+
+  async startReembedding(config: {
+    embedding_model: string;
+    batch_size?: number;
+  }): Promise<{ job_id: string }> {
+    const response = await this.client.post<ApiResponse<{ job_id: string }>>('/reembedding/start', config);
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to start re-embedding');
+    }
+    return response.data.data!;
+  }
+
+  async cancelReembedding(): Promise<void> {
+    const response = await this.client.post<ApiResponse<void>>('/reembedding/cancel');
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to cancel re-embedding');
+    }
+  }
+
   // Health check
   async healthCheck(): Promise<{ status: string; version?: string }> {
     const response = await this.client.get<ApiResponse<{ status: string; version?: string }>>('/health');

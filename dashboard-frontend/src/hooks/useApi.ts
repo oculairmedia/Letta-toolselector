@@ -19,6 +19,8 @@ export const queryKeys = {
   ollamaModels: ['ollamaModels'] as const,
   embeddingModels: ['embeddingModels'] as const,
   rerankerModels: ['rerankerModels'] as const,
+  embeddingConfig: ['embeddingConfig'] as const,
+  reembeddingProgress: ['reembeddingProgress'] as const,
   configPresets: ['configPresets'] as const,
   evaluations: (query?: string, limit?: number) => ['evaluations', query, limit] as const,
   analytics: (dateRange?: { start: string; end: string }) => ['analytics', dateRange] as const,
@@ -276,6 +278,59 @@ export const useUnregisterRerankerModel = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rerankerModelRegistry'] });
       queryClient.invalidateQueries({ queryKey: queryKeys.rerankerModels });
+    },
+  });
+};
+
+// Embedding Configuration hooks
+export const useEmbeddingConfig = () => {
+  return useQuery({
+    queryKey: queryKeys.embeddingConfig,
+    queryFn: () => apiService.getEmbeddingConfig(),
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  });
+};
+
+export const useUpdateEmbeddingConfig = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (config: any) => apiService.updateEmbeddingConfig(config),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.embeddingConfig });
+      queryClient.invalidateQueries({ queryKey: queryKeys.embeddingModels });
+    },
+  });
+};
+
+export const useReembeddingProgress = () => {
+  return useQuery({
+    queryKey: queryKeys.reembeddingProgress,
+    queryFn: () => apiService.getReembeddingProgress(),
+    refetchInterval: 1000, // Every second during re-embedding
+    staleTime: 0,
+  });
+};
+
+export const useStartReembedding = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (config: { embedding_model: string; batch_size?: number }) => 
+      apiService.startReembedding(config),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.reembeddingProgress });
+    },
+  });
+};
+
+export const useCancelReembedding = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: () => apiService.cancelReembedding(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.reembeddingProgress });
     },
   });
 };

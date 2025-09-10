@@ -141,7 +141,7 @@ services:
     ports:
       - 8030:8030
     environment:
-      - LDTS_API_URL=http://api-server:3001
+      - LDTS_API_URL=http://weaviate-tools-api:3001
       - LDTS_MCP_URL=http://mcp-server:3020
       - WEAVIATE_URL=http://weaviate:8080
       - LETTA_API_URL=${LETTA_API_URL}
@@ -179,7 +179,7 @@ services:
     ports:
       - 8406:80
     environment:
-      - REACT_APP_API_BASE_URL=http://dashboard-backend:8030
+      - REACT_APP_API_BASE_URL=/api/v1
       - REACT_APP_VERSION=${VERSION:-latest}
       - REACT_APP_BUILD_DATE=${BUILD_DATE}
       - REACT_APP_COMMIT_SHA=${COMMIT_SHA}

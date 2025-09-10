@@ -359,7 +359,7 @@ export const useReembeddingProgress = () => {
   return useQuery({
     queryKey: queryKeys.reembeddingProgress,
     queryFn: () => apiService.getReembeddingProgress(),
-    refetchInterval: 1000, // Every second during re-embedding
+    refetchInterval: 5000, // Every 5 seconds to respect rate limits
     staleTime: 0,
   });
 };

@@ -30,9 +30,9 @@ class Settings:
     # OpenAI Configuration
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     
-    # Rate Limiting
+    # Rate Limiting  
     ENABLE_RATE_LIMITING: bool = True
-    RATE_LIMIT_REQUESTS: int = 30
+    RATE_LIMIT_REQUESTS: int = 200
     RATE_LIMIT_WINDOW: int = 60  # seconds
     
     # Search Configuration

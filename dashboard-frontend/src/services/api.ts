@@ -16,9 +16,13 @@ class ApiService {
   private client: AxiosInstance;
 
   constructor() {
-    // Use relative URL to go through nginx proxy
+    // Use environment variable for development, fall back to relative URL for production nginx proxy
+    const baseURL = process.env.REACT_APP_API_BASE_URL 
+      ? `${process.env.REACT_APP_API_BASE_URL}/api/v1`
+      : '/api/v1';
+    
     this.client = axios.create({
-      baseURL: '/api/v1',
+      baseURL,
       timeout: 30000,
       headers: {
         'Content-Type': 'application/json',

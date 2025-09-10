@@ -19,9 +19,9 @@ class Settings:
     ENABLE_DANGEROUS_OPERATIONS: bool = False
     
     # LDTS Integration
-    LDTS_API_URL: str = "http://localhost:8020"
-    LDTS_MCP_URL: str = "http://localhost:3020"
-    WEAVIATE_URL: str = "http://localhost:8080"
+    LDTS_API_URL: str = os.getenv("LDTS_API_URL", "http://localhost:8020")
+    LDTS_MCP_URL: str = os.getenv("LDTS_MCP_URL", "http://localhost:3020")
+    WEAVIATE_URL: str = os.getenv("WEAVIATE_URL", "http://localhost:8080")
     
     # Letta API Configuration  
     LETTA_API_URL: str = os.getenv("LETTA_API_URL", "https://letta.oculair.ca/v1")

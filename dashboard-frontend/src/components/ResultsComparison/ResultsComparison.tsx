@@ -103,7 +103,17 @@ const ResultsComparison: React.FC = () => {
 
   // Comparison analysis
   const comparisonData = useMemo(() => {
-    if (!originalResults || !rerankedResults) return null;
+    if (!originalResults || !rerankedResults) {
+      // Return partial comparison data if only one result set is available
+      return {
+        improvements: [],
+        declines: [],
+        unchanged: [],
+        totalChanges: 0,
+        avgScoreChange: 0,
+        hasComparison: false,
+      };
+    }
 
     const originalRanks = new Map(originalResults.results.map((r, i) => [r.tool.id, i + 1]));
     const rerankedRanks = new Map(rerankedResults.results.map((r, i) => [r.tool.id, i + 1]));
@@ -159,6 +169,7 @@ const ResultsComparison: React.FC = () => {
         const originalScore = originalResults.results[i]?.score || 0;
         return sum + (result.score - originalScore);
       }, 0) / Math.min(rerankedResults.results.length, originalResults.results.length),
+      hasComparison: true,
     };
   }, [originalResults, rerankedResults]);
 
@@ -169,6 +180,7 @@ const ResultsComparison: React.FC = () => {
 
   const isLoading = originalLoading || rerankedLoading;
   const hasResults = originalResults || rerankedResults;
+  const hasBothResults = originalResults && rerankedResults;
 
   return (
     <Box>
@@ -223,12 +235,28 @@ const ResultsComparison: React.FC = () => {
       {hasResults && !isLoading && (
         <Box>
           {/* Comparison Metrics */}
-          {showMetrics && comparisonData && (
+          {showMetrics && comparisonData && hasBothResults && (
             <ComparisonMetrics
               data={comparisonData}
               originalResults={originalResults!}
               rerankedResults={rerankedResults!}
             />
+          )}
+          
+          {/* Status Alert */}
+          {hasResults && !hasBothResults && (
+            <Card sx={{ mb: 3 }}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Partial Results Available
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {originalResults && !rerankedResults && "Original search results are shown. Reranked results are not available."}
+                  {!originalResults && rerankedResults && "Reranked search results are shown. Original results are not available."}
+                  {hasBothResults && "Full comparison available with both original and reranked results."}
+                </Typography>
+              </CardContent>
+            </Card>
           )}
 
           {/* Comparison Tabs */}
@@ -256,47 +284,68 @@ const ResultsComparison: React.FC = () => {
             <TabPanel value={activeTab} index={0}>
               {/* Side by Side Comparison */}
               <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
-                  <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    Original Results
-                    <Chip label={`${originalResults?.results.length || 0} results`} size="small" />
-                  </Typography>
-                  <Box sx={{ maxHeight: '600px', overflowY: 'auto' }}>
-                    {originalResults?.results.map((result, index) => (
-                      <SearchResultCard
-                        key={`original-${result.tool.id}`}
-                        result={result}
-                        query={query}
-                        compact={true}
-                        showReasoning={false}
-                      />
-                    ))}
-                  </Box>
-                </Grid>
+                {/* Show original results if available */}
+                {originalResults && (
+                  <Grid item xs={12} md={hasBothResults ? 6 : 12}>
+                    <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      Original Results
+                      <Chip label={`${originalResults.results.length || 0} results`} size="small" />
+                      {!rerankedResults && <Chip label="Only Available" size="small" color="warning" />}
+                    </Typography>
+                    <Box sx={{ maxHeight: '600px', overflowY: 'auto' }}>
+                      {originalResults.results.map((result, index) => (
+                        <SearchResultCard
+                          key={`original-${result.tool.id}`}
+                          result={result}
+                          query={query}
+                          compact={true}
+                          showReasoning={false}
+                        />
+                      ))}
+                    </Box>
+                  </Grid>
+                )}
 
-                <Grid item xs={12} md={6}>
-                  <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    Reranked Results
-                    <Chip label={`${rerankedResults?.results.length || 0} results`} size="small" color="primary" />
-                  </Typography>
-                  <Box sx={{ maxHeight: '600px', overflowY: 'auto' }}>
-                    {rerankedResults?.results.map((result, index) => (
-                      <SearchResultCard
-                        key={`reranked-${result.tool.id}`}
-                        result={result}
-                        query={query}
-                        compact={true}
-                        showReasoning={true}
-                      />
-                    ))}
-                  </Box>
-                </Grid>
+                {/* Show reranked results if available */}
+                {rerankedResults && (
+                  <Grid item xs={12} md={hasBothResults ? 6 : 12}>
+                    <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      Reranked Results
+                      <Chip label={`${rerankedResults.results.length || 0} results`} size="small" color="primary" />
+                      {!originalResults && <Chip label="Only Available" size="small" color="warning" />}
+                    </Typography>
+                    <Box sx={{ maxHeight: '600px', overflowY: 'auto' }}>
+                      {rerankedResults.results.map((result, index) => (
+                        <SearchResultCard
+                          key={`reranked-${result.tool.id}`}
+                          result={result}
+                          query={query}
+                          compact={true}
+                          showReasoning={true}
+                        />
+                      ))}
+                    </Box>
+                  </Grid>
+                )}
+
+                {/* Show message when no results are available */}
+                {!originalResults && !rerankedResults && (
+                  <Grid item xs={12}>
+                    <Card>
+                      <CardContent sx={{ textAlign: 'center', py: 4 }}>
+                        <Typography variant="body1" color="text.secondary">
+                          No results available for comparison
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                )}
               </Grid>
             </TabPanel>
 
             <TabPanel value={activeTab} index={1}>
               {/* Ranking Changes */}
-              {comparisonData && (
+              {comparisonData && comparisonData.hasComparison ? (
                 <Box>
                   {/* Improvements */}
                   {comparisonData.improvements.length > 0 && (
@@ -406,16 +455,38 @@ const ResultsComparison: React.FC = () => {
                     </Card>
                   )}
                 </Box>
+              ) : (
+                <Card>
+                  <CardContent sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography variant="h6" color="text.secondary" gutterBottom>
+                      Ranking Comparison Unavailable
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Both original and reranked results are needed to analyze ranking changes.
+                    </Typography>
+                  </CardContent>
+                </Card>
               )}
             </TabPanel>
 
             <TabPanel value={activeTab} index={2}>
               {/* Performance Chart */}
-              {originalResults && rerankedResults && (
+              {originalResults && rerankedResults ? (
                 <ComparisonChart
                   originalResults={originalResults.results}
                   rerankedResults={rerankedResults.results}
                 />
+              ) : (
+                <Card>
+                  <CardContent sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography variant="h6" color="text.secondary" gutterBottom>
+                      Performance Chart Unavailable
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Both original and reranked results are needed to generate the performance chart.
+                    </Typography>
+                  </CardContent>
+                </Card>
               )}
             </TabPanel>
           </Paper>

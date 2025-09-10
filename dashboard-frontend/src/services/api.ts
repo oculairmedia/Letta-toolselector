@@ -50,22 +50,76 @@ class ApiService {
 
   // Search endpoints
   async searchTools(query: SearchQuery): Promise<SearchResponse> {
-    const response = await this.client.post<ApiResponse<SearchResponse>>('/tools/search', query);
-    if (!response.data.success) {
+    const response = await this.client.post('/tools/search', query);
+    
+    // Handle both wrapped and unwrapped responses
+    if (Array.isArray(response.data)) {
+      // Direct array response - wrap it in the expected format
+      return {
+        results: response.data.map((item: any, index: number) => ({
+          tool: {
+            id: item.tool_id,
+            name: item.name,
+            description: item.description,
+            source: item.json_schema || '',
+            category: item.mcp_server_name || '',
+            tags: item.tags || [],
+          },
+          score: item.score,
+          distance: item.distance,
+          reasoning: item.reasoning,
+          rank: index + 1,
+        })),
+        query: query.query,
+        metadata: {
+          total_found: response.data.length,
+          search_time: 0, // Not available from the API
+        },
+      };
+    } else if (response.data.success) {
+      // Wrapped response format
+      return response.data.data!;
+    } else {
       throw new Error(response.data.error || 'Search failed');
     }
-    return response.data.data!;
   }
 
   async searchWithReranking(query: SearchQuery, config: RerankerConfig): Promise<SearchResponse> {
-    const response = await this.client.post<ApiResponse<SearchResponse>>('/tools/search/rerank', {
+    const response = await this.client.post('/tools/search/rerank', {
       query,
       reranker_config: config,
     });
-    if (!response.data.success) {
+    
+    // Handle both wrapped and unwrapped responses
+    if (Array.isArray(response.data)) {
+      // Direct array response - wrap it in the expected format
+      return {
+        results: response.data.map((item: any, index: number) => ({
+          tool: {
+            id: item.tool_id,
+            name: item.name,
+            description: item.description,
+            source: item.json_schema || '',
+            category: item.mcp_server_name || '',
+            tags: item.tags || [],
+          },
+          score: item.score,
+          distance: item.distance,
+          reasoning: item.reasoning,
+          rank: index + 1,
+        })),
+        query: query.query,
+        metadata: {
+          total_found: response.data.length,
+          search_time: 0, // Not available from the API
+        },
+      };
+    } else if (response.data.success) {
+      // Wrapped response format
+      return response.data.data!;
+    } else {
       throw new Error(response.data.error || 'Reranked search failed');
     }
-    return response.data.data!;
   }
 
   // Configuration endpoints

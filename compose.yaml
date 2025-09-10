@@ -179,7 +179,7 @@ services:
     ports:
       - 8406:80
     environment:
-      - REACT_APP_API_BASE_URL=http://localhost:8030
+      - REACT_APP_API_BASE_URL=http://dashboard-backend:8030
       - REACT_APP_VERSION=${VERSION:-latest}
       - REACT_APP_BUILD_DATE=${BUILD_DATE}
       - REACT_APP_COMMIT_SHA=${COMMIT_SHA}

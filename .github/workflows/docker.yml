@@ -236,10 +236,33 @@ jobs:
           MANAGE_ONLY_MCP_TOOLS=true
           EOF
 
-      - name: Test docker-compose build
+      - name: Create test compose override
         run: |
-          docker compose -f compose.yaml build
-          docker compose -f compose.yaml config
+          # Create compose override to use locally built images with proper tags
+          cat > docker-compose.test.yml << EOF
+          services:
+            mcp-server:
+              image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:${{ github.ref_name }}
+              pull_policy: never
+            api-server:
+              image: ghcr.io/oculairmedia/letta-toolselector-api-server:${{ github.ref_name }}
+              pull_policy: never
+            sync-service:
+              image: ghcr.io/oculairmedia/letta-toolselector-sync-service:${{ github.ref_name }}
+              pull_policy: never
+            frontend:
+              image: ghcr.io/oculairmedia/letta-toolselector-frontend:${{ github.ref_name }}
+              pull_policy: never
+            time-service:
+              image: ghcr.io/oculairmedia/letta-toolselector-api-server:${{ github.ref_name }}
+              pull_policy: never
+          EOF
+          
+          echo "Test compose override:"
+          cat docker-compose.test.yml
+          
+          # Test configuration
+          docker compose -f compose.yaml -f docker-compose.test.yml config
 
       - name: Run integration tests
         run: |
@@ -249,11 +272,11 @@ jobs:
           # Start only services that don't conflict with GitHub Actions services
           # Weaviate is already running as a service, so exclude it
           echo "Starting services..."
-          docker compose -f compose.yaml up -d --scale weaviate=0
+          docker compose -f compose.yaml -f docker-compose.test.yml up -d --scale weaviate=0
           
           # Check container status
           echo "Container status:"
-          docker compose -f compose.yaml ps
+          docker compose -f compose.yaml -f docker-compose.test.yml ps
           
           # Function to wait for service with retries
           wait_for_service() {
@@ -278,7 +301,7 @@ jobs:
             
             echo "❌ $service_name failed to become ready after $((max_attempts * wait_time)) seconds"
             echo "📋 Container logs for debugging:"
-            docker compose -f compose.yaml logs --tail=50
+            docker compose -f compose.yaml -f docker-compose.test.yml logs --tail=50
             return 1
           }
           
@@ -289,7 +312,7 @@ jobs:
           wait_for_service "http://localhost:8406/health" "Frontend"
           
           # Optional: Test API server if it's running
-          if docker compose -f compose.yaml ps | grep -q api-server; then
+          if docker compose -f compose.yaml -f docker-compose.test.yml ps | grep -q api-server; then
             wait_for_service "http://localhost:8020/api/health" "API Server"
           fi
           
@@ -297,11 +320,11 @@ jobs:
           
           # Show final container status
           echo "Final container status:"
-          docker compose -f compose.yaml ps
+          docker compose -f compose.yaml -f docker-compose.test.yml ps
           
           # Cleanup
           echo "Cleaning up..."
-          docker compose -f compose.yaml down
+          docker compose -f compose.yaml -f docker-compose.test.yml down
 
   # Job 4: Deploy to Staging (on develop branch)
   deploy-staging:

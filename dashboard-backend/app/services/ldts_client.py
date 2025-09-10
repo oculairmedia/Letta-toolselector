@@ -49,7 +49,7 @@ class LDTSClient:
         
         # Check API server
         try:
-            async with self.session.get(f"{self.api_url}/health") as response:
+            async with self.session.get(f"{self.api_url}/api/v1/health") as response:
                 if response.status == 200:
                     health_status["api_server"] = "healthy"
                 else:

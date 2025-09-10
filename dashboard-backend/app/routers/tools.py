@@ -11,6 +11,7 @@ from app.models.tools import (
     Tool, ExtendedTool, ToolDetailResponse, ToolBrowseRequest, ToolBrowseResponse,
     ExportRequest, RefreshResponse, CategoryListResponse, SourceListResponse, ErrorResponse
 )
+from app.models.search import SearchRequest
 from config.settings import settings
 
 router = APIRouter(tags=["tools"])
@@ -466,3 +467,60 @@ async def refresh_tool_index(
             status_code=500,
             detail=f"Refresh tool index failed: {str(e)}"
         )
+
+@router.post("/tools/search")
+async def search_tools(
+    request: Dict[str, Any],
+    ldts_client: LDTSClient = Depends(get_ldts_client)
+):
+    """Search for tools using LDTS API."""
+    try:
+        logger.info(f"Tool search request: {request}")
+        
+        if not ldts_client.session:
+            raise HTTPException(status_code=503, detail="LDTS client not initialized")
+        
+        # Forward the request to LDTS API server's tools search endpoint
+        async with ldts_client.session.post(
+            f"{ldts_client.api_url}/api/v1/tools/search",
+            json=request
+        ) as response:
+            content = await response.read()
+            return Response(
+                content=content,
+                status_code=response.status,
+                headers=dict(response.headers),
+                media_type="application/json"
+            )
+            
+    except Exception as e:
+        logger.error(f"Tool search failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Tool search failed: {str(e)}")
+
+@router.post("/tools/search/rerank")
+async def search_with_reranking(
+    request: Dict[str, Any],
+    ldts_client: LDTSClient = Depends(get_ldts_client)
+):
+    """Proxy reranking search requests to LDTS API (frontend compatibility)."""
+    try:
+        logger.info(f"Search with reranking request: {request}")
+        
+        if not ldts_client.session:
+            raise HTTPException(status_code=503, detail="LDTS client not initialized")
+        
+        # Forward the request to LDTS API server's tools search endpoint
+        async with ldts_client.session.post(
+            f"{ldts_client.api_url}/api/v1/tools/search/rerank",
+            json=request
+        ) as response:
+            content = await response.read()
+            return Response(
+                content=content,
+                status_code=response.status,
+                headers=dict(response.headers),
+                media_type="application/json"
+            )
+    except Exception as e:
+        logger.error(f"Search with reranking failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Search with reranking failed: {str(e)}")

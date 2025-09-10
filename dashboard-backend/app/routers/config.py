@@ -159,3 +159,70 @@ async def proxy_get_reranker_models(ldts_client: LDTSClient = Depends(get_ldts_c
     except Exception as e:
         logger.error(f"Proxy reranker models failed: {e}")
         raise HTTPException(status_code=500, detail=f"Proxy request failed: {str(e)}")
+
+@router.get("/config/presets")
+async def get_configuration_presets() -> Dict[str, Any]:
+    """Get configuration presets for different use cases."""
+    return {
+        "presets": [
+            {
+                "id": "default",
+                "name": "Default Configuration",
+                "description": "Standard configuration for most use cases",
+                "config": {
+                    "search_limit": settings.DEFAULT_SEARCH_LIMIT,
+                    "enable_reranking": settings.ENABLE_RERANKING,
+                    "min_score": 0.0,
+                    "reranker_model": settings.RERANKER_MODEL
+                }
+            },
+            {
+                "id": "high_precision",
+                "name": "High Precision",
+                "description": "Optimized for accuracy over speed",
+                "config": {
+                    "search_limit": 5,
+                    "enable_reranking": True,
+                    "min_score": 0.7,
+                    "reranker_model": settings.RERANKER_MODEL
+                }
+            },
+            {
+                "id": "high_recall",
+                "name": "High Recall",
+                "description": "Optimized for finding more relevant tools",
+                "config": {
+                    "search_limit": settings.MAX_SEARCH_LIMIT,
+                    "enable_reranking": True,
+                    "min_score": 0.1,
+                    "reranker_model": settings.RERANKER_MODEL
+                }
+            }
+        ],
+        "timestamp": time.time()
+    }
+
+@router.post("/config/reranker/test")
+async def proxy_test_reranker_connection(
+    request_data: Dict[str, Any],
+    ldts_client: LDTSClient = Depends(get_ldts_client)
+):
+    """Proxy reranker connection test requests to LDTS API."""
+    try:
+        if not ldts_client.session:
+            raise HTTPException(status_code=503, detail="LDTS client not initialized")
+        
+        async with ldts_client.session.post(
+            f"{ldts_client.api_url}/api/v1/config/reranker/test",
+            json=request_data
+        ) as response:
+            content = await response.read()
+            return Response(
+                content=content,
+                status_code=response.status,
+                headers=dict(response.headers),
+                media_type="application/json"
+            )
+    except Exception as e:
+        logger.error(f"Proxy reranker test failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Proxy request failed: {str(e)}")

@@ -295,7 +295,7 @@ const ResultsComparison: React.FC = () => {
                     <Box sx={{ maxHeight: '600px', overflowY: 'auto' }}>
                       {originalResults.results.map((result, index) => (
                         <SearchResultCard
-                          key={`original-${result.tool.id}`}
+                          key={`original-${result.tool.id || `fallback-${index}`}-${index}`}
                           result={result}
                           query={query}
                           compact={true}
@@ -317,7 +317,7 @@ const ResultsComparison: React.FC = () => {
                     <Box sx={{ maxHeight: '600px', overflowY: 'auto' }}>
                       {rerankedResults.results.map((result, index) => (
                         <SearchResultCard
-                          key={`reranked-${result.tool.id}`}
+                          key={`reranked-${result.tool.id || `fallback-${index}`}-${index}`}
                           result={result}
                           query={query}
                           compact={true}

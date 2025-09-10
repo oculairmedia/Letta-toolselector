@@ -11,7 +11,7 @@ from typing import Dict, Any
 from config.settings import settings
 from app.middleware.rate_limiting import RateLimitingMiddleware
 from app.middleware.safety import SafetyMiddleware
-from app.routers import search, rerank, config as config_router, health, tools
+from app.routers import search, rerank, config as config_router, health, tools, misc
 from app.services.ldts_client import LDTSClient
 from app.core.logging_config import setup_logging
 
@@ -125,6 +125,7 @@ app.include_router(config_router.router, prefix=f"{settings.API_V1_STR}")
 app.include_router(search.router, prefix=f"{settings.API_V1_STR}")
 app.include_router(rerank.router, prefix=f"{settings.API_V1_STR}")
 app.include_router(tools.router, prefix=f"{settings.API_V1_STR}")
+app.include_router(misc.router, prefix=f"{settings.API_V1_STR}")
 
 # Root endpoint
 @app.get("/")

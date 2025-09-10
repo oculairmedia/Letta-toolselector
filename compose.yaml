@@ -135,13 +135,51 @@ services:
       start_period: 10s
     networks:
       - letta-tools
+  dashboard-backend:
+    image: ghcr.io/oculairmedia/letta-toolselector-dashboard-backend:latest
+    container_name: letta-toolselector-dashboard-backend
+    ports:
+      - 8030:8030
+    environment:
+      - LDTS_API_URL=http://api-server:3001
+      - LDTS_MCP_URL=http://mcp-server:3020
+      - WEAVIATE_URL=http://weaviate:8080
+      - LETTA_API_URL=${LETTA_API_URL}
+      - LETTA_PASSWORD=${LETTA_PASSWORD}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    restart: unless-stopped
+    labels:
+      - homepage.group=LDTS Services
+      - homepage.name=Dashboard Backend
+      - homepage.icon=api
+      - homepage.href=http://192.168.50.90:8030/api/v1/docs
+      - homepage.description=LDTS Dashboard Backend API
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:8030/api/v1/health
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      api-server:
+        condition: service_started
+      mcp-server:
+        condition: service_healthy
+      weaviate:
+        condition: service_healthy
+    networks:
+      - letta-tools
   frontend:
     image: ghcr.io/oculairmedia/letta-toolselector-frontend:latest
     container_name: letta-toolselector-frontend
     ports:
       - 8406:80
     environment:
-      - REACT_APP_API_BASE_URL=http://localhost:8020
+      - REACT_APP_API_BASE_URL=http://localhost:8030
       - REACT_APP_VERSION=${VERSION:-latest}
       - REACT_APP_BUILD_DATE=${BUILD_DATE}
       - REACT_APP_COMMIT_SHA=${COMMIT_SHA}
@@ -163,8 +201,8 @@ services:
       retries: 3
       start_period: 15s
     depends_on:
-      api-server:
-        condition: service_started
+      dashboard-backend:
+        condition: service_healthy
     networks:
       - letta-tools
 networks:

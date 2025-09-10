@@ -1,8 +1,7 @@
-from pydantic_settings import BaseSettings
 from typing import Optional, List
 import os
 
-class Settings(BaseSettings):
+class Settings:
     # API Configuration
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "LDTS Reranker Testing Dashboard Backend"

@@ -207,6 +207,14 @@ jobs:
         id: date
         run: echo "date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
 
+      - name: Sanitize branch name for image tags
+        id: sanitize
+        run: |
+          # Replace forward slashes with dashes for valid Docker tags
+          SANITIZED_REF=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
+          echo "sanitized-ref=$SANITIZED_REF" >> $GITHUB_OUTPUT
+          echo "Using sanitized tag: $SANITIZED_REF"
+
       - name: Create test environment file
         run: |
           cat > .env << EOF
@@ -242,19 +250,19 @@ jobs:
           cat > docker-compose.test.yml << EOF
           services:
             mcp-server:
-              image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:${{ github.ref_name }}
+              image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:${{ steps.sanitize.outputs.sanitized-ref }}
               pull_policy: never
             api-server:
-              image: ghcr.io/oculairmedia/letta-toolselector-api-server:${{ github.ref_name }}
+              image: ghcr.io/oculairmedia/letta-toolselector-api-server:${{ steps.sanitize.outputs.sanitized-ref }}
               pull_policy: never
             sync-service:
-              image: ghcr.io/oculairmedia/letta-toolselector-sync-service:${{ github.ref_name }}
+              image: ghcr.io/oculairmedia/letta-toolselector-sync-service:${{ steps.sanitize.outputs.sanitized-ref }}
               pull_policy: never
             frontend:
-              image: ghcr.io/oculairmedia/letta-toolselector-frontend:${{ github.ref_name }}
+              image: ghcr.io/oculairmedia/letta-toolselector-frontend:${{ steps.sanitize.outputs.sanitized-ref }}
               pull_policy: never
             time-service:
-              image: ghcr.io/oculairmedia/letta-toolselector-api-server:${{ github.ref_name }}
+              image: ghcr.io/oculairmedia/letta-toolselector-api-server:${{ steps.sanitize.outputs.sanitized-ref }}
               pull_policy: never
           EOF
           

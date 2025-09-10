@@ -76,8 +76,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Temporarily disable cache due to GitHub issues
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
           build-args: |
             SERVICE=mcp-server
 
@@ -93,8 +94,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Temporarily disable cache due to GitHub issues
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
 
       # Build Sync Service
       - name: Build and push Sync Service
@@ -108,8 +110,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Temporarily disable cache due to GitHub issues
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
 
       # Build Frontend
       - name: Build and push Frontend
@@ -141,8 +144,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Temporarily disable cache due to GitHub issues
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
 
   # Job 2: Security Scanning for Images (Optional)
   docker-security:

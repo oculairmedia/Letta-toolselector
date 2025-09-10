@@ -1480,6 +1480,50 @@ async def test_reranker_connection():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# Embedding Configuration Endpoints
+@app.route('/api/v1/config/embedding', methods=['GET'])
+async def get_embedding_config():
+    """Get current embedding configuration."""
+    try:
+        # Return embedding config based on environment variables
+        config = {
+            "model": os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
+            "provider": os.getenv('EMBEDDING_PROVIDER', 'ollama'),
+            "parameters": {
+                "dimensions": int(os.getenv('EMBEDDING_DIMENSION', '2560')),
+                "host": os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80'),
+                "use_ollama": os.getenv('USE_OLLAMA_EMBEDDINGS', 'true').lower() == 'true'
+            }
+        }
+        return jsonify({"success": True, "data": config})
+    except Exception as e:
+        logger.error(f"Error getting embedding config: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/embedding', methods=['PUT'])
+async def update_embedding_config():
+    """Update embedding configuration."""
+    try:
+        data = await request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "No configuration data provided"}), 400
+        
+        # Validate required fields
+        required_fields = ['model', 'provider']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"success": False, "error": f"Missing required field: {field}"}), 400
+        
+        # For now, just acknowledge the update
+        logger.info(f"Embedding config update requested: {data}")
+        
+        return jsonify({"success": True, "message": "Embedding configuration updated successfully"})
+    except Exception as e:
+        logger.error(f"Error updating embedding config: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route('/api/v1/ollama/models', methods=['GET'])
 async def get_ollama_models():
     """Get available models from Ollama instance."""

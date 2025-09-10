@@ -57,20 +57,20 @@ class ApiService {
     
     // Handle both wrapped and unwrapped responses
     if (Array.isArray(response.data)) {
-      // Direct array response - wrap it in the expected format
+      // Direct array response from LDTS API - wrap it in the expected format
       return {
         results: response.data.map((item: any, index: number) => ({
           tool: {
-            id: item.tool_id,
-            name: item.name,
-            description: item.description,
-            source: item.json_schema || '',
+            id: item.tool_id || '',
+            name: item.name || '',
+            description: item.description || '',
+            source: item.source_type || 'unknown',
             category: item.mcp_server_name || '',
             tags: item.tags || [],
           },
-          score: item.score,
+          score: item.score || 0,
           distance: item.distance,
-          reasoning: item.reasoning,
+          reasoning: item.reasoning || '',
           rank: index + 1,
         })),
         query: query.query,
@@ -99,16 +99,16 @@ class ApiService {
       return {
         results: response.data.map((item: any, index: number) => ({
           tool: {
-            id: item.tool_id,
-            name: item.name,
-            description: item.description,
-            source: item.json_schema || '',
+            id: item.tool_id || '',
+            name: item.name || '',
+            description: item.description || '',
+            source: item.source_type || 'unknown',
             category: item.mcp_server_name || '',
             tags: item.tags || [],
           },
-          score: item.score,
+          score: item.score || 0,
           distance: item.distance,
-          reasoning: item.reasoning,
+          reasoning: item.reasoning || '',
           rank: index + 1,
         })),
         query: query.query,
@@ -117,9 +117,31 @@ class ApiService {
           search_time: 0, // Not available from the API
         },
       };
-    } else if (response.data.success) {
-      // Wrapped response format
-      return response.data.data!;
+    } else if (response.data.success && response.data.data) {
+      // Dashboard backend wrapped response format with nested data
+      const data = response.data.data;
+      return {
+        results: data.results.map((item: any, index: number) => ({
+          tool: {
+            id: item.tool?.id || '',
+            name: item.tool?.name || '',
+            description: item.tool?.description || '',
+            source: item.tool?.source || 'unknown',
+            category: item.tool?.category || '',
+            tags: item.tool?.tags || [],
+          },
+          score: item.score || 0,
+          distance: item.distance,
+          reasoning: item.reasoning || '',
+          rank: item.rank || (index + 1),
+        })),
+        query: data.query || query.query,
+        metadata: {
+          total_found: data.metadata?.total_found || data.results.length,
+          search_time: data.metadata?.search_time || 0,
+          reranker_used: data.metadata?.reranker_used,
+        },
+      };
     } else {
       throw new Error(response.data.error || 'Reranked search failed');
     }

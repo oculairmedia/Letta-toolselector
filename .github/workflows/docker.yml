@@ -127,7 +127,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
           build-args: |
-            REACT_APP_API_BASE_URL=http://localhost:8030
+            REACT_APP_API_BASE_URL=/api/v1
             REACT_APP_VERSION=${{ github.ref_name }}
             REACT_APP_BUILD_DATE=${{ steps.date.outputs.date }}
             REACT_APP_COMMIT_SHA=${{ github.sha }}

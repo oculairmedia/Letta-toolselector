@@ -15,7 +15,7 @@ import {
   Info as InfoIcon,
 } from '@mui/icons-material';
 
-import { useRerankerConfig, useEmbeddingModels, useRerankerModels } from '../../hooks/useApi';
+import { useRerankerConfig, useEmbeddingModels, useRerankerModels, useEmbeddingConfig } from '../../hooks/useApi';
 
 interface ModelIndicatorProps {
   compact?: boolean;
@@ -27,13 +27,30 @@ const ModelIndicator: React.FC<ModelIndicatorProps> = ({
   showDetails = false 
 }) => {
   const { data: rerankerConfig, isLoading: rerankerConfigLoading } = useRerankerConfig();
+  const { data: embeddingConfig, isLoading: embeddingConfigLoading } = useEmbeddingConfig();
   const { data: embeddingModels, isLoading: embeddingModelsLoading } = useEmbeddingModels();
   const { data: rerankerModels, isLoading: rerankerModelsLoading } = useRerankerModels();
 
-  const isLoading = rerankerConfigLoading || embeddingModelsLoading || rerankerModelsLoading;
+  const isLoading = rerankerConfigLoading || embeddingConfigLoading || embeddingModelsLoading || rerankerModelsLoading;
 
-  // Get current embedding model (assuming first recommended or first available)
-  const currentEmbeddingModel = embeddingModels?.models.find(m => m.recommended) || embeddingModels?.models[0];
+  // Get current embedding model from actual configuration
+  // Fallback to environment default if embedding config API is not available
+  const fallbackEmbeddingModel = 'dengcao/Qwen3-Embedding-4B:Q4_K_M'; // From .env OLLAMA_EMBEDDING_MODEL
+  
+  const currentEmbeddingModel = embeddingModels?.models.find(m => m.id === embeddingConfig?.model) || 
+                               embeddingModels?.models.find(m => m.id === fallbackEmbeddingModel) ||
+                               embeddingModels?.models.find(m => m.recommended) || 
+                               embeddingModels?.models[0];
+  
+  // If no model data but we have config, create a minimal model object
+  const displayEmbeddingModel = currentEmbeddingModel || (embeddingConfig ? {
+    id: embeddingConfig.model,
+    name: embeddingConfig.model,
+    provider: embeddingConfig.provider,
+    dimensions: 2560, // Default dimensions for Qwen3-Embedding-4B
+    cost_per_1k: 0,
+    recommended: false
+  } : null);
   
   // Get current reranker model info
   const currentRerankerModel = rerankerModels?.models.find(m => m.id === rerankerConfig?.model);
@@ -120,10 +137,10 @@ const ModelIndicator: React.FC<ModelIndicatorProps> = ({
             'primary'
           )
         )}
-        {currentEmbeddingModel && (
+        {(displayEmbeddingModel || fallbackEmbeddingModel) && (
           renderModelChip(
             'Embedding', 
-            currentEmbeddingModel.id, 
+            displayEmbeddingModel?.id || fallbackEmbeddingModel, 
             <EmbeddingIcon fontSize="small" />, 
             'secondary'
           )
@@ -140,10 +157,10 @@ const ModelIndicator: React.FC<ModelIndicatorProps> = ({
       </Typography>
       
       <Stack direction="row" spacing={1} flexWrap="wrap">
-        {currentEmbeddingModel && (
+        {(displayEmbeddingModel || fallbackEmbeddingModel) && (
           renderModelChip(
             'Embedding', 
-            currentEmbeddingModel.id, 
+            displayEmbeddingModel?.id || fallbackEmbeddingModel, 
             <EmbeddingIcon fontSize="small" />, 
             'secondary'
           )
@@ -171,9 +188,9 @@ const ModelIndicator: React.FC<ModelIndicatorProps> = ({
         <Paper sx={{ p: 2, mt: 1, bgcolor: 'background.default' }}>
           <Typography variant="caption" color="text.secondary">
             <strong>Details:</strong><br />
-            • Embedding: {currentEmbeddingModel?.name || 'Not available'}<br />
-            • Provider: {currentEmbeddingModel?.provider || 'Unknown'}<br />
-            • Dimensions: {currentEmbeddingModel?.dimensions || 'Unknown'}<br />
+            • Embedding: {displayEmbeddingModel?.name || fallbackEmbeddingModel || 'Not available'}<br />
+            • Provider: {displayEmbeddingModel?.provider || (displayEmbeddingModel ? 'ollama' : 'Unknown')}<br />
+            • Dimensions: {displayEmbeddingModel?.dimensions || (fallbackEmbeddingModel ? '2560' : 'Unknown')}<br />
             {rerankerConfig?.enabled && (
               <>
                 • Reranker: {currentRerankerModel?.name || rerankerConfig.model}<br />

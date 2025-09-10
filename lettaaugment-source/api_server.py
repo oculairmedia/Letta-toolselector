@@ -427,7 +427,15 @@ async def search():
         # This call might need adjustment if search_tools is strictly async now
         # For now, assuming it might work or needs a sync wrapper if this endpoint is kept sync
         logger.warning("Calling potentially async search_tools from sync context in /search endpoint.")
-        results = search_tools(query=query, limit=limit) # Await the async version
+        
+        # If MANAGE_ONLY_MCP_TOOLS is enabled, search with higher limit and filter for MCP tools first
+        if MANAGE_ONLY_MCP_TOOLS:
+            # Search with a higher limit to ensure we get enough MCP tools
+            search_limit = limit * 5  # Get 5x more results to filter from
+            logger.info(f"MANAGE_ONLY_MCP_TOOLS enabled - searching with limit {search_limit} to filter for MCP tools")
+            results = search_tools(query=query, limit=search_limit)
+        else:
+            results = search_tools(query=query, limit=limit)
         
         # Filter results if MANAGE_ONLY_MCP_TOOLS is enabled
         if MANAGE_ONLY_MCP_TOOLS:
@@ -435,26 +443,41 @@ async def search():
             tools_cache = await read_tool_cache()
             filtered_results = []
             
-            for result in results:
+            logger.info(f"DEBUG: Starting MCP filtering with {len(results)} results")
+            for i, result in enumerate(results):
                 tool_name = result.get('name')
+                logger.info(f"DEBUG: Result {i}: name='{tool_name}', keys={list(result.keys())}")
                 if tool_name:
                     # Find the tool in cache to check its type
                     cached_tool = next((t for t in tools_cache if t.get('name') == tool_name), None)
                     if cached_tool:
-                        # Check if it's an MCP tool
-                        is_mcp_tool = (cached_tool.get("tool_type") == "external_mcp" or 
-                                     (not _is_letta_core_tool(cached_tool) and cached_tool.get("tool_type") == "custom"))
+                        tool_type = cached_tool.get("tool_type")
+                        is_letta_core = _is_letta_core_tool(cached_tool)
+                        is_mcp_tool = (tool_type == "external_mcp" or 
+                                     (not is_letta_core and tool_type == "custom"))
+                        logger.info(f"DEBUG: Tool '{tool_name}' found in cache - type={tool_type}, is_letta_core={is_letta_core}, is_mcp_tool={is_mcp_tool}")
                         if is_mcp_tool:
                             filtered_results.append(result)
+                            logger.info(f"DEBUG: Tool '{tool_name}' PASSED filter")
+                            # Stop when we have enough results
+                            if len(filtered_results) >= limit:
+                                break
                         else:
-                            logger.debug(f"Filtering out non-MCP tool '{tool_name}' from search results")
+                            logger.info(f"DEBUG: Tool '{tool_name}' FAILED filter - not MCP")
                     else:
+                        logger.info(f"DEBUG: Tool '{tool_name}' NOT found in cache")
                         # If not in cache, it might be an MCP tool that needs registration
                         if result.get("mcp_server_name"):
                             filtered_results.append(result)
+                            logger.info(f"DEBUG: Tool '{tool_name}' PASSED filter - has mcp_server_name")
+                            # Stop when we have enough results
+                            if len(filtered_results) >= limit:
+                                break
+                else:
+                    logger.info(f"DEBUG: Result {i} has no name field")
             
             logger.info(f"Weaviate search: {len(results)} total results, {len(filtered_results)} after MCP filtering.")
-            return jsonify(filtered_results)
+            return jsonify(filtered_results[:limit])  # Ensure we don't return more than requested
         else:
             logger.info(f"Weaviate search successful, returning {len(results)} results.")
             return jsonify(results)

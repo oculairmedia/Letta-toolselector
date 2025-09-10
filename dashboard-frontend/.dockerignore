@@ -92,9 +92,9 @@ coverage/
 .nuxt
 dist
 
-# Gatsby files
+# Gatsby files (React apps need public directory!)
 .cache/
-public
+# public - DO NOT EXCLUDE for React apps
 
 # Storybook build outputs
 .out

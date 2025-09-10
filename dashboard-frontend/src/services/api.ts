@@ -393,11 +393,18 @@ class ApiService {
     total: number;
     providers: string[];
   }> {
-    const response = await this.client.get<ApiResponse<any>>('/models/embedding');
-    if (!response.data.success) {
-      throw new Error(response.data.error || 'Failed to get embedding models');
+    const response = await this.client.get<any>('/models/embedding');
+    
+    // Handle direct LDTS API format from proxy endpoint
+    if (response.data.success !== undefined) {
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Failed to get embedding models');
+      }
+      return response.data.data!;
     }
-    return response.data.data!;
+    
+    // Fallback error
+    throw new Error('Invalid response format');
   }
 
   async getRerankerModels(): Promise<{
@@ -415,11 +422,18 @@ class ApiService {
     providers: string[];
     types: string[];
   }> {
-    const response = await this.client.get<ApiResponse<any>>('/models/reranker');
-    if (!response.data.success) {
-      throw new Error(response.data.error || 'Failed to get reranker models');
+    const response = await this.client.get<any>('/models/reranker');
+    
+    // Handle direct LDTS API format from proxy endpoint
+    if (response.data.success !== undefined) {
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Failed to get reranker models');
+      }
+      return response.data.data!;
     }
-    return response.data.data!;
+    
+    // Fallback error
+    throw new Error('Invalid response format');
   }
 
   // Reranker Model Registry endpoints
@@ -522,15 +536,18 @@ class ApiService {
     provider: string;
     parameters: any;
   }> {
-    const response = await this.client.get<ApiResponse<{
-      model: string;
-      provider: string;
-      parameters: any;
-    }>>('/config/embedding');
-    if (!response.data.success) {
-      throw new Error(response.data.error || 'Failed to get embedding config');
+    const response = await this.client.get<any>('/config/embedding');
+    
+    // Handle direct LDTS API format from proxy endpoint
+    if (response.data.success !== undefined) {
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Failed to get embedding config');
+      }
+      return response.data.data!;
     }
-    return response.data.data!;
+    
+    // Fallback error
+    throw new Error('Invalid response format');
   }
 
   async updateEmbeddingConfig(config: {

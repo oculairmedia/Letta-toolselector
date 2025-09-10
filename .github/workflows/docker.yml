@@ -21,12 +21,13 @@ jobs:
       packages: write
     strategy:
       matrix:
-        service: [mcp-server, api-server, sync-service]
+        service: [mcp-server, api-server, sync-service, frontend]
     
     outputs:
       image-digest-mcp-server: ${{ steps.build-mcp-server.outputs.digest }}
       image-digest-api-server: ${{ steps.build-api-server.outputs.digest }}
       image-digest-sync-service: ${{ steps.build-sync-service.outputs.digest }}
+      image-digest-frontend: ${{ steps.build-frontend.outputs.digest }}
 
     steps:
       - name: Checkout code
@@ -57,6 +58,10 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-,format=short
             type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Get current date
+        id: date
+        run: echo "date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
 
       # Build MCP Server
       - name: Build and push MCP Server
@@ -108,6 +113,27 @@ jobs:
           # cache-from: type=gha
           # cache-to: type=gha,mode=max
 
+      # Build Frontend
+      - name: Build and push Frontend
+        if: matrix.service == 'frontend'
+        id: build-frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dashboard-frontend
+          file: ./dashboard-frontend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64
+          build-args: |
+            REACT_APP_API_BASE_URL=http://localhost:8020
+            REACT_APP_VERSION=${{ github.ref_name }}
+            REACT_APP_BUILD_DATE=${{ steps.date.outputs.date }}
+            REACT_APP_COMMIT_SHA=${{ github.sha }}
+          # Temporarily disable cache due to GitHub issues
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
+
   # Job 2: Security Scanning for Images (Optional)
   docker-security:
     runs-on: ubuntu-latest
@@ -115,7 +141,7 @@ jobs:
     continue-on-error: true  # Don't fail the pipeline if security scanning fails
     strategy:
       matrix:
-        service: [mcp-server, api-server, sync-service]
+        service: [mcp-server, api-server, sync-service, frontend]
     steps:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
@@ -192,6 +218,9 @@ jobs:
           # Test MCP server health
           curl -f http://localhost:3020/health || exit 1
           
+          # Test frontend health
+          curl -f http://localhost:8406/health || exit 1
+          
           # Test that containers are running properly
           docker compose -f compose.yaml ps
           
@@ -236,8 +265,9 @@ jobs:
           echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **Environment**: Production" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Services Deployed**: MCP Server, API Server, Sync Service" >> $GITHUB_STEP_SUMMARY
+          echo "- **Services Deployed**: MCP Server, API Server, Sync Service, Frontend Dashboard" >> $GITHUB_STEP_SUMMARY
           echo "- **Registry**: ${{ env.REGISTRY }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend URL**: http://192.168.50.90:8406" >> $GITHUB_STEP_SUMMARY
 
   # Job 6: Cleanup old images
   cleanup:
@@ -252,6 +282,7 @@ jobs:
             ${{ env.IMAGE_NAME }}-mcp-server
             ${{ env.IMAGE_NAME }}-api-server  
             ${{ env.IMAGE_NAME }}-sync-service
+            ${{ env.IMAGE_NAME }}-frontend
           cut-off: 30 days ago UTC
           account-type: org
           org-name: ${{ github.repository_owner }}

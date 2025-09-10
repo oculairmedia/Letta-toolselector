@@ -135,6 +135,38 @@ services:
       start_period: 10s
     networks:
       - letta-tools
+  frontend:
+    image: ghcr.io/oculairmedia/letta-toolselector-frontend:latest
+    container_name: letta-toolselector-frontend
+    ports:
+      - 8406:80
+    environment:
+      - REACT_APP_API_BASE_URL=http://localhost:8020
+      - REACT_APP_VERSION=${VERSION:-latest}
+      - REACT_APP_BUILD_DATE=${BUILD_DATE}
+      - REACT_APP_COMMIT_SHA=${COMMIT_SHA}
+    restart: unless-stopped
+    labels:
+      - homepage.group=LDTS Services
+      - homepage.name=LDTS Dashboard
+      - homepage.icon=dashboard
+      - homepage.href=http://192.168.50.90:8406
+      - homepage.description=Letta Dynamic Tool Selection Dashboard
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost/health
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      api-server:
+        condition: service_started
+    networks:
+      - letta-tools
 networks:
   letta-tools:
     driver: bridge

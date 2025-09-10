@@ -237,38 +237,45 @@ jobs:
           MANAGE_ONLY_MCP_TOOLS=true
           EOF
 
-      - name: Create test compose override
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull built images and create test override
         run: |
-          # The metadata action automatically handles branch names with slashes
-          # For feature/dashboard-frontend it creates: feature-dashboard-frontend
+          # The metadata action creates tags like: feature-dashboard-frontend
           SANITIZED_REF=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
           
-          # Create compose override to use locally built images with proper tags
+          # Pull the images that were just built and pushed
+          docker pull ghcr.io/oculairmedia/letta-toolselector-mcp-server:${SANITIZED_REF}
+          docker pull ghcr.io/oculairmedia/letta-toolselector-api-server:${SANITIZED_REF}  
+          docker pull ghcr.io/oculairmedia/letta-toolselector-sync-service:${SANITIZED_REF}
+          docker pull ghcr.io/oculairmedia/letta-toolselector-frontend:${SANITIZED_REF}
+          
+          # Create compose override to use the pulled images
           cat > docker-compose.test.yml << EOF
           services:
             mcp-server:
               image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:${SANITIZED_REF}
-              pull_policy: never
             api-server:
               image: ghcr.io/oculairmedia/letta-toolselector-api-server:${SANITIZED_REF}
-              pull_policy: never
             sync-service:
               image: ghcr.io/oculairmedia/letta-toolselector-sync-service:${SANITIZED_REF}
-              pull_policy: never
             frontend:
               image: ghcr.io/oculairmedia/letta-toolselector-frontend:${SANITIZED_REF}
-              pull_policy: never
             time-service:
               image: ghcr.io/oculairmedia/letta-toolselector-api-server:${SANITIZED_REF}
-              pull_policy: never
           EOF
           
           echo "Test compose override:"
           cat docker-compose.test.yml
           
-          # Debug: List available built images
-          echo "Available Docker images:"
-          docker images | grep -E "letta-toolselector|REPOSITORY"
+          # Verify images are available
+          echo "Available images:"
+          docker images | grep letta-toolselector
           
           # Test configuration
           docker compose -f compose.yaml -f docker-compose.test.yml config

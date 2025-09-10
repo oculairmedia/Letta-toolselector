@@ -174,7 +174,7 @@ services:
     networks:
       - letta-tools
   frontend:
-    image: ghcr.io/oculairmedia/letta-toolselector-frontend:latest
+    image: ghcr.io/oculairmedia/letta-toolselector-frontend:feature-dashboard-frontend
     container_name: letta-toolselector-frontend
     ports:
       - 8406:80

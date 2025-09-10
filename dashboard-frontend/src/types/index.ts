@@ -55,6 +55,27 @@ export interface EmbeddingConfig {
   batch_size?: number;
 }
 
+export interface ExtendedTool extends Tool {
+  mcp_server_name?: string;
+  last_updated?: string;
+  registered_in_letta?: boolean;
+  embedding_id?: string;
+}
+
+export interface ToolBrowseResponse {
+  tools: ExtendedTool[];
+  total: number;
+  page: number;
+  limit: number;
+  has_more: boolean;
+}
+
+export interface ToolDetailResponse extends ExtendedTool {
+  json_schema?: any;
+  parameters?: any;
+  metadata?: Record<string, any>;
+}
+
 export interface ConfigurationPreset {
   id: string;
   name: string;

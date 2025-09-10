@@ -8,6 +8,8 @@ import {
   EvaluationRating,
   Analytics,
   Tool,
+  ToolBrowseResponse,
+  ToolDetailResponse,
 } from '../types';
 
 // Query keys for React Query
@@ -43,7 +45,57 @@ export const useRefreshTools = () => {
     mutationFn: () => apiService.refreshToolIndex(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.tools });
+      queryClient.invalidateQueries({ queryKey: ['browseTools'] });
     },
+  });
+};
+
+// Tool Browser hooks
+export const useBrowseTools = (params?: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  category?: string;
+  source?: string;
+  mcp_server?: string;
+  sort?: 'name' | 'category' | 'updated' | 'relevance';
+  order?: 'asc' | 'desc';
+}) => {
+  return useQuery<ToolBrowseResponse>({
+    queryKey: ['browseTools', params],
+    queryFn: () => apiService.browseTools(params),
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  });
+};
+
+export const useToolDetail = (toolId: string, enabled: boolean = true) => {
+  return useQuery<ToolDetailResponse>({
+    queryKey: ['toolDetail', toolId],
+    queryFn: () => apiService.getToolDetail(toolId),
+    enabled: enabled && !!toolId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+};
+
+export const useToolCategories = () => {
+  return useQuery({
+    queryKey: ['toolCategories'],
+    queryFn: () => apiService.getToolCategories(),
+    staleTime: 10 * 60 * 1000, // 10 minutes
+  });
+};
+
+export const useToolSources = () => {
+  return useQuery({
+    queryKey: ['toolSources'],
+    queryFn: () => apiService.getToolSources(),
+    staleTime: 10 * 60 * 1000, // 10 minutes
+  });
+};
+
+export const useExportTools = () => {
+  return useMutation({
+    mutationFn: (format: 'json' | 'csv' = 'json') => apiService.exportTools(format),
   });
 };
 

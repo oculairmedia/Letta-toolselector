@@ -8,6 +8,8 @@ import {
   Analytics,
   Tool,
   ApiResponse,
+  ToolBrowseResponse,
+  ToolDetailResponse,
 } from '../types';
 
 class ApiService {
@@ -236,6 +238,65 @@ class ApiService {
     if (!response.data.success) {
       throw new Error(response.data.error || 'Failed to refresh tool index');
     }
+  }
+
+  // Tool Browser endpoints
+  async browseTools(params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    category?: string;
+    source?: string;
+    mcp_server?: string;
+    sort?: 'name' | 'category' | 'updated' | 'relevance';
+    order?: 'asc' | 'desc';
+  }): Promise<ToolBrowseResponse> {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.search) queryParams.append('search', params.search);
+    if (params?.category) queryParams.append('category', params.category);
+    if (params?.source) queryParams.append('source', params.source);
+    if (params?.mcp_server) queryParams.append('mcp_server', params.mcp_server);
+    if (params?.sort) queryParams.append('sort', params.sort);
+    if (params?.order) queryParams.append('order', params.order);
+
+    const response = await this.client.get(`/tools/browse?${queryParams}`);
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to browse tools');
+    }
+    return response.data.data;
+  }
+
+  async getToolDetail(toolId: string): Promise<ToolDetailResponse> {
+    const response = await this.client.get(`/tools/${toolId}/detail`);
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get tool details');
+    }
+    return response.data.data;
+  }
+
+  async getToolCategories(): Promise<string[]> {
+    const response = await this.client.get('/tools/categories');
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get tool categories');
+    }
+    return response.data.data;
+  }
+
+  async getToolSources(): Promise<string[]> {
+    const response = await this.client.get('/tools/sources');
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get tool sources');
+    }
+    return response.data.data;
+  }
+
+  async exportTools(format: 'json' | 'csv' = 'json'): Promise<Blob> {
+    const response = await this.client.get(`/tools/export?format=${format}`, {
+      responseType: 'blob',
+    });
+    return response.data;
   }
 
   // Advanced search endpoints

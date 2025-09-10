@@ -38,6 +38,7 @@ import ConfigurationPanel from './components/ConfigurationPanel/ConfigurationPan
 import ResultsComparison from './components/ResultsComparison/ResultsComparison';
 import EvaluationInterface from './components/EvaluationInterface/EvaluationInterface';
 import Analytics from './components/Analytics/Analytics';
+import ToolBrowser from './components/ToolBrowser/ToolBrowser';
 
 // Constants
 const DRAWER_WIDTH = 240;
@@ -55,6 +56,7 @@ const queryClient = new QueryClient({
 // Navigation items
 const navigationItems = [
   { id: 'search', label: 'Search Interface', icon: <SearchIcon />, component: SearchInterface },
+  { id: 'browse', label: 'Tool Browser', icon: <StorageIcon />, component: ToolBrowser },
   { id: 'compare', label: 'Results Comparison', icon: <CompareIcon />, component: ResultsComparison },
   { id: 'evaluate', label: 'Manual Evaluation', icon: <AssessmentIcon />, component: EvaluationInterface },
   { id: 'analytics', label: 'Analytics Dashboard', icon: <DashboardIcon />, component: Analytics },

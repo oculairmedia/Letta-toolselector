@@ -18,6 +18,8 @@ import {
   AccordionSummary,
   AccordionDetails,
   Slider,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -29,7 +31,16 @@ import {
 } from '@mui/icons-material';
 
 import { RerankerConfig as RerankerConfigType } from '../../types';
-import { useUpdateRerankerConfig, useTestRerankerConnection, useOllamaModels } from '../../hooks/useApi';
+import { 
+  useUpdateRerankerConfig, 
+  useTestRerankerConnection, 
+  useOllamaModels,
+  useRerankerModels,
+  useEmbeddingModels,
+  useRerankerModelRegistry,
+  useTestRerankerModel,
+  useRegisterRerankerModel
+} from '../../hooks/useApi';
 
 interface RerankerConfigProps {
   config?: RerankerConfigType;
@@ -51,10 +62,15 @@ const MODEL_OPTIONS: Record<string, string[]> = {
 };
 
 const RerankerConfig: React.FC<RerankerConfigProps> = ({ config, isLoading }) => {
-  const [formData, setFormData] = useState<RerankerConfigType>({
+  const [formData, setFormData] = useState<RerankerConfigType & { 
+    embedding_model?: string; 
+    embedding_provider?: string;
+  }>({
     enabled: true,
-    model: 'gpt-3.5-turbo',
-    provider: 'openai',
+    model: 'mistral:7b',
+    provider: 'ollama',
+    embedding_model: 'text-embedding-3-small',
+    embedding_provider: 'openai',
     parameters: {
       temperature: 0.1,
       max_tokens: 150,
@@ -63,10 +79,16 @@ const RerankerConfig: React.FC<RerankerConfigProps> = ({ config, isLoading }) =>
 
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [selectedTab, setSelectedTab] = useState(0); // 0: Reranker, 1: Embedding
 
   const updateConfigMutation = useUpdateRerankerConfig();
   const testConnectionMutation = useTestRerankerConnection();
   const { data: ollamaModelsData, isLoading: ollamaModelsLoading } = useOllamaModels();
+  const { data: rerankerModelsData, isLoading: rerankerModelsLoading } = useRerankerModels();
+  const { data: embeddingModelsData, isLoading: embeddingModelsLoading } = useEmbeddingModels();
+  const { data: rerankerRegistryData, isLoading: registryLoading } = useRerankerModelRegistry();
+  const testRerankerModelMutation = useTestRerankerModel();
+  const registerRerankerModelMutation = useRegisterRerankerModel();
 
   // Update form data when config loads
   useEffect(() => {
@@ -135,15 +157,70 @@ const RerankerConfig: React.FC<RerankerConfigProps> = ({ config, isLoading }) =>
     }
   };
 
-  // Get available models based on provider
-  const getAvailableModels = () => {
-    if (formData.provider === 'ollama' && ollamaModelsData?.models) {
-      return ollamaModelsData.models.map(model => model.name);
+  // Get available reranker models from registry and discovery
+  const getAvailableRerankerModels = () => {
+    const models: Array<{ id: string; name: string; provider: string; recommended: boolean; validated: boolean }> = [];
+    
+    // Add registry models
+    if (rerankerRegistryData?.models) {
+      models.push(...rerankerRegistryData.models.map(model => ({
+        id: model.id,
+        name: model.name,
+        provider: model.provider,
+        recommended: model.recommended,
+        validated: model.validated,
+      })));
     }
-    return MODEL_OPTIONS[formData.provider] || [];
+    
+    // Add discovered models (if not already in registry)
+    if (rerankerModelsData?.models) {
+      const registryIds = new Set(rerankerRegistryData?.models?.map(m => m.id) || []);
+      rerankerModelsData.models.forEach(model => {
+        if (!registryIds.has(model.id)) {
+          models.push({
+            id: model.id,
+            name: model.name,
+            provider: model.provider,
+            recommended: model.recommended,
+            validated: false,
+          });
+        }
+      });
+    }
+    
+    return models;
+  };
+
+  // Get available embedding models
+  const getAvailableEmbeddingModels = () => {
+    return embeddingModelsData?.models?.map(model => ({
+      id: model.id,
+      name: model.name,
+      provider: model.provider,
+      recommended: model.recommended,
+      cost_per_1k: model.cost_per_1k,
+      dimensions: model.dimensions,
+    })) || [];
   };
   
-  const availableModels = getAvailableModels();
+  const availableRerankerModels = getAvailableRerankerModels();
+  const availableEmbeddingModels = getAvailableEmbeddingModels();
+
+  // Test specific reranker model
+  const handleTestRerankerModel = async (modelId: string) => {
+    try {
+      const result = await testRerankerModelMutation.mutateAsync(modelId);
+      setTestResult({
+        success: result.connectivity && result.functionality,
+        message: result.error || `Connectivity: ${result.connectivity ? '✓' : '✗'}, Functionality: ${result.functionality ? '✓' : '✗'} (${result.latency_ms}ms)`,
+      });
+    } catch (error) {
+      setTestResult({
+        success: false,
+        message: error instanceof Error ? error.message : 'Model test failed',
+      });
+    }
+  };
 
   if (isLoading) {
     return (
@@ -250,40 +327,135 @@ const RerankerConfig: React.FC<RerankerConfigProps> = ({ config, isLoading }) =>
                   />
                 </Grid>
 
-                <Grid item xs={12} md={6}>
-                  <Autocomplete
-                    options={availableModels}
-                    value={formData.model}
-                    onChange={(_, value) => handleChange('model', value || '')}
-                    loading={formData.provider === 'ollama' && ollamaModelsLoading}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        label="Model"
-                        required
-                        disabled={!formData.enabled}
-                        helperText={
-                          formData.provider === 'ollama' && ollamaModelsLoading
-                            ? 'Loading models from Ollama...'
-                            : formData.provider === 'ollama'
-                            ? `${availableModels.length} models available`
-                            : undefined
-                        }
-                        InputProps={{
-                          ...params.InputProps,
-                          endAdornment: (
-                            <>
-                              {formData.provider === 'ollama' && ollamaModelsLoading && (
-                                <CircularProgress color="inherit" size={20} />
-                              )}
-                              {params.InputProps.endAdornment}
-                            </>
-                          ),
+                <Grid item xs={12}>
+                  <Tabs 
+                    value={selectedTab} 
+                    onChange={(_, value) => setSelectedTab(value)}
+                    variant="fullWidth"
+                    sx={{ mb: 2 }}
+                  >
+                    <Tab label="Reranker Model" />
+                    <Tab label="Embedding Model" />
+                  </Tabs>
+
+                  {selectedTab === 0 && (
+                    // Reranker Model Selection
+                    <Box>
+                      <Autocomplete
+                        options={availableRerankerModels}
+                        value={availableRerankerModels.find(model => model.id === formData.model) || null}
+                        onChange={(_, value) => {
+                          if (value) {
+                            handleChange('model', value.id);
+                            handleChange('provider', value.provider);
+                          }
                         }}
+                        loading={rerankerModelsLoading || registryLoading}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            label="Reranker Model"
+                            required
+                            disabled={!formData.enabled}
+                            helperText={`${availableRerankerModels.length} models available`}
+                            InputProps={{
+                              ...params.InputProps,
+                              endAdornment: (
+                                <>
+                                  {(rerankerModelsLoading || registryLoading) && (
+                                    <CircularProgress color="inherit" size={20} />
+                                  )}
+                                  {params.InputProps.endAdornment}
+                                </>
+                              ),
+                            }}
+                          />
+                        )}
+                        renderOption={(props, option) => (
+                          <Box component="li" {...props}>
+                            <Box sx={{ flexGrow: 1 }}>
+                              <Typography variant="body1">
+                                {option.name}
+                                {option.recommended && (
+                                  <Chip label="Recommended" size="small" color="primary" sx={{ ml: 1 }} />
+                                )}
+                                {option.validated && (
+                                  <Chip label="Validated" size="small" color="success" sx={{ ml: 1 }} />
+                                )}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {option.provider} • {option.id}
+                              </Typography>
+                            </Box>
+                            <Button
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleTestRerankerModel(option.id);
+                              }}
+                              disabled={testRerankerModelMutation.isPending}
+                            >
+                              Test
+                            </Button>
+                          </Box>
+                        )}
+                        getOptionLabel={(option) => option.name}
+                        isOptionEqualToValue={(option, value) => option.id === value.id}
                       />
-                    )}
-                    freeSolo
-                  />
+                    </Box>
+                  )}
+
+                  {selectedTab === 1 && (
+                    // Embedding Model Selection
+                    <Box>
+                      <Autocomplete
+                        options={availableEmbeddingModels}
+                        value={availableEmbeddingModels.find(model => model.id === formData.embedding_model) || null}
+                        onChange={(_, value) => {
+                          if (value) {
+                            handleChange('embedding_model', value.id);
+                            handleChange('embedding_provider', value.provider);
+                          }
+                        }}
+                        loading={embeddingModelsLoading}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            label="Embedding Model"
+                            helperText={`${availableEmbeddingModels.length} embedding models available`}
+                            InputProps={{
+                              ...params.InputProps,
+                              endAdornment: (
+                                <>
+                                  {embeddingModelsLoading && (
+                                    <CircularProgress color="inherit" size={20} />
+                                  )}
+                                  {params.InputProps.endAdornment}
+                                </>
+                              ),
+                            }}
+                          />
+                        )}
+                        renderOption={(props, option) => (
+                          <Box component="li" {...props}>
+                            <Box sx={{ flexGrow: 1 }}>
+                              <Typography variant="body1">
+                                {option.name}
+                                {option.recommended && (
+                                  <Chip label="Recommended" size="small" color="primary" sx={{ ml: 1 }} />
+                                )}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {option.provider} • ${option.cost_per_1k}/1K tokens • {option.dimensions} dims
+                              </Typography>
+                            </Box>
+                          </Box>
+                        )}
+                        getOptionLabel={(option) => option.name}
+                        isOptionEqualToValue={(option, value) => option.id === value.id}
+                      />
+                    </Box>
+                  )}
                 </Grid>
               </Grid>
             </CardContent>
@@ -379,11 +551,57 @@ const RerankerConfig: React.FC<RerankerConfigProps> = ({ config, isLoading }) =>
                   color={formData.enabled ? 'success' : 'default'}
                   size="small"
                 />
-                <Chip label={`Provider: ${formData.provider}`} size="small" />
+                <Chip label={`Reranker: ${formData.provider}`} size="small" />
                 <Chip label={`Model: ${formData.model}`} size="small" />
+                {formData.embedding_model && (
+                  <Chip label={`Embedding: ${formData.embedding_model}`} size="small" color="secondary" />
+                )}
                 <Chip label={`Temperature: ${formData.parameters.temperature}`} size="small" />
                 <Chip label={`Max Tokens: ${formData.parameters.max_tokens}`} size="small" />
               </Box>
+
+              {/* Model Status Summary */}
+              <Grid container spacing={2} sx={{ mt: 1 }}>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Reranker Models Available
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    {availableRerankerModels.slice(0, 3).map(model => (
+                      <Chip
+                        key={model.id}
+                        label={model.name}
+                        size="small"
+                        variant={model.id === formData.model ? 'filled' : 'outlined'}
+                        color={model.validated ? 'success' : model.recommended ? 'primary' : 'default'}
+                      />
+                    ))}
+                    {availableRerankerModels.length > 3 && (
+                      <Chip label={`+${availableRerankerModels.length - 3} more`} size="small" variant="outlined" />
+                    )}
+                  </Box>
+                </Grid>
+                
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Embedding Models Available
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    {availableEmbeddingModels.slice(0, 3).map(model => (
+                      <Chip
+                        key={model.id}
+                        label={model.name}
+                        size="small"
+                        variant={model.id === formData.embedding_model ? 'filled' : 'outlined'}
+                        color={model.recommended ? 'primary' : 'default'}
+                      />
+                    ))}
+                    {availableEmbeddingModels.length > 3 && (
+                      <Chip label={`+${availableEmbeddingModels.length - 3} more`} size="small" variant="outlined" />
+                    )}
+                  </Box>
+                </Grid>
+              </Grid>
 
               {hasUnsavedChanges && (
                 <Alert severity="warning" sx={{ mt: 2 }}>

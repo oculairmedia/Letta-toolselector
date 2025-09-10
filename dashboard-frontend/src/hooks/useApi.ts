@@ -224,6 +224,62 @@ export const useRerankerModels = () => {
   });
 };
 
+// Reranker Model Registry hooks
+export const useRerankerModelRegistry = () => {
+  return useQuery({
+    queryKey: ['rerankerModelRegistry'],
+    queryFn: () => apiService.getRerankerModelRegistry(),
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  });
+};
+
+export const useRegisterRerankerModel = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (model: any) => apiService.registerRerankerModel(model),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rerankerModelRegistry'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.rerankerModels });
+    },
+  });
+};
+
+export const useUpdateRerankerModel = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ modelId, updates }: { modelId: string; updates: any }) =>
+      apiService.updateRerankerModel(modelId, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rerankerModelRegistry'] });
+    },
+  });
+};
+
+export const useTestRerankerModel = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (modelId: string) => apiService.testRerankerModel(modelId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rerankerModelRegistry'] });
+    },
+  });
+};
+
+export const useUnregisterRerankerModel = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (modelId: string) => apiService.unregisterRerankerModel(modelId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rerankerModelRegistry'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.rerankerModels });
+    },
+  });
+};
+
 // Health check
 export const useHealthCheck = () => {
   return useQuery({

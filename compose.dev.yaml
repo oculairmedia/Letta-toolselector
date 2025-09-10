@@ -1,0 +1,120 @@
+# Development version of docker-compose with hot reload and dev tools
+services:
+  weaviate:
+    image: semitechnologies/weaviate:1.25.0
+    ports:
+      - 8080:8080
+      - 50051:50051
+    environment:
+      QUERY_DEFAULTS_LIMIT: 15
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      DEFAULT_VECTORIZER_MODULE: text2vec-ollama
+      ENABLE_MODULES: text2vec-ollama,text2vec-openai
+      CLUSTER_HOSTNAME: node1
+      READINESS_MAX_WAIT_SECS: 300
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    healthcheck:
+      test:
+        - CMD
+        - sh
+        - -c
+        - nc -z localhost 8080 || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - letta-tools
+
+  api-server:
+    image: ghcr.io/oculairmedia/letta-toolselector-api-server:latest
+    container_name: weaviate-tools-api
+    ports:
+      - 8020:3001
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LETTA_API_URL=${LETTA_API_URL}
+      - LETTA_PASSWORD=${LETTA_PASSWORD}
+      - WEAVIATE_URL=http://weaviate:8080/
+      - WEAVIATE_API_KEY=${WEAVIATE_API_KEY}
+      - PORT=3001
+      - DEFAULT_DROP_RATE=${DEFAULT_DROP_RATE:-0.6}
+      - MAX_TOTAL_TOOLS=${MAX_TOTAL_TOOLS:-20}
+      - MAX_MCP_TOOLS=${MAX_MCP_TOOLS:-15}
+      - MIN_MCP_TOOLS=${MIN_MCP_TOOLS:-7}
+      - EXCLUDE_LETTA_CORE_TOOLS=${EXCLUDE_LETTA_CORE_TOOLS:-true}
+      - EXCLUDE_OFFICIAL_TOOLS=${EXCLUDE_OFFICIAL_TOOLS:-true}
+      - MANAGE_ONLY_MCP_TOOLS=${MANAGE_ONLY_MCP_TOOLS:-true}
+      # Embedding Provider Configuration
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-ollama}
+      - OLLAMA_EMBEDDING_HOST=${OLLAMA_EMBEDDING_HOST:-192.168.50.80}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-dengcao/Qwen3-Embedding-4B:Q4_K_M}
+      - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-2560}
+      - USE_OLLAMA_EMBEDDINGS=${USE_OLLAMA_EMBEDDINGS:-true}
+    restart: unless-stopped
+    volumes:
+      - ./.env:/app/.env:ro
+      - tool_cache_volume:/app/runtime_cache
+      - ./lettaaugment-source:/app:rw
+    depends_on:
+      weaviate:
+        condition: service_healthy
+    networks:
+      - letta-tools
+
+  mcp-server:
+    image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:latest
+    container_name: toolselector-mcp
+    ports:
+      - 3020:3020
+    environment:
+      - PORT=3020
+      - NODE_ENV=development
+      - LETTA_API_URL=${LETTA_API_URL}
+      - LETTA_PASSWORD=${LETTA_PASSWORD}
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:3020/health
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - letta-tools
+
+  # Development frontend with hot reload
+  frontend-dev:
+    build:
+      context: ./dashboard-frontend
+      dockerfile: Dockerfile.dev
+    container_name: letta-toolselector-frontend-dev
+    ports:
+      - 8406:3000
+    environment:
+      - REACT_APP_API_BASE_URL=http://localhost:8020
+      - REACT_APP_VERSION=development
+      - CHOKIDAR_USEPOLLING=true # For hot reload in Docker
+    volumes:
+      - ./dashboard-frontend:/app
+      - /app/node_modules # Prevent overwriting node_modules
+    stdin_open: true
+    tty: true
+    depends_on:
+      api-server:
+        condition: service_started
+    networks:
+      - letta-tools
+
+networks:
+  letta-tools:
+    driver: bridge
+
+volumes:
+  weaviate_data:
+  tool_cache_volume:

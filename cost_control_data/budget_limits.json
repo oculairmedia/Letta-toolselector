@@ -1,0 +1,54 @@
+[
+  {
+    "category": null,
+    "period": "daily",
+    "limit": 10.0,
+    "currency": "USD",
+    "alert_thresholds": [
+      0.5,
+      0.8,
+      0.95
+    ],
+    "hard_limit": false,
+    "enabled": true
+  },
+  {
+    "category": null,
+    "period": "monthly",
+    "limit": 250.0,
+    "currency": "USD",
+    "alert_thresholds": [
+      0.5,
+      0.8,
+      0.95
+    ],
+    "hard_limit": false,
+    "enabled": true
+  },
+  {
+    "category": "embedding_api",
+    "period": "daily",
+    "limit": 0.1,
+    "currency": "USD",
+    "alert_thresholds": [
+      0.3,
+      0.7,
+      0.9
+    ],
+    "hard_limit": false,
+    "enabled": true
+  },
+  {
+    "category": "vector_database",
+    "period": "daily",
+    "limit": 0.05,
+    "currency": "USD",
+    "alert_thresholds": [
+      0.5,
+      0.8,
+      0.95
+    ],
+    "hard_limit": true,
+    "enabled": true
+  }
+]

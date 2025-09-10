@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends
-from typing import Dict, Any
+from fastapi import APIRouter, Depends, HTTPException
+from typing import Dict, Any, List, Optional
 import time
+import logging
 
 from config.settings import settings
 
 router = APIRouter(tags=["configuration"])
+logger = logging.getLogger(__name__)
 
 @router.get("/config")
 async def get_configuration() -> Dict[str, Any]:

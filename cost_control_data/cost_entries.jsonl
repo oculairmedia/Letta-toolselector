@@ -1,0 +1,7 @@
+{"timestamp": "2025-09-09T18:44:58.546141", "category": "embedding_api", "operation": "test_embedding_generation", "cost": 0.05, "currency": "USD", "metadata": {"tokens": 500, "model": "text-embedding-3-small"}}
+{"timestamp": "2025-09-09T18:44:58.546300", "category": "vector_database", "operation": "test_weaviate_query", "cost": 0.01, "currency": "USD", "metadata": {"query_count": 10}}
+{"timestamp": "2025-09-09T18:44:58.546375", "category": "letta_api", "operation": "test_agent_call", "cost": 0.02, "currency": "USD", "metadata": {"call_count": 2}}
+{"timestamp": "2025-09-09T18:44:58.546938", "category": "embedding_api", "operation": "test_alert_trigger", "cost": 0.08, "currency": "USD", "metadata": {"test": "alert_threshold"}}
+{"timestamp": "2025-09-09T18:44:58.547252", "category": "vector_database", "operation": "test_hard_limit", "cost": 0.06, "currency": "USD", "metadata": {"test": "hard_limit"}}
+{"timestamp": "2025-09-09T18:44:58.547485", "category": "embedding_api", "operation": "test_convenience_embedding", "cost": 7.500000000000001e-05, "currency": "USD", "metadata": {"provider": "openai", "token_count": 750, "cost_per_1k_tokens": 0.0001}}
+{"timestamp": "2025-09-09T18:44:58.547674", "category": "vector_database", "operation": "test_convenience_weaviate", "cost": 3.0000000000000004e-05, "currency": "USD", "metadata": {"operation_type": "query", "count": 3}}

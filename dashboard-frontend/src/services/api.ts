@@ -280,6 +280,100 @@ class ApiService {
     return response.data.data!;
   }
 
+  // Reranker Model Registry endpoints
+  async getRerankerModelRegistry(): Promise<{
+    models: Array<{
+      id: string;
+      name: string;
+      provider: string;
+      type: string;
+      cost_per_1k: number;
+      recommended: boolean;
+      registered: boolean;
+      validated: boolean;
+      last_tested: string | null;
+      test_status: string;
+      registry_notes: string;
+      configuration?: any;
+      registered_at?: string;
+      last_updated?: string;
+      test_results?: any;
+    }>;
+    total: number;
+    last_updated: string | null;
+    providers: string[];
+    types: string[];
+    validated_count: number;
+    pending_count: number;
+  }> {
+    const response = await this.client.get<ApiResponse<any>>('/reranker/models/registry');
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get reranker model registry');
+    }
+    return response.data.data!;
+  }
+
+  async registerRerankerModel(model: {
+    id: string;
+    name: string;
+    provider: string;
+    type: string;
+    cost_per_1k?: number;
+    recommended?: boolean;
+    notes?: string;
+    configuration?: any;
+    size?: number;
+    modified_at?: string;
+    dimensions?: number;
+    max_tokens?: number;
+    description?: string;
+  }): Promise<any> {
+    const response = await this.client.post<ApiResponse<any>>('/reranker/models/registry', model);
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to register reranker model');
+    }
+    return response.data.data!;
+  }
+
+  async updateRerankerModel(modelId: string, updates: {
+    name?: string;
+    recommended?: boolean;
+    registry_notes?: string;
+    configuration?: any;
+    validated?: boolean;
+    test_status?: string;
+    description?: string;
+  }): Promise<any> {
+    const response = await this.client.put<ApiResponse<any>>(`/reranker/models/registry/${modelId}`, updates);
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to update reranker model');
+    }
+    return response.data.data!;
+  }
+
+  async testRerankerModel(modelId: string): Promise<{
+    model_id: string;
+    test_timestamp: string;
+    connectivity: boolean;
+    functionality: boolean;
+    latency_ms: number | null;
+    error: string | null;
+    details: any;
+  }> {
+    const response = await this.client.post<ApiResponse<any>>(`/reranker/models/registry/${modelId}/test`);
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to test reranker model');
+    }
+    return response.data.data!;
+  }
+
+  async unregisterRerankerModel(modelId: string): Promise<void> {
+    const response = await this.client.delete<ApiResponse<void>>(`/reranker/models/registry/${modelId}`);
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to unregister reranker model');
+    }
+  }
+
   // Health check
   async healthCheck(): Promise<{ status: string; version?: string }> {
     const response = await this.client.get<ApiResponse<{ status: string; version?: string }>>('/health');

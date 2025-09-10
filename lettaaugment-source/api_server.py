@@ -56,9 +56,13 @@ MANAGE_ONLY_MCP_TOOLS = os.getenv('MANAGE_ONLY_MCP_TOOLS', 'false').lower() == '
 # Tools that should never be detached (comma-separated list of tool names)
 NEVER_DETACH_TOOLS = [name.strip() for name in os.getenv('NEVER_DETACH_TOOLS', 'find_tools').split(',') if name.strip()]
 
+# Default minimum score threshold for tool attachment (0-100)
+DEFAULT_MIN_SCORE = float(os.getenv('DEFAULT_MIN_SCORE', '35.0'))
+
 logger.info(f"Tool management configuration:")
 logger.info(f"  MAX_TOTAL_TOOLS: {MAX_TOTAL_TOOLS}")
 logger.info(f"  MAX_MCP_TOOLS: {MAX_MCP_TOOLS}")
+logger.info(f"  DEFAULT_MIN_SCORE: {DEFAULT_MIN_SCORE}")
 logger.info(f"  EXCLUDE_LETTA_CORE_TOOLS: {EXCLUDE_LETTA_CORE_TOOLS}")
 logger.info(f"  EXCLUDE_OFFICIAL_TOOLS: {EXCLUDE_OFFICIAL_TOOLS}")
 logger.info(f"  MANAGE_ONLY_MCP_TOOLS: {MANAGE_ONLY_MCP_TOOLS}")
@@ -656,7 +660,7 @@ async def attach_tools():
         limit = data.get('limit', 10)
         agent_id = data.get('agent_id')
         keep_tools = data.get('keep_tools', [])
-        min_score = data.get('min_score', 50.0)  # Add min_score parameter (default 50.0)
+        min_score = data.get('min_score', DEFAULT_MIN_SCORE)  # Add min_score parameter with configurable default
 
         if not agent_id:
             logger.warning("Attach request missing 'agent_id'.")

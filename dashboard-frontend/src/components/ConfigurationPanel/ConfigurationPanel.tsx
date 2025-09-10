@@ -12,11 +12,13 @@ import {
   Tune as TuneIcon,
   Storage as StorageIcon,
   Bookmark as BookmarkIcon,
+  AppRegistration as RegistryIcon,
 } from '@mui/icons-material';
 
 import RerankerConfig from './RerankerConfig';
 import PresetsManager from './PresetsManager';
 import SystemSettings from './SystemSettings';
+import ModelRegistryManager from './ModelRegistryManager';
 import { useRerankerConfig } from '../../hooks/useApi';
 
 interface TabPanelProps {
@@ -103,10 +105,16 @@ const ConfigurationPanel: React.FC = () => {
               {...a11yProps(1)} 
             />
             <Tab 
+              label="Model Registry" 
+              icon={<RegistryIcon />} 
+              iconPosition="start"
+              {...a11yProps(2)} 
+            />
+            <Tab 
               label="System Settings" 
               icon={<StorageIcon />} 
               iconPosition="start"
-              {...a11yProps(2)} 
+              {...a11yProps(3)} 
             />
           </Tabs>
         </Box>
@@ -123,6 +131,10 @@ const ConfigurationPanel: React.FC = () => {
         </TabPanel>
 
         <TabPanel value={activeTab} index={2}>
+          <ModelRegistryManager />
+        </TabPanel>
+
+        <TabPanel value={activeTab} index={3}>
           <SystemSettings />
         </TabPanel>
       </Paper>

@@ -1,0 +1,30 @@
+# Development Dockerfile for React frontend with hot reload
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install dependencies
+COPY package*.json ./
+RUN npm ci
+
+# Copy source code (will be overridden by volume mount in development)
+COPY . .
+
+# Expose port
+EXPOSE 3000
+
+# Set environment variables for development
+ENV NODE_ENV=development
+ENV REACT_APP_API_BASE_URL=http://localhost:8020
+ENV CHOKIDAR_USEPOLLING=true
+
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:3000 || exit 1
+
+# Start development server
+CMD ["npm", "start"]

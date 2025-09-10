@@ -405,7 +405,7 @@ jobs:
           echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **Environment**: Production" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Services Deployed**: MCP Server, API Server, Sync Service, Frontend Dashboard" >> $GITHUB_STEP_SUMMARY
+          echo "- **Services Deployed**: MCP Server, API Server, Sync Service, Frontend, Dashboard Backend" >> $GITHUB_STEP_SUMMARY
           echo "- **Registry**: ${{ env.REGISTRY }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Frontend URL**: http://192.168.50.90:8406" >> $GITHUB_STEP_SUMMARY
 

@@ -5,6 +5,7 @@ Test script to verify embedding provider integration with existing functions
 
 import sys
 import os
+import pytest
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from fallback_embedding import get_embedding_for_text_direct
@@ -40,6 +41,7 @@ def test_weaviate_search_embedding():
         print("❌ Weaviate search embedding failed")
         return False
 
+@pytest.mark.asyncio
 async def test_provider_factory():
     """Test the embedding provider factory directly"""
     print("🧪 Testing embedding provider factory...")

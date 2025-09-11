@@ -496,16 +496,21 @@ async def search_with_reranking():
         if not data:
             return jsonify({"success": False, "error": "No data provided"}), 400
         
-        # Extract query and reranker config
-        query_data = data.get('query', {})
-        reranker_config = data.get('reranker_config', {})
+        # Extract query and reranker config - handle both formats
+        if isinstance(data.get('query'), str):
+            # Direct format: {"query": "search term", "limit": 5}
+            query_string = data.get('query', '')
+            limit = data.get('limit', 10)
+            reranker_config = data.get('reranker_config', {})
+        else:
+            # Nested format: {"query": {"query": "search term", "limit": 5}}
+            query_data = data.get('query', {})
+            reranker_config = data.get('reranker_config', {})
+            query_string = query_data.get('query', '')
+            limit = query_data.get('limit', 10)
         
-        # Extract query string
-        query_string = query_data.get('query', '')
         if not query_string:
             return jsonify({"success": False, "error": "No query provided"}), 400
-            
-        limit = query_data.get('limit', 10)
         
         logger.info(f"Performing reranked search for: '{query_string}' with limit: {limit}")
         logger.info(f"Reranker config: {reranker_config}")

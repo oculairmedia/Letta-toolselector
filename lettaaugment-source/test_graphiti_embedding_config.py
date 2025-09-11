@@ -1,3 +1,4 @@
+import pytest
 #!/usr/bin/env python3
 """
 Test script to verify Graphiti-compatible embedding configuration
@@ -30,6 +31,7 @@ def test_provider_availability():
     print()
     return True
 
+@pytest.mark.asyncio
 async def test_openai_provider():
     """Test OpenAI provider with Graphiti-compatible settings"""
     print("🧪 Testing OpenAI provider...")
@@ -48,6 +50,7 @@ async def test_openai_provider():
         print(f"❌ OpenAI provider test failed: {e}")
         return False
 
+@pytest.mark.asyncio
 async def test_ollama_provider_config():
     """Test Ollama provider configuration (without actual connection)"""
     print("🧪 Testing Ollama provider configuration...")

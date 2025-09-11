@@ -24,6 +24,7 @@ def test_tool_attachment():
         # Set a higher min_score for more relevant results
         result = attach_tools_from_query(
             query=query,
+            target_agent_id="test-agent-id",  # Add required agent ID
             limit=3,
             min_score=75.0
         )
@@ -50,13 +51,15 @@ def test_tool_attachment():
         print("\n" + "=" * 80)
         
         # Wait for user input before continuing to next query
-        if i < len(test_queries):
-            input("\nPress Enter to continue to next query...")
+        # Comment out for automated testing
+        # if i < len(test_queries):
+        #     input("\nPress Enter to continue to next query...")
 
 if __name__ == "__main__":
     print("\nThis test will search for relevant tools and attempt to attach them to the default agent.")
     print("Make sure your .env file is properly configured with Weaviate and Letta credentials.")
-    input("\nPress Enter to begin testing...")
+    # Comment out input for automated testing
+    # input("\nPress Enter to begin testing...")
     
     try:
         test_tool_attachment()

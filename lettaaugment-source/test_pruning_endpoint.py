@@ -1,3 +1,4 @@
+import pytest
 #!/usr/bin/env python3
 """
 Test script for the new tool pruning endpoint.
@@ -19,6 +20,7 @@ TEST_AGENT_ID = "agent-0e99d1a5-d9ca-43b0-9df9-c09761d01444"  # Use the agent ID
 TEST_QUERY = "I need to search for remote software engineering jobs"
 DEFAULT_DROP_RATE = 0.6
 
+@pytest.mark.asyncio
 async def test_pruning_endpoint():
     """Test the tool pruning endpoint"""
     print("=" * 60)

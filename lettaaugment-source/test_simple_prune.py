@@ -1,3 +1,4 @@
+import pytest
 #!/usr/bin/env python3
 """
 Simple test for pruning endpoint with minimal drop rate to see if it works at all
@@ -10,6 +11,7 @@ import json
 # Configuration
 API_BASE_URL = "http://localhost:8020"
 
+@pytest.mark.asyncio
 async def test_simple_prune():
     """Test with a very low drop rate to see basic functionality"""
     

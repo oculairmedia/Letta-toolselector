@@ -62,12 +62,8 @@ class ApiService {
 
   // Search endpoints
   async searchTools(query: SearchQuery): Promise<SearchResponse> {
-    // Add enable_reranking flag to ensure we get proper scores
-    const requestData = {
-      ...query,
-      enable_reranking: true
-    };
-    const response = await this.client.post('/tools/search', requestData);
+    // Don't enable reranking here - this is for original/baseline results
+    const response = await this.client.post('/tools/search', query);
     
     // Handle both wrapped and unwrapped responses
     if (Array.isArray(response.data)) {

@@ -62,7 +62,12 @@ class ApiService {
 
   // Search endpoints
   async searchTools(query: SearchQuery): Promise<SearchResponse> {
-    const response = await this.client.post('/tools/search', query);
+    // Add enable_reranking flag to ensure we get proper scores
+    const requestData = {
+      ...query,
+      enable_reranking: true
+    };
+    const response = await this.client.post('/tools/search', requestData);
     
     // Handle both wrapped and unwrapped responses
     if (Array.isArray(response.data)) {
@@ -98,7 +103,10 @@ class ApiService {
 
   async searchWithReranking(query: SearchQuery, config: RerankerConfig): Promise<SearchResponse> {
     const response = await this.client.post('/tools/search/rerank', {
-      query,
+      query: {
+        ...query,
+        enable_reranking: true
+      },
       reranker_config: config,
     });
     

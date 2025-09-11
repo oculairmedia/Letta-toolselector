@@ -138,7 +138,7 @@ def search_tools_with_reranking(
                     alpha=0.75,  # 75% vector search, 25% keyword search
                     limit=rerank_initial_limit,  # Get more candidates for reranking
                     fusion_type=HybridFusion.RELATIVE_SCORE,
-                    query_properties=["name^2", "enhanced_description^2", "description^1.5", "tags"],
+                    query_properties=["name^2", "description^2", "tags"],
                     return_metadata=MetadataQuery(score=True)
                 )
                 
@@ -149,7 +149,7 @@ def search_tools_with_reranking(
                         documents = []
                         for obj in result.objects:
                             # Create document text from tool properties
-                            doc_text = f"{obj.properties.get('name', '')} - {obj.properties.get('enhanced_description', obj.properties.get('description', ''))}"
+                            doc_text = f"{obj.properties.get('name', '')} - {obj.properties.get('description', '')}"
                             documents.append(doc_text.strip())
                         
                         if documents:
@@ -206,7 +206,7 @@ def search_tools_with_reranking(
                     alpha=0.75,
                     limit=limit,
                     fusion_type=HybridFusion.RELATIVE_SCORE,
-                    query_properties=["name^2", "enhanced_description^2", "description^1.5", "tags"],
+                    query_properties=["name^2", "description^2", "tags"],
                     return_metadata=MetadataQuery(score=True)
                 )
 
@@ -216,9 +216,7 @@ def search_tools_with_reranking(
                 for obj in result.objects:
                     tool_data = obj.properties
                     
-                    # Remove the enhanced_description from results (internal use only)
-                    if 'enhanced_description' in tool_data:
-                        del tool_data['enhanced_description']
+                    # No need to remove enhanced_description as it doesn't exist in current schema
                     
                     # Handle scoring
                     if hasattr(obj, 'rerank_score'):

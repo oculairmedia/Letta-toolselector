@@ -9,9 +9,14 @@ services:
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
       PERSISTENCE_DATA_PATH: /var/lib/weaviate
       DEFAULT_VECTORIZER_MODULE: text2vec-ollama
-      ENABLE_MODULES: text2vec-ollama,text2vec-openai
+      ENABLE_MODULES: text2vec-ollama,text2vec-openai,reranker-transformers
       CLUSTER_HOSTNAME: node1
       READINESS_MAX_WAIT_SECS: 300
+      # Ollama configuration for text2vec-ollama module
+      OLLAMA_API_ENDPOINT: http://192.168.50.80:11434
+      TEXT2VEC_OLLAMA_API_ENDPOINT: http://192.168.50.80:11434
+      # Point to our Ollama reranker adapter
+      RERANKER_INFERENCE_API: http://reranker-ollama-adapter:8080
     volumes:
       - weaviate_data:/var/lib/weaviate
     healthcheck:
@@ -24,10 +29,35 @@ services:
       timeout: 10s
       retries: 5
       start_period: 40s
+    depends_on:
+      reranker-ollama-adapter:
+        condition: service_healthy
+    networks:
+      - letta-tools
+  reranker-ollama-adapter:
+    image: ghcr.io/oculairmedia/letta-toolselector-reranker-adapter:main
+    container_name: ollama-reranker-adapter
+    ports:
+      - 8091:8080  # Expose on 8091 for debugging
+    environment:
+      - OLLAMA_BASE_URL=http://192.168.50.80:11434
+      - OLLAMA_MODEL=dengcao/Qwen3-Reranker-4B:Q5_K_M
+      - BATCH_SIZE=10
+      - TIMEOUT_SECONDS=30
+      - LOG_LEVEL=INFO
+      - ENABLE_CACHE=true
+      - CACHE_TTL=300
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     networks:
       - letta-tools
   api-server:
-    image: ghcr.io/oculairmedia/letta-toolselector-api-server:feature-dashboard-frontend
+    image: ghcr.io/oculairmedia/letta-toolselector-api-server:main
     container_name: weaviate-tools-api
     ports:
       - 8020:3001
@@ -51,6 +81,10 @@ services:
       - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-dengcao/Qwen3-Embedding-4B:Q4_K_M}
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-2560}
       - USE_OLLAMA_EMBEDDINGS=${USE_OLLAMA_EMBEDDINGS:-true}
+      # Reranking Configuration
+      - ENABLE_RERANKING=${ENABLE_RERANKING:-true}
+      - RERANK_INITIAL_LIMIT=${RERANK_INITIAL_LIMIT:-30}
+      - RERANK_TOP_K=${RERANK_TOP_K:-10}
     restart: unless-stopped
     volumes:
       - ./.env:/app/.env:ro
@@ -68,7 +102,7 @@ services:
     networks:
       - letta-tools
   sync-service:
-    image: ghcr.io/oculairmedia/letta-toolselector-sync-service:feature-dashboard-frontend
+    image: ghcr.io/oculairmedia/letta-toolselector-sync-service:main
     container_name: weaviate-tools-sync
     command: python sync_service.py
     environment:
@@ -88,7 +122,7 @@ services:
     networks:
       - letta-tools
   time-service:
-    image: ghcr.io/oculairmedia/letta-toolselector-api-server:feature-dashboard-frontend
+    image: ghcr.io/oculairmedia/letta-toolselector-api-server:main
     container_name: weaviate-tools-time
     command: python time_memory_service.py
     environment:
@@ -107,7 +141,7 @@ services:
     networks:
       - letta-tools
   mcp-server:
-    image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:feature-dashboard-frontend
+    image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:main
     container_name: toolselector-mcp
     ports:
       - 3020:3020
@@ -136,7 +170,7 @@ services:
     networks:
       - letta-tools
   dashboard-backend:
-    image: ghcr.io/oculairmedia/letta-toolselector-dashboard-backend:feature-dashboard-frontend
+    image: ghcr.io/oculairmedia/letta-toolselector-dashboard-backend:main
     container_name: letta-toolselector-dashboard-backend
     ports:
       - 8030:8030
@@ -174,7 +208,7 @@ services:
     networks:
       - letta-tools
   frontend:
-    image: ghcr.io/oculairmedia/letta-toolselector-frontend:feature-dashboard-frontend
+    image: ghcr.io/oculairmedia/letta-toolselector-frontend:main
     container_name: letta-toolselector-frontend
     ports:
       - 8406:80

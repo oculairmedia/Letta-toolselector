@@ -88,14 +88,20 @@ class CentralizedAuditLogger:
             "weaviate_config", "embedding_providers", "reranker_config"
         }
         
-        # Initialize audit system
-        asyncio.create_task(self._initialize_audit_system())
+        # Flag to track initialization
+        self._initialized = False
         
         logger.info(f"CentralizedAuditLogger initialized: integrity_level={integrity_level.value}")
     
     def _generate_key(self) -> bytes:
         """Generate encryption key for audit log protection"""
         return os.urandom(32)  # 256-bit key
+    
+    async def ensure_initialized(self):
+        """Ensure the audit system is initialized"""
+        if not self._initialized:
+            await self._initialize_audit_system()
+            self._initialized = True
     
     async def _initialize_audit_system(self):
         """Initialize the centralized audit system"""
@@ -125,6 +131,7 @@ class CentralizedAuditLogger:
                                      user_context: Dict[str, Any],
                                      validation_result: Dict[str, Any]) -> str:
         """Log configuration change with hashing and integrity tracking"""
+        await self.ensure_initialized()
         
         change_id = str(uuid.uuid4())
         timestamp = datetime.now(timezone.utc).isoformat()
@@ -333,6 +340,8 @@ class CentralizedAuditLogger:
     
     async def verify_audit_integrity(self) -> Dict[str, Any]:
         """Verify integrity of audit chain"""
+        await self.ensure_initialized()
+        
         verification_result = {
             "chain_valid": True,
             "total_entries": len(self.audit_chain),

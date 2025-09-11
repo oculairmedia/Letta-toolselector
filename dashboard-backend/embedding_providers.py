@@ -557,3 +557,116 @@ async def embed_texts(texts: List[str], provider_name: Optional[str] = None) -> 
 async def embed_text(text: str, provider_name: Optional[str] = None) -> EmbeddingResult:
     """Embed single text using global manager"""
     return await get_embedding_manager().embed_single_text(text, provider_name)
+# --- Shim added to provide EmbeddingProviderFactory compatibility with lettaaugment-source ---
+class EmbeddingProviderFactory:
+    """
+    Compatibility shim so that 'from embedding_providers import EmbeddingProviderFactory'
+    works for modules (e.g. upload_tools_to_weaviate.py) that expect the factory API
+    from lettaaugment-source.
+
+    This shim delegates actual embedding work to the already-initialized global
+    MultiProviderEmbeddingManager (if available). It intentionally provides only
+    the minimal surface needed: create(), create_from_env(), list_providers().
+    Returned provider instances expose:
+        - get_embeddings(List[str]) -> EmbeddingResult
+        - get_single_embedding(str) -> List[float]
+
+    If the embedding manager has not been initialized yet, calling embedding
+    methods will raise a RuntimeError, which mirrors the existing manager guard.
+    """
+    class _AdapterProvider:
+        def __init__(self, provider_name: str):
+            self._provider_name = provider_name
+            self.model = None
+            self.dimensions = None  # Populated lazily after first call
+
+        @property
+        def provider_name(self) -> str:
+            return self._provider_name
+
+        async def get_embeddings(self, texts):
+            manager = get_embedding_manager()
+            result = await manager.embed_texts(texts, provider_name=self._provider_name)
+            # Cache model/dimension for potential introspection
+            self.model = result.model
+            self.dimensions = result.dimensions
+            return result
+
+        async def get_single_embedding(self, text: str):
+            manager = get_embedding_manager()
+            result = await manager.embed_single_text(text, provider_name=self._provider_name)
+            # result.embeddings is a list with one embedding
+            if result.embeddings:
+                self.model = result.model
+                self.dimensions = result.dimensions
+                return result.embeddings[0]
+            return []
+
+        async def close(self):
+            # Compatibility no-op (original providers expose close())
+            return
+
+    @classmethod
+    def create(cls, provider: str, **kwargs):
+        # Validate provider availability if manager initialized
+        try:
+            manager = get_embedding_manager()
+            available = manager.get_available_providers()
+            if provider not in available:
+                raise ValueError(f"Provider '{provider}' not available. Available: {available}")
+        except Exception:
+            # Manager not initialized yet; defer validation until first call
+            pass
+        return cls._AdapterProvider(provider)
+
+    @classmethod
+    def create_from_env(cls):
+        provider = os.getenv("EMBEDDING_PROVIDER", "openai").lower()
+        return cls.create(provider)
+
+    @classmethod
+    def list_providers(cls):
+        try:
+            return get_embedding_manager().get_available_providers()
+        except Exception:
+            # Manager not initialized; return common defaults
+            return ["openai", "ollama", "huggingface"]
+
+# Convenience functions mirroring lettaaugment-source API expectations
+async def get_embedding_for_text(text: str, provider: Optional[str] = None) -> List[float]:
+    p = EmbeddingProviderFactory.create(provider) if provider else EmbeddingProviderFactory.create_from_env()
+    try:
+        return await p.get_single_embedding(text)
+    finally:
+        await p.close()
+
+async def get_embeddings_for_texts(texts: List[str], provider: Optional[str] = None):
+    p = EmbeddingProviderFactory.create(provider) if provider else EmbeddingProviderFactory.create_from_env()
+    try:
+        return await p.get_embeddings(texts)
+    finally:
+        await p.close()
+
+class EmbeddingProviderContext:
+    """
+    Minimal async context manager for compatibility.
+    Usage:
+        async with EmbeddingProviderContext("openai") as provider:
+            emb = await provider.get_single_embedding("text")
+    """
+    def __init__(self, provider: Optional[str] = None, **kwargs):
+        self._provider_name = provider
+        self._provider = None
+        self._kwargs = kwargs
+
+    async def __aenter__(self):
+        if self._provider_name:
+            self._provider = EmbeddingProviderFactory.create(self._provider_name, **self._kwargs)
+        else:
+            self._provider = EmbeddingProviderFactory.create_from_env()
+        return self._provider
+
+    async def __aexit__(self, exc_type, exc, tb):
+        if self._provider:
+            await self._provider.close()
+# --- End EmbeddingProviderFactory shim ---

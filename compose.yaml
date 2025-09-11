@@ -38,7 +38,7 @@ services:
     image: ghcr.io/oculairmedia/letta-toolselector-reranker-adapter:main
     container_name: ollama-reranker-adapter
     ports:
-      - 8091:8080  # Expose on 8091 for debugging
+      - 8091:8080 # Expose on 8091 for debugging
     environment:
       - OLLAMA_BASE_URL=http://192.168.50.80:11434
       - OLLAMA_MODEL=dengcao/Qwen3-Reranker-4B:Q5_K_M
@@ -49,7 +49,11 @@ services:
       - CACHE_TTL=300
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:8080/health
       interval: 30s
       timeout: 10s
       retries: 3
@@ -75,13 +79,11 @@ services:
       - EXCLUDE_LETTA_CORE_TOOLS=${EXCLUDE_LETTA_CORE_TOOLS:-true}
       - EXCLUDE_OFFICIAL_TOOLS=${EXCLUDE_OFFICIAL_TOOLS:-true}
       - MANAGE_ONLY_MCP_TOOLS=${MANAGE_ONLY_MCP_TOOLS:-true}
-      # Embedding Provider Configuration
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-ollama}
       - OLLAMA_EMBEDDING_HOST=${OLLAMA_EMBEDDING_HOST:-192.168.50.80}
       - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-dengcao/Qwen3-Embedding-4B:Q4_K_M}
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-2560}
       - USE_OLLAMA_EMBEDDINGS=${USE_OLLAMA_EMBEDDINGS:-true}
-      # Reranking Configuration
       - ENABLE_RERANKING=${ENABLE_RERANKING:-true}
       - RERANK_INITIAL_LIMIT=${RERANK_INITIAL_LIMIT:-30}
       - RERANK_TOP_K=${RERANK_TOP_K:-10}

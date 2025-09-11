@@ -15,7 +15,7 @@ import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import os
 from pathlib import Path
 
@@ -132,11 +132,8 @@ async def initialize_ml_resources():
         # Initialize integration layer with existing LDTS services
         await integration_layer.initialize()
         
-        # Initialize audit logging system
-        await audit_logger.initialize()
-        
-        # Initialize rate limiting system
-        await rate_limiter.initialize()
+        # Audit logging and rate limiting are already initialized
+        # No need to call initialize methods
         
         # Initialize reranker manager
         reranker_config = {
@@ -193,8 +190,8 @@ async def initialize_ml_resources():
         await audit_logger.log_event(
             event_type=AuditEventType.SYSTEM_EVENT,
             operation="dashboard_startup",
-            user_id="system",
-            details={"version": "0.1.0", "safety_mode": "read_only_testing"}
+            user_context={"user_id": "system"},
+            parameters={"version": "0.1.0", "safety_mode": "read_only_testing"}
         )
     except Exception as e:
         logger.error(f"Failed to initialize ML resources: {e}")
@@ -2694,7 +2691,7 @@ async def apply_search_parameter_set(application_data: Dict[str, Any]):
         raise HTTPException(status_code=500, detail=f"Failed to apply parameter set: {str(e)}")
 
 @app.delete("/api/v1/search/parameter-sets/{parameter_set_id}")
-@safety_check("bm25_vector_delete_parameter_set", SafetyLevel.ADMIN)
+@safety_check("bm25_vector_delete_parameter_set", SafetyLevel.DANGEROUS)
 async def delete_search_parameter_set(parameter_set_id: str):
     """Delete a search parameter set"""
     try:

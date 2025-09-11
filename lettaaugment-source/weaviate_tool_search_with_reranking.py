@@ -330,7 +330,40 @@ def test_reranking_capability() -> Dict[str, Any]:
         status["error"] = str(e)
     
     return status
+# ------------------------------------------------------------------
+# Compatibility Adapter
+# Some code (dashboard-backend/main.py, integration_layer.py) imports:
+#   from weaviate_tool_search_with_reranking import WeaviateToolSearch
+# The original refactor only exposed functions. We provide a lightweight
+# adapter class so existing imports work without modifying the backend.
+# ------------------------------------------------------------------
+class WeaviateToolSearch:
+    """
+    Lightweight adapter providing an object-oriented interface around the
+    module-level search functions. Keeps backward compatibility with older
+    code that expected a class.
+    """
+    def __init__(self, reranker_config: Optional[Dict[str, Any]] = None):
+        self.reranker_config = reranker_config or {}
 
+    def search(self, query: str, limit: int = 10) -> list:
+        """Primary search entrypoint (may use reranking based on config)."""
+        return search_tools(query=query, limit=limit, reranker_config=self.reranker_config)
+
+    def search_with_reranking(self, query: str, limit: int = 10) -> list:
+        """Force reranking path (ignores internal enabled flag)."""
+        return search_tools_with_reranking(query=query, limit=limit, use_reranking=True)
+
+    def search_standard(self, query: str, limit: int = 10) -> list:
+        """Force standard (non-reranked) hybrid search."""
+        return search_tools_with_reranking(query=query, limit=limit, use_reranking=False)
+
+    def test_reranking(self) -> Dict[str, Any]:
+        """Return reranking capability status."""
+        return test_reranking_capability()
+
+# Provide a module-level convenience instance (optional usage)
+default_tool_search = WeaviateToolSearch()
 if __name__ == "__main__":
     # Test the search with reranking
     import json

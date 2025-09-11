@@ -69,6 +69,26 @@ async def get_weaviate_tools(client): # Make async
         return {}
 
 # --- Helper function to get or create schema ---
+def get_vectorizer_config():
+    """Get the appropriate vectorizer configuration based on environment settings."""
+    embedding_provider = os.getenv('EMBEDDING_PROVIDER', 'openai').lower()
+    
+    if embedding_provider == 'ollama':
+        # Use Ollama vectorizer with proper endpoint configuration
+        vectorizer_config = weaviate.classes.config.Configure.Vectorizer.text2vec_ollama(
+            api_endpoint=f"http://{os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80')}:11434",
+            model=os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
+        )
+        logger.info(f"Using Ollama vectorizer with endpoint: http://{os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80')}:11434")
+    else:
+        # Default to OpenAI vectorizer
+        vectorizer_config = weaviate.classes.config.Configure.Vectorizer.text2vec_openai(
+            model=OPENAI_EMBEDDING_MODEL
+        )
+        logger.info("Using OpenAI vectorizer")
+    
+    return vectorizer_config
+
 async def get_or_create_tool_schema(client) -> weaviate.collections.Collection: # Make async
     """Get existing schema or create new one if it doesn't exist."""
     try:
@@ -84,9 +104,7 @@ async def get_or_create_tool_schema(client) -> weaviate.collections.Collection: 
                 client.collections.create,
                 name="Tool",
                 description="A Letta tool with its metadata and description",
-                vectorizer_config=weaviate.classes.config.Configure.Vectorizer.text2vec_openai(
-                    model=OPENAI_EMBEDDING_MODEL
-                ),
+                vectorizer_config=get_vectorizer_config(),
                 properties=[
                     weaviate.classes.config.Property(name="tool_id", data_type=weaviate.classes.config.DataType.TEXT),
                     weaviate.classes.config.Property(name="name", data_type=weaviate.classes.config.DataType.TEXT),

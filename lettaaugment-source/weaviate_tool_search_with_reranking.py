@@ -163,7 +163,7 @@ def search_tools_with_reranking(
                         if documents:
                             # Call our reranker adapter with task-specific instruction
                             import httpx
-                            reranker_url = "http://reranker-ollama-adapter:8080/rerank"
+                            reranker_url = "http://ollama-reranker-adapter:8080/rerank"
                             
                             # Add task-specific context to the query for better reranking
                             instructed_query = f"Find tools that can: {query}"

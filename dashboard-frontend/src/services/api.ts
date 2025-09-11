@@ -299,10 +299,15 @@ class ApiService {
     if (params?.order) queryParams.append('order', params.order);
 
     const response = await this.client.get(`/tools/browse?${queryParams}`);
-    if (!response.data.success) {
-      throw new Error(response.data.error || 'Failed to browse tools');
+    // The backend returns the browse response directly without a success wrapper
+    if (response.data.tools) {
+      return response.data;
     }
-    return response.data.data;
+    // Fallback for wrapped response format if it exists
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || 'Failed to browse tools');
   }
 
   async getToolDetail(toolId: string): Promise<ToolDetailResponse> {
@@ -315,18 +320,28 @@ class ApiService {
 
   async getToolCategories(): Promise<string[]> {
     const response = await this.client.get('/tools/categories');
-    if (!response.data.success) {
-      throw new Error(response.data.error || 'Failed to get tool categories');
+    // Backend returns categories directly without success wrapper
+    if (response.data.categories) {
+      return response.data.categories;
     }
-    return response.data.data;
+    // Fallback for wrapped format
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || 'Failed to get tool categories');
   }
 
   async getToolSources(): Promise<string[]> {
     const response = await this.client.get('/tools/sources');
-    if (!response.data.success) {
-      throw new Error(response.data.error || 'Failed to get tool sources');
+    // Backend returns sources directly without success wrapper
+    if (response.data.sources) {
+      return response.data.sources;
     }
-    return response.data.data;
+    // Fallback for wrapped format
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || 'Failed to get tool sources');
   }
 
   async exportTools(format: 'json' | 'csv' = 'json'): Promise<Blob> {

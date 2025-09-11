@@ -222,6 +222,7 @@ def search_tools_with_reranking(
                     if hasattr(obj, 'rerank_score'):
                         # Client-side reranking was used
                         tool_data["rerank_score"] = obj.rerank_score
+                        tool_data["score"] = obj.rerank_score  # Also set score for compatibility
                         score = obj.rerank_score
                     elif hasattr(obj, 'metadata') and obj.metadata is not None:
                         # Standard Weaviate scoring
@@ -269,9 +270,9 @@ def search_tools(query: str, limit: int = 10, reranker_config: Optional[Dict[str
     Maintains the original API signature while adding reranking capabilities.
     """
     # Determine if reranking should be used
-    use_reranking = True
+    use_reranking = False  # Default to NO reranking if no config provided
     if reranker_config is not None:
-        use_reranking = reranker_config.get('enabled', True)
+        use_reranking = reranker_config.get('enabled', False)
         
     return search_tools_with_reranking(
         query=query,

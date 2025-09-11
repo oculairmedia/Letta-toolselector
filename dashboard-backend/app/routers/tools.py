@@ -502,25 +502,172 @@ async def search_with_reranking(
     request: Dict[str, Any],
     ldts_client: LDTSClient = Depends(get_ldts_client)
 ):
-    """Proxy reranking search requests to LDTS API (frontend compatibility)."""
+    """Compare regular search vs reranked search for dashboard frontend."""
+    import time
+    import asyncio
+    
     try:
-        logger.info(f"Search with reranking request: {request}")
+        logger.info(f"Search with reranking comparison request: {request}")
         
         if not ldts_client.session:
             raise HTTPException(status_code=503, detail="LDTS client not initialized")
         
-        # Forward the request to LDTS API server's tools search endpoint
-        async with ldts_client.session.post(
-            f"{ldts_client.api_url}/api/v1/tools/search/rerank",
-            json=request
-        ) as response:
-            content = await response.read()
-            return Response(
-                content=content,
-                status_code=response.status,
-                headers=dict(response.headers),
-                media_type="application/json"
-            )
+        # Extract query parameters from nested format
+        query_data = request.get('query', {})
+        if isinstance(query_data, str):
+            # Handle direct string format
+            query_string = query_data
+            limit = request.get('limit', 10)
+        else:
+            # Handle nested object format
+            query_string = query_data.get('query', '')
+            limit = query_data.get('limit', 10)
+        
+        reranker_config = request.get('reranker_config', {})
+        
+        if not query_string:
+            raise HTTPException(status_code=400, detail="No query provided")
+        
+        # Prepare requests for both searches
+        regular_request = {
+            "query": query_string,
+            "limit": limit,
+            "enable_reranking": False
+        }
+        
+        reranked_request = {
+            "query": query_string, 
+            "limit": limit,
+            "enable_reranking": True
+        }
+        
+        # Make parallel requests to both endpoints
+        start_time = time.time()
+        
+        async def fetch_regular():
+            """Fetch regular search results"""
+            try:
+                async with ldts_client.session.post(
+                    f"{ldts_client.api_url}/api/v1/tools/search",
+                    json=regular_request
+                ) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    else:
+                        logger.error(f"Regular search failed with status {response.status}")
+                        return []
+            except Exception as e:
+                logger.error(f"Regular search error: {e}")
+                return []
+        
+        async def fetch_reranked():
+            """Fetch reranked search results"""
+            try:
+                async with ldts_client.session.post(
+                    f"{ldts_client.api_url}/api/v1/tools/search",
+                    json=reranked_request
+                ) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    else:
+                        logger.error(f"Reranked search failed with status {response.status}")
+                        return []
+            except Exception as e:
+                logger.error(f"Reranked search error: {e}")
+                return []
+        
+        # Execute both searches in parallel
+        regular_task = asyncio.create_task(fetch_regular())
+        reranked_task = asyncio.create_task(fetch_reranked())
+        
+        regular_start = time.time()
+        regular_results = await regular_task
+        regular_time = int((time.time() - regular_start) * 1000)
+        
+        rerank_start = time.time()
+        reranked_results = await reranked_task
+        rerank_time = int((time.time() - rerank_start) * 1000)
+        
+        total_time = int((time.time() - start_time) * 1000)
+        
+        # Format results for frontend comparison view
+        def format_results(results):
+            """Convert API results to frontend format"""
+            if isinstance(results, list):
+                # Direct list of tools
+                return [{
+                    "id": r.get("id", r.get("tool_id", "")),
+                    "name": r.get("name", "Unknown"),
+                    "description": r.get("description", ""),
+                    "category": r.get("category", ""),
+                    "source": r.get("source", ""),
+                    "tags": r.get("tags", []),
+                    "score": r.get("score", 0.0),
+                    "rerank_score": r.get("rerank_score"),
+                    "metadata": r.get("metadata", {})
+                } for r in results[:limit]]
+            elif isinstance(results, dict) and "data" in results:
+                # Nested format from rerank endpoint
+                data_results = results.get("data", {}).get("results", [])
+                return [{
+                    "id": r.get("tool", {}).get("id", ""),
+                    "name": r.get("tool", {}).get("name", "Unknown"),
+                    "description": r.get("tool", {}).get("description", ""),
+                    "category": r.get("tool", {}).get("category", ""),
+                    "source": r.get("tool", {}).get("source", ""),
+                    "tags": r.get("tool", {}).get("tags", []),
+                    "score": r.get("score", 0.0),
+                    "rerank_score": r.get("rerank_score"),
+                    "metadata": r.get("metadata", {})
+                } for r in data_results[:limit]]
+            else:
+                return []
+        
+        original_formatted = format_results(regular_results)
+        reranked_formatted = format_results(reranked_results)
+        
+        # Calculate performance metrics
+        performance_metrics = {
+            "ranking_changes": 0,
+            "score_improvements": 0,
+            "new_results": 0
+        }
+        
+        # Track ranking changes
+        original_names = [r["name"] for r in original_formatted]
+        reranked_names = [r["name"] for r in reranked_formatted]
+        
+        for i, name in enumerate(reranked_names):
+            if name in original_names:
+                old_pos = original_names.index(name)
+                if old_pos != i:
+                    performance_metrics["ranking_changes"] += 1
+            else:
+                performance_metrics["new_results"] += 1
+        
+        # Track score improvements
+        for reranked in reranked_formatted:
+            original = next((o for o in original_formatted if o["name"] == reranked["name"]), None)
+            if original and reranked["score"] > original["score"]:
+                performance_metrics["score_improvements"] += 1
+        
+        logger.info(f"Comparison complete: {len(original_formatted)} original, {len(reranked_formatted)} reranked")
+        logger.info(f"Performance metrics: {performance_metrics}")
+        
+        # Return in the format expected by the frontend
+        return {
+            "query": query_string,
+            "originalResults": original_formatted,
+            "rerankedResults": reranked_formatted,
+            "originalSearchTime": regular_time,
+            "rerankTime": rerank_time,
+            "totalTime": total_time,
+            "rerankerConfig": reranker_config,
+            "performanceMetrics": performance_metrics
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Search with reranking failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Search with reranking failed: {str(e)}")
+        logger.error(f"Search with reranking comparison failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Search comparison failed: {str(e)}")

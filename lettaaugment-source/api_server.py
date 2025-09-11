@@ -428,14 +428,25 @@ async def search():
         # For now, assuming it might work or needs a sync wrapper if this endpoint is kept sync
         logger.warning("Calling potentially async search_tools from sync context in /search endpoint.")
         
+        # Check if reranking is enabled
+        enable_reranking = data.get('enable_reranking', False)
+        reranker_config = None
+        if enable_reranking:
+            # Build reranker config
+            reranker_config = {
+                'enabled': True,
+                'model': data.get('reranker_config', {}).get('model', 'bge-reranker-v2-m3'),
+                'base_url': data.get('reranker_config', {}).get('base_url', 'http://localhost:8091')
+            }
+        
         # If MANAGE_ONLY_MCP_TOOLS is enabled, search with higher limit and filter for MCP tools first
         if MANAGE_ONLY_MCP_TOOLS:
             # Search with a higher limit to ensure we get enough MCP tools
             search_limit = limit * 5  # Get 5x more results to filter from
             logger.info(f"MANAGE_ONLY_MCP_TOOLS enabled - searching with limit {search_limit} to filter for MCP tools")
-            results = search_tools(query=query, limit=search_limit)
+            results = search_tools(query=query, limit=search_limit, reranker_config=reranker_config)
         else:
-            results = search_tools(query=query, limit=limit)
+            results = search_tools(query=query, limit=limit, reranker_config=reranker_config)
         
         # Filter results if MANAGE_ONLY_MCP_TOOLS is enabled
         if MANAGE_ONLY_MCP_TOOLS:
@@ -477,9 +488,17 @@ async def search():
                     logger.info(f"DEBUG: Result {i} has no name field")
             
             logger.info(f"Weaviate search: {len(results)} total results, {len(filtered_results)} after MCP filtering.")
+            # Map rerank_score to score if present
+            for result in filtered_results[:limit]:
+                if 'rerank_score' in result and 'score' not in result:
+                    result['score'] = result['rerank_score']
             return jsonify(filtered_results[:limit])  # Ensure we don't return more than requested
         else:
             logger.info(f"Weaviate search successful, returning {len(results)} results.")
+            # Map rerank_score to score if present
+            for result in results:
+                if 'rerank_score' in result and 'score' not in result:
+                    result['score'] = result['rerank_score']
             return jsonify(results)
     except Exception as e:
         logger.error(f"Error during search: {str(e)}", exc_info=True)
@@ -2032,7 +2051,7 @@ async def test_search_with_overrides():
                     "category": result.get('category'),
                     "tags": result.get('tags', [])
                 },
-                "score": result.get('score', 0),
+                "score": result.get('rerank_score', 0) if reranker_enabled and result.get('rerank_score') is not None else result.get('score', 0),
                 "rank": i + 1,
                 "reasoning": result.get('reasoning', ''),
                 "vector_score": result.get('vector_score', 0),

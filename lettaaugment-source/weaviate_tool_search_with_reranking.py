@@ -148,16 +148,28 @@ def search_tools_with_reranking(
                         # Prepare documents for reranking
                         documents = []
                         for obj in result.objects:
-                            # Create document text from tool properties
-                            doc_text = f"{obj.properties.get('name', '')} - {obj.properties.get('description', '')}"
+                            # Create structured document text for better reranking
+                            name = obj.properties.get('name', '')
+                            description = obj.properties.get('description', '')
+                            tags = obj.properties.get('tags', [])
+                            tool_type = obj.properties.get('tool_type', '')
+                            
+                            # Format with more context for the reranker
+                            doc_text = f"Tool: {name}\nType: {tool_type}\nDescription: {description}"
+                            if tags:
+                                doc_text += f"\nCategories: {', '.join(tags)}"
                             documents.append(doc_text.strip())
                         
                         if documents:
-                            # Call our reranker adapter
+                            # Call our reranker adapter with task-specific instruction
                             import httpx
                             reranker_url = "http://reranker-ollama-adapter:8080/rerank"
+                            
+                            # Add task-specific context to the query for better reranking
+                            instructed_query = f"Find tools that can: {query}"
+                            
                             payload = {
-                                "query": query,  # Use original query, not enhanced
+                                "query": instructed_query,  # Use instructed query for better context
                                 "documents": documents,
                                 "k": min(limit, len(documents))
                             }

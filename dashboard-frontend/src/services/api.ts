@@ -105,9 +105,8 @@ class ApiService {
     };
     const response = await this.client.post('/tools/search/rerank', requestData);
     
-    // Handle both wrapped and unwrapped responses
+    // Dashboard backend now returns normalized direct array format (same as regular search)
     if (Array.isArray(response.data)) {
-      // Direct array response - wrap it in the expected format
       return {
         results: response.data.map((item: any, index: number) => ({
           tool: {
@@ -121,39 +120,20 @@ class ApiService {
           score: item.score || item.rerank_score || 0,
           distance: item.distance,
           reasoning: item.reasoning || '',
-          rank: index + 1,
+          rank: item.rank || (index + 1),
+          // Preserve rerank-specific fields if available
+          reranked: item.reranked || false,
         })),
         query: query.query,
         metadata: {
           total_found: response.data.length,
           search_time: 0, // Not available from the API
+          reranker_used: 'Used reranking endpoint',
         },
       };
-    } else if (response.data.success && response.data.data) {
-      // Dashboard backend wrapped response format with nested data
-      const data = response.data.data;
-      return {
-        results: data.results.map((item: any, index: number) => ({
-          tool: {
-            id: item.tool?.id || '',
-            name: item.tool?.name || '',
-            description: item.tool?.description || '',
-            source: item.tool?.source || 'unknown',
-            category: item.tool?.category || '',
-            tags: item.tool?.tags || [],
-          },
-          score: item.score || item.rerank_score || 0,
-          distance: item.distance,
-          reasoning: item.reasoning || '',
-          rank: item.rank || (index + 1),
-        })),
-        query: data.query || query.query,
-        metadata: {
-          total_found: data.metadata?.total_found || data.results.length,
-          search_time: data.metadata?.search_time || 0,
-          reranker_used: data.metadata?.reranker_used,
-        },
-      };
+    } else if (response.data.success) {
+      // Fallback for wrapped response format
+      return response.data.data!;
     } else {
       throw new Error(response.data.error || 'Reranked search failed');
     }

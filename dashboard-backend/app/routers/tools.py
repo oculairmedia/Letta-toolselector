@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, Response
+from fastapi.responses import JSONResponse
 from typing import Dict, Any, Optional, List, Literal
 import time
 import logging
@@ -514,13 +515,51 @@ async def search_with_reranking(
             f"{ldts_client.api_url}/api/v1/tools/search/rerank",
             json=request
         ) as response:
-            content = await response.read()
-            return Response(
-                content=content,
-                status_code=response.status,
-                headers=dict(response.headers),
-                media_type="application/json"
-            )
+            if response.status == 200:
+                # Parse the nested response and convert to direct array format
+                data = await response.json()
+                if data.get("success") and data.get("data"):
+                    results = data["data"].get("results", [])
+                    # Convert to direct array format matching regular search
+                    converted_results = []
+                    for item in results:
+                        tool = item.get("tool", {})
+                        converted_item = {
+                            "tool_id": tool.get("id", ""),
+                            "name": tool.get("name", ""),
+                            "description": tool.get("description", ""),
+                            "source_type": tool.get("source", "unknown"),
+                            "mcp_server_name": tool.get("category", ""),
+                            "tags": tool.get("tags", []),
+                            "score": item.get("score", 0),
+                            "distance": 1.0 - item.get("score", 0),  # Convert score to distance
+                            "reasoning": item.get("reasoning", ""),
+                            "rank": item.get("rank", 0),
+                            # Add rerank-specific metadata
+                            "rerank_score": item.get("score", 0),
+                            "reranked": True
+                        }
+                        converted_results.append(converted_item)
+                    
+                    return JSONResponse(content=converted_results)
+                else:
+                    # Fallback to original response if parsing fails
+                    content = await response.read()
+                    return Response(
+                        content=content,
+                        status_code=response.status,
+                        headers=dict(response.headers),
+                        media_type="application/json"
+                    )
+            else:
+                # Handle non-200 responses
+                content = await response.read()
+                return Response(
+                    content=content,
+                    status_code=response.status,
+                    headers=dict(response.headers),
+                    media_type="application/json"
+                )
             
     except Exception as e:
         logger.error(f"Tool search with reranking failed: {e}", exc_info=True)

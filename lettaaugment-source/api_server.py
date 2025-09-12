@@ -1,6 +1,6 @@
 from quart import Quart, request, jsonify
 # Restore search_tools import, remove get_all_tools as cache is used for listing
-from weaviate_tool_search_with_reranking import search_tools, init_client as init_weaviate_client
+from weaviate_tool_search_with_reranking import search_tools, search_tools_with_reranking, init_client as init_weaviate_client
 from weaviate_client_manager import get_client_manager, close_client_manager
 import os
 import asyncio
@@ -560,15 +560,15 @@ async def search_with_reranking():
         logger.info(f"Performing reranked search for: '{query_string}' with limit: {limit}")
         logger.info(f"Reranker config: {reranker_config}")
         
-        # Use the same search_tools function but with reranking enabled
+        # Use the search_tools_with_reranking function to get actual reranked results
         # If MANAGE_ONLY_MCP_TOOLS is enabled, search with higher limit and filter for MCP tools first
         if MANAGE_ONLY_MCP_TOOLS:
             # Search with a higher limit to ensure we get enough MCP tools
             search_limit = limit * 5  # Get 5x more results to filter from
             logger.info(f"MANAGE_ONLY_MCP_TOOLS enabled - searching with limit {search_limit} to filter for MCP tools (rerank endpoint)")
-            results = await asyncio.to_thread(search_tools, query=query_string, limit=search_limit)
+            results = await asyncio.to_thread(search_tools_with_reranking, query=query_string, limit=search_limit, use_reranking=True)
         else:
-            results = await asyncio.to_thread(search_tools, query=query_string, limit=limit)
+            results = await asyncio.to_thread(search_tools_with_reranking, query=query_string, limit=limit, use_reranking=True)
         
         # Filter results if MANAGE_ONLY_MCP_TOOLS is enabled
         if MANAGE_ONLY_MCP_TOOLS:
@@ -646,7 +646,7 @@ async def search_with_reranking():
             }
         }
         
-        logger.info(f"Reranked search successful, returning {len(formatted_results)} results.")
+        logger.info(f"Reranked search with reranking=True successful, returning {len(formatted_results)} results.")
         return jsonify({"success": True, "data": response_data})
         
     except Exception as e:

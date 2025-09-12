@@ -72,7 +72,7 @@ const ToolBrowser: React.FC = () => {
 
   // Build query parameters for API
   const queryParams = useMemo(() => ({
-    page: page + 1, // API expects 1-based pagination
+    page: page, // API expects 0-based pagination
     limit: rowsPerPage,
     search: searchQuery || undefined,
     category: selectedCategory || undefined,
@@ -94,6 +94,22 @@ const ToolBrowser: React.FC = () => {
   const { data: toolDetail, isLoading: isLoadingDetail } = useToolDetail(selectedToolId || '', !!selectedToolId);
   const refreshToolsMutation = useRefreshTools();
   const exportToolsMutation = useExportTools();
+
+  // Debug logging
+  console.log('ToolBrowser Debug:', {
+    queryParams,
+    isLoading,
+    hasData: !!browseData,
+    dataKeys: browseData ? Object.keys(browseData) : null,
+    toolsCount: browseData?.tools?.length,
+    error: error ? {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      stack: error.stack
+    } : null
+  });
 
   // Event handlers
   const handleSearchChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {

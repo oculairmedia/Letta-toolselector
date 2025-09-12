@@ -85,7 +85,7 @@ services:
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-2560}
       - USE_OLLAMA_EMBEDDINGS=${USE_OLLAMA_EMBEDDINGS:-true}
       - ENABLE_RERANKING=${ENABLE_RERANKING:-true}
-      - RERANK_INITIAL_LIMIT=${RERANK_INITIAL_LIMIT:-30}
+      - RERANK_INITIAL_LIMIT=${RERANK_INITIAL_LIMIT:-15}
       - RERANK_TOP_K=${RERANK_TOP_K:-10}
       - RERANKER_MODEL=${RERANKER_MODEL:-dengcao/Qwen3-Reranker-4B:Q5_K_M}
       - RERANKER_PROVIDER=${RERANKER_PROVIDER:-ollama}
@@ -182,7 +182,7 @@ services:
     ports:
       - 8030:8030
     environment:
-      - LDTS_API_URL=http://weaviate-tools-api:3001
+      - LDTS_API_URL=http://192.168.50.90:8020
       - LDTS_MCP_URL=http://mcp-server:3020/mcp
       - WEAVIATE_URL=http://weaviate:8080
       - LETTA_API_URL=${LETTA_API_URL}

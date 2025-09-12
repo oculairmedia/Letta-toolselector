@@ -37,7 +37,15 @@ class ApiService {
     // Request interceptor for logging
     this.client.interceptors.request.use(
       (config) => {
-        console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+        console.log('API Request:', {
+          method: config.method?.toUpperCase(),
+          url: config.url,
+          baseURL: config.baseURL,
+          fullUrl: `${config.baseURL}${config.url}`,
+          params: config.params,
+          timeout: config.timeout,
+          headers: config.headers
+        });
         return config;
       },
       (error) => {
@@ -267,7 +275,7 @@ class ApiService {
     order?: 'asc' | 'desc';
   }): Promise<ToolBrowseResponse> {
     const queryParams = new URLSearchParams();
-    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.page !== undefined) queryParams.append('page', params.page.toString());
     if (params?.limit) queryParams.append('limit', params.limit.toString());
     if (params?.search) queryParams.append('search', params.search);
     if (params?.category) queryParams.append('category', params.category);
@@ -276,16 +284,50 @@ class ApiService {
     if (params?.sort) queryParams.append('sort', params.sort);
     if (params?.order) queryParams.append('order', params.order);
 
-    const response = await this.client.get(`/tools/browse?${queryParams}`);
-    // The backend returns the browse response directly without a success wrapper
-    if (response.data.tools) {
-      return response.data;
+    const url = `/tools/browse?${queryParams}`;
+    console.log('ApiService.browseTools:', {
+      params,
+      url,
+      baseURL: this.client.defaults.baseURL,
+      fullUrl: `${this.client.defaults.baseURL}${url}`
+    });
+
+    try {
+      const response = await this.client.get(url);
+      console.log('ApiService.browseTools response:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+        dataType: typeof response.data,
+        dataKeys: response.data ? Object.keys(response.data) : null,
+        hasTools: !!response.data?.tools,
+        toolsCount: response.data?.tools?.length,
+        sampleData: response.data ? JSON.stringify(response.data).substring(0, 500) + '...' : null
+      });
+
+      // The backend returns the browse response directly without a success wrapper
+      if (response.data.tools) {
+        return response.data;
+      }
+      // Fallback for wrapped response format if it exists
+      if (response.data.success && response.data.data) {
+        return response.data.data;
+      }
+      throw new Error(response.data.error || 'Failed to browse tools');
+    } catch (error: any) {
+      console.error('ApiService.browseTools error:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        config: error.config ? {
+          url: error.config.url,
+          baseURL: error.config.baseURL,
+          method: error.config.method
+        } : null
+      });
+      throw error;
     }
-    // Fallback for wrapped response format if it exists
-    if (response.data.success && response.data.data) {
-      return response.data.data;
-    }
-    throw new Error(response.data.error || 'Failed to browse tools');
   }
 
   async getToolDetail(toolId: string): Promise<ToolDetailResponse> {

@@ -61,11 +61,52 @@ export const useBrowseTools = (params?: {
   sort?: 'name' | 'category' | 'updated' | 'relevance';
   order?: 'asc' | 'desc';
 }) => {
-  return useQuery<ToolBrowseResponse>({
+  console.log('useBrowseTools hook called with params:', params);
+  
+  const result = useQuery<ToolBrowseResponse>({
     queryKey: ['browseTools', params],
-    queryFn: () => apiService.browseTools(params),
+    queryFn: async () => {
+      console.log('useBrowseTools queryFn executing with params:', params);
+      try {
+        const data = await apiService.browseTools(params);
+        console.log('useBrowseTools queryFn success:', {
+          toolsCount: data.tools?.length,
+          total: data.total,
+          page: data.page,
+          limit: data.limit,
+          has_more: data.has_more
+        });
+        return data;
+      } catch (error) {
+        console.error('useBrowseTools queryFn error:', error);
+        throw error;
+      }
+    },
     staleTime: 2 * 60 * 1000, // 2 minutes
+    retry: (failureCount, error) => {
+      console.log('useBrowseTools retry:', { failureCount, error: error.message });
+      return failureCount < 3;
+    },
+    onError: (error) => {
+      console.error('useBrowseTools onError:', error);
+    },
+    onSuccess: (data) => {
+      console.log('useBrowseTools onSuccess:', {
+        toolsCount: data.tools?.length,
+        total: data.total
+      });
+    }
   });
+
+  console.log('useBrowseTools hook result:', {
+    isLoading: result.isLoading,
+    isFetching: result.isFetching,
+    hasData: !!result.data,
+    error: result.error?.message,
+    status: result.status
+  });
+
+  return result;
 };
 
 export const useToolDetail = (toolId: string, enabled: boolean = true) => {

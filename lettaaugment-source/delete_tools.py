@@ -1,6 +1,6 @@
 import requests
 import json
-import time
+# import time  # Currently unused
 
 def list_tools() -> None:
     """List all tools and their full details with pagination."""

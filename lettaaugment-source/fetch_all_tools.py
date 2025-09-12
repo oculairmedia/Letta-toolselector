@@ -4,7 +4,7 @@ import json
 import time
 from datetime import datetime
 from pprint import pprint
-import re
+# import re  # Currently unused
 import os
 from dotenv import load_dotenv
 import logging # Added logging import
@@ -116,7 +116,7 @@ def fetch_tools_from_server(url, headers, limit=1000):
             # This part will be replaced by async logic later
             print(f"[SYNC] Fetching tools from {url} (limit={limit}, after={after})...")
             # Placeholder for sync request logic
-            import requests # Keep requests import local to this placeholder
+            # import re  # Currently unusedquests # Keep requests import local to this placeholder
             response = requests.get(url, headers=headers, params=params)
             response.raise_for_status()
             tools = response.json()

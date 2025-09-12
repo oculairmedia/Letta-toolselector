@@ -1,6 +1,6 @@
 import requests
 import json
-from typing import Dict, Optional, List
+from typing import Dict, Optional
 
 def detach_mcp_tools(
     agent_id: str,

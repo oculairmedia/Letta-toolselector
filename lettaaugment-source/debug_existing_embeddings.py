@@ -197,16 +197,16 @@ def main():
     print("=" * 50)
     
     # Test 1: Check existing tools and their embeddings
-    tools = test_existing_tool_embeddings()
+    # tools = test_existing_tool_embeddings()  # Result currently unused
     
     # Test 2: Try nearText query to see if we can get vectors that way
     vector = test_neartext_query()
     
     if vector:
-        print(f"\n🎉 SUCCESS! Found a way to get embeddings via nearText query!")
+        print("\n🎉 SUCCESS! Found a way to get embeddings via nearText query!")
         print(f"Vector length: {len(vector)}")
     else:
-        print(f"\n⚠️ No vector found via nearText query")
+        print("\n⚠️ No vector found via nearText query")
 
 if __name__ == "__main__":
     main()

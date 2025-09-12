@@ -6,10 +6,10 @@ and vector distance metric selection in Weaviate operations.
 """
 
 import logging
-import json
+# import json  # Currently unused
 import copy
-from typing import Dict, Any, List, Optional, Union, Tuple
-from dataclasses import dataclass, asdict
+from typing import Dict, Any, List, Optional, Union
+from dataclasses import dataclass
 from enum import Enum
 import time
 from datetime import datetime, timezone

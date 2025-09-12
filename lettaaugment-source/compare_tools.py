@@ -3,7 +3,7 @@ from weaviate.classes.init import Auth, AdditionalConfig, Timeout
 from fetch_all_tools import fetch_all_tools
 from dotenv import load_dotenv
 import os
-from pprint import pprint
+# from pprint import pprint  # Currently unused
 
 def get_weaviate_tools():
     """Fetch all tools from Weaviate."""

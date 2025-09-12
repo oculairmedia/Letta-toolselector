@@ -122,7 +122,7 @@ def test_existing_tool_embeddings():
         if client:
             try:
                 client.close()
-            except:
+            except Exception:
                 pass
 
 def test_neartext_query():
@@ -186,7 +186,7 @@ def test_neartext_query():
         if client:
             try:
                 client.close()
-            except:
+            except Exception:
                 pass
 
 def main():

@@ -10,9 +10,9 @@ import json
 import logging
 import os
 from datetime import datetime, timedelta
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Any, Union, Callable
+from typing import Dict, List, Optional, Any, Callable
 from contextlib import asynccontextmanager
 # import aiofiles  # Will use standard file operations for compatibility
 import threading
@@ -468,7 +468,7 @@ class CostControlManager:
     @asynccontextmanager
     async def track_operation(self, category: CostCategory, operation: str, estimated_cost: Optional[float] = None):
         """Context manager for tracking operation costs"""
-        start_time = datetime.now()
+        # start_time = datetime.now()  # Currently unused
         
         # Pre-flight budget check if estimated cost provided
         if estimated_cost and estimated_cost > 0:

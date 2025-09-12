@@ -1,6 +1,6 @@
 import requests
 import json
-import os
+# import os  # Currently unused
 from dotenv import load_dotenv
 
 # Load environment variables

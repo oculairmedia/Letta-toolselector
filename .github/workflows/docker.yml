@@ -252,11 +252,11 @@ jobs:
         uses: snok/container-retention-policy@v2
         with:
           image-names: |
-            ${{ env.IMAGE_NAME }}-mcp-server
-            ${{ env.IMAGE_NAME }}-api-server  
-            ${{ env.IMAGE_NAME }}-sync-service
-            ${{ env.IMAGE_NAME }}-frontend
-            ${{ env.IMAGE_NAME }}-dashboard-backend
+            oculairmedia/letta-toolselector-mcp-server
+            oculairmedia/letta-toolselector-api-server  
+            oculairmedia/letta-toolselector-sync-service
+            oculairmedia/letta-toolselector-frontend
+            oculairmedia/letta-toolselector-dashboard-backend
           cut-off: 30 days ago UTC
           account-type: org
           org-name: ${{ github.repository_owner }}

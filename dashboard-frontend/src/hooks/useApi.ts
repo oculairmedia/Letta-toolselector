@@ -86,17 +86,19 @@ export const useBrowseTools = (params?: {
     retry: (failureCount, error) => {
       console.log('useBrowseTools retry:', { failureCount, error: error.message });
       return failureCount < 3;
-    },
-    onError: (error) => {
-      console.error('useBrowseTools onError:', error);
-    },
-    onSuccess: (data) => {
-      console.log('useBrowseTools onSuccess:', {
-        toolsCount: data.tools?.length,
-        total: data.total
-      });
     }
   });
+
+  // React Query v5 removed onError/onSuccess callbacks, so we log manually
+  if (result.error) {
+    console.error('useBrowseTools error state:', result.error);
+  }
+  if (result.data) {
+    console.log('useBrowseTools data available:', {
+      toolsCount: result.data.tools?.length,
+      total: result.data.total
+    });
+  }
 
   console.log('useBrowseTools hook result:', {
     isLoading: result.isLoading,

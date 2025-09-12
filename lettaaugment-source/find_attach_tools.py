@@ -2,7 +2,7 @@ import json
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from typing import Dict, Any, Optional, List
+from typing import Optional
 import argparse
 import logging
 
@@ -16,7 +16,8 @@ def find_attach_tools(
     limit: int = 5,
     min_score: float = 75.0,
     request_heartbeat: bool = False,
-    debug_level: str = "INFO"
+    debug_level: str = "INFO",
+    weaviate_base: str = "http://100.81.139.20:8020"
 ) -> Optional[str]:
     """
     Find and attach relevant tools to an agent using semantic search.

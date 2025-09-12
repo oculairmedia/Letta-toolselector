@@ -1,7 +1,7 @@
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from typing import Dict, Any, Optional, List
+from typing import Optional
 
 def find_attach_tools_v2(
     query: str,
@@ -151,7 +151,7 @@ def find_attach_tools_v2(
                                 "name": tool["name"],
                                 "type": tool["tool_type"]
                             })
-                    except:
+                    except Exception:
                         detach_results["failed_tools"].append({
                             "tool_id": tool["id"],
                             "name": tool["name"]

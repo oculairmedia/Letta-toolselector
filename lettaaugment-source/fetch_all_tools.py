@@ -8,6 +8,7 @@ from pprint import pprint
 import os
 from dotenv import load_dotenv
 import logging # Added logging import
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

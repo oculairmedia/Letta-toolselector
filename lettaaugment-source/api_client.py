@@ -21,7 +21,7 @@ def main():
     attach_parser.add_argument("--request-id", "-r", help="Optional request ID for tracking")
     
     # Health check command
-    health_parser = subparsers.add_parser("health", help="Check if the API server is running")
+    # health_parser = subparsers.add_parser("health", help="Check if the API server is running")  # Currently unused
     
     # Server settings
     parser.add_argument("--host", default="localhost", help="API server hostname")

@@ -145,7 +145,7 @@ NEVER_DETACH_TOOLS=find_tools         # Comma-separated protected tools
 The system uses Weaviate as a vector database for semantic tool search:
 
 - **Schema**: "Tool" collection with vectorized descriptions
-- **Embedding Model**: OpenAI text-embedding-3-small
+- **Embedding Model**: Ollama Qwen3-Embedding-4B (or OpenAI text-embedding-3-small)
 - **Search**: Hybrid search (configurable alpha, default 0.75)
 - **Cache**: File-based caching at `/app/runtime_cache/tool_cache.json`
 
@@ -153,6 +153,30 @@ The system uses Weaviate as a vector database for semantic tool search:
 ```bash
 python init_weaviate_schema.py        # Initialize Weaviate schema
 python upload_tools_to_weaviate.py    # Upload tools with embeddings
+```
+
+### Syncing Tools to Weaviate with Ollama Embeddings
+
+When Weaviate is empty (after container restart or data loss), use this command to re-sync all tools with Ollama embeddings:
+
+```bash
+cd /opt/stacks/lettatoolsselector/lettaaugment-source
+
+# Export all required environment variables and run the upload script
+export EMBEDDING_PROVIDER=ollama && \
+export USE_OLLAMA_EMBEDDINGS=true && \
+export OLLAMA_EMBEDDING_HOST=192.168.50.80 && \
+export OLLAMA_EMBEDDING_MODEL='dengcao/Qwen3-Embedding-4B:Q4_K_M' && \
+export OPENAI_API_KEY='${OPENAI_API_KEY}' && \
+export LETTA_API_URL='https://letta2.oculair.ca/v1' && \
+export LETTA_PASSWORD='lettaSecurePass123' && \
+python3 upload_tools_to_weaviate.py
+
+# This will:
+# 1. Fetch all tools from Letta API (typically ~179 tools)
+# 2. Generate embeddings using Ollama's Qwen3-Embedding-4B model
+# 3. Upload tools with embeddings to Weaviate for semantic search
+# 4. Show progress during upload and report success/skip counts
 ```
 
 ## Development Patterns

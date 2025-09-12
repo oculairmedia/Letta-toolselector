@@ -1,26 +1,39 @@
 from quart import Quart, request, jsonify
 # Restore search_tools import, remove get_all_tools as cache is used for listing
 from weaviate_tool_search_with_reranking import search_tools, init_client as init_weaviate_client
-from weaviate_client_manager import get_client_manager, close_client_manager, weaviate_client
-from weaviate_tool_search import get_embedding_for_text, get_tool_embedding_by_id # Keep some functions from original
-from upload_tools_to_weaviate import upload_tools
+from weaviate_client_manager import get_client_manager, close_client_manager
 import os
-import requests
 import asyncio
 import aiohttp
 import aiofiles # Import aiofiles
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 import logging
 import json # Added json import
 import time # Need time for cache timeout check
 import math # For cosine similarity and math.floor
 import uuid # For generating comparison IDs
-from concurrent.futures import ThreadPoolExecutor
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
 from simple_config_validation import validate_configuration
 from bm25_vector_overrides import bm25_vector_override_service
+try:
+    from cost_control_manager import (
+        get_cost_manager, CostCategory, BudgetPeriod, AlertLevel,
+        record_embedding_cost, record_weaviate_cost, record_letta_api_cost
+    )
+except ImportError:
+    # Handle case where cost_control_manager is not available
+    get_cost_manager = None
+    CostCategory = None
+    BudgetPeriod = None
+    AlertLevel = None
+    def record_embedding_cost(*args, **kwargs):
+        return None
+    def record_weaviate_cost(*args, **kwargs):
+        return None
+    def record_letta_api_cost(*args, **kwargs):
+        return None
 # Configure basic logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -59,7 +72,7 @@ NEVER_DETACH_TOOLS = [name.strip() for name in os.getenv('NEVER_DETACH_TOOLS', '
 # Default minimum score threshold for tool attachment (0-100)
 DEFAULT_MIN_SCORE = float(os.getenv('DEFAULT_MIN_SCORE', '35.0'))
 
-logger.info(f"Tool management configuration:")
+logger.info("Tool management configuration:")
 logger.info(f"  MAX_TOTAL_TOOLS: {MAX_TOTAL_TOOLS}")
 logger.info(f"  MAX_MCP_TOOLS: {MAX_MCP_TOOLS}")
 logger.info(f"  DEFAULT_MIN_SCORE: {DEFAULT_MIN_SCORE}")
@@ -410,7 +423,7 @@ async def process_tools(agent_id: str, mcp_tools: list, matching_tools: list, ke
 async def search():
     """Search endpoint - Note: This still calls the original synchronous search_tools"""
     # TODO: Decide if this endpoint should also be async or use a different search mechanism
-    logger.info(f"Received request for /api/v1/tools/search")
+    logger.info("Received request for /api/v1/tools/search")
     try:
         data = await request.get_json()
         if not data:
@@ -508,7 +521,7 @@ async def search():
 @app.route('/api/v1/tools/search/rerank', methods=['POST'])
 async def search_with_reranking():
     """Search with reranking endpoint for dashboard frontend."""
-    logger.info(f"Received request for /api/v1/tools/search/rerank")
+    logger.info("Received request for /api/v1/tools/search/rerank")
     
     try:
         data = await request.get_json()
@@ -527,6 +540,19 @@ async def search_with_reranking():
             reranker_config = data.get('reranker_config', {})
             query_string = query_data.get('query', '')
             limit = query_data.get('limit', 10)
+        
+        # Use server environment configuration if reranker_config is empty or missing model
+        if not reranker_config.get('model'):
+            reranker_config = {
+                "enabled": os.getenv('RERANKER_ENABLED', 'true').lower() == 'true',
+                "model": os.getenv('RERANKER_MODEL', 'dengcao/Qwen3-Reranker-4B:Q5_K_M'),
+                "provider": os.getenv('RERANKER_PROVIDER', 'ollama'),
+                "parameters": {
+                    "temperature": float(os.getenv('RERANKER_TEMPERATURE', '0.1')),
+                    "max_tokens": int(os.getenv('RERANKER_MAX_TOKENS', '512')),
+                    "base_url": os.getenv('OLLAMA_RERANKER_BASE_URL', 'http://ollama-reranker-adapter:8080')
+                }
+            }
         
         if not query_string:
             return jsonify({"success": False, "error": "No query provided"}), 400
@@ -1055,7 +1081,7 @@ async def _perform_tool_pruning(agent_id: str, user_prompt: str, drop_rate: floa
         if num_mcp_tools_to_keep < 0: 
             num_mcp_tools_to_keep = 0
             
-        logger.info(f"Target MCP tools calculation:")
+        logger.info("Target MCP tools calculation:")
         logger.info(f"  From drop_rate {drop_rate}: {target_from_drop_rate}")
         logger.info(f"  MAX_MCP_TOOLS limit: {max_mcp_allowed}")
         logger.info(f"  Available space (MAX_TOTAL_TOOLS - core tools): {max_total_allowed}")
@@ -1544,7 +1570,7 @@ async def test_reranker_connection():
         # Extract connection parameters
         provider = data.get('provider', 'ollama')
         base_url = data.get('parameters', {}).get('base_url', 'http://ollama-reranker-adapter:8080')
-        model = data.get('model', 'mistral:7b')
+        # model = data.get('model', 'mistral:7b')  # Currently unused
         
         # Test connection based on provider
         connected = False
@@ -3363,7 +3389,7 @@ async def execute_search_with_config(query, config, limit):
             )
         else:
             # Standard search
-            results = await search_tools_service(query, limit=limit)
+            results = search_tools(query, limit=limit)
         
         # Ensure consistent format
         if isinstance(results, dict) and 'tools' in results:
@@ -3561,12 +3587,12 @@ def calculate_overall_comparison_stats(results_a, results_b, metrics, k_values, 
     overall_degradations = 0
     total_comparisons = 0
     
-    significant_improvements = 0
-    significant_degradations = 0
+    # significant_improvements = 0  # Currently unused
+    # significant_degradations = 0  # Currently unused
     
     for metric in metrics:
         for k in k_values if metric in ['precision_at_k', 'recall_at_k'] else [None]:
-            metric_key = f"{metric}@{k}" if k else metric
+            # metric_key = f"{metric}@{k}" if k else metric  # Currently unused
             
             values_a = []
             values_b = []
@@ -4118,7 +4144,7 @@ def generate_pool_recommendations(stats: dict) -> list:
     if success_rate < 0.95:
         recommendations.append(f"Low success rate ({success_rate:.1%}) - check Weaviate server health")
     
-    active_connections = stats.get("active_connections", 0)
+    # active_connections = stats.get("active_connections", 0)  # Currently unused
     available_connections = stats.get("available_connections", 0)
     if available_connections == 0:
         recommendations.append("No available connections - consider increasing pool size")
@@ -4167,7 +4193,7 @@ async def health_check():
                 weaviate_message = "Not connected"
         except AttributeError: # Handles if client is some mock object without these methods
             weaviate_message = "Client object missing ready/connected methods"
-            logger.warning(f"Health check: Weaviate client object seems malformed.")
+            logger.warning("Health check: Weaviate client object seems malformed.")
         except Exception as e: # Catch any other exception during checks
             logger.error(f"Error checking Weaviate status in health check: {e}")
             weaviate_message = f"Exception during check: {str(e)}"
@@ -4320,10 +4346,7 @@ async def shutdown():
 # LDTS-58: Cost Control and Budget Management API Endpoints
 # ================================================================================
 
-from cost_control_manager import (
-    get_cost_manager, CostCategory, BudgetPeriod, AlertLevel,
-    record_embedding_cost, record_weaviate_cost, record_letta_api_cost
-)
+# Cost control imports moved to top of file
 
 @app.route('/api/v1/cost-control/status', methods=['GET'])
 async def get_cost_control_status():

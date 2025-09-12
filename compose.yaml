@@ -87,6 +87,10 @@ services:
       - ENABLE_RERANKING=${ENABLE_RERANKING:-true}
       - RERANK_INITIAL_LIMIT=${RERANK_INITIAL_LIMIT:-30}
       - RERANK_TOP_K=${RERANK_TOP_K:-10}
+      - RERANKER_MODEL=${RERANKER_MODEL:-dengcao/Qwen3-Reranker-4B:Q5_K_M}
+      - RERANKER_PROVIDER=${RERANKER_PROVIDER:-ollama}
+      - RERANKER_TEMPERATURE=${RERANKER_TEMPERATURE:-0.1}
+      - OLLAMA_RERANKER_BASE_URL=${OLLAMA_RERANKER_BASE_URL:-http://192.168.50.80:11434}
     restart: unless-stopped
     volumes:
       - ./.env:/app/.env:ro
@@ -152,6 +156,7 @@ services:
       - NODE_ENV=production
       - LETTA_API_URL=${LETTA_API_URL}
       - LETTA_PASSWORD=${LETTA_PASSWORD}
+      - API_URL=http://api-server:3001
     restart: unless-stopped
     labels:
       - homepage.group=MCP Services
@@ -178,7 +183,7 @@ services:
       - 8030:8030
     environment:
       - LDTS_API_URL=http://weaviate-tools-api:3001
-      - LDTS_MCP_URL=http://mcp-server:3020
+      - LDTS_MCP_URL=http://mcp-server:3020/mcp
       - WEAVIATE_URL=http://weaviate:8080
       - LETTA_API_URL=${LETTA_API_URL}
       - LETTA_PASSWORD=${LETTA_PASSWORD}

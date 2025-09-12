@@ -94,33 +94,25 @@ class LDTSClient:
         if not self.session:
             raise RuntimeError("LDTS client not initialized")
         
-        # Use MCP endpoint for tool search
-        mcp_payload = {
-            "jsonrpc": "2.0",
-            "id": int(time.time()),
-            "method": "tools/call",
-            "params": {
-                "name": "find_tools",
-                "arguments": {
-                    "query": query,
-                    "agent_id": agent_id,
-                    "limit": limit,
-                    "enable_reranking": enable_reranking,
-                    "min_score": min_score,
-                    "detailed_response": True
-                }
-            }
+        # Call API server's search endpoint directly
+        search_payload = {
+            "query": query,
+            "limit": limit,
+            "enable_reranking": enable_reranking
         }
         
         try:
-            async with self.session.post(self.mcp_url, json=mcp_payload) as response:
+            # Use the API server URL for search
+            search_url = f"{self.api_url}/api/v1/tools/search"
+            async with self.session.post(search_url, json=search_payload) as response:
                 response.raise_for_status()
-                result = await response.json()
+                tools = await response.json()
                 
-                if "error" in result:
-                    raise RuntimeError(f"MCP error: {result['error']}")
-                
-                return result.get("result", {})
+                # Format response to match expected structure
+                return {
+                    "tools": tools,
+                    "reranking_applied": enable_reranking and len(tools) > 0
+                }
                 
         except Exception as e:
             logger.error(f"Tool search failed: {e}", exc_info=True)

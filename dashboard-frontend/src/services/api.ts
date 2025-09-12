@@ -98,14 +98,12 @@ class ApiService {
   }
 
   async searchWithReranking(query: SearchQuery, config: RerankerConfig): Promise<SearchResponse> {
-    // Use the regular search endpoint with enable_reranking flag
-    // The /tools/search/rerank endpoint returns score: 0, but /tools/search with enable_reranking works
+    // Use the dedicated rerank endpoint for better reranking results
     const requestData = {
       ...query,
-      enable_reranking: true,
       reranker_config: config
     };
-    const response = await this.client.post('/tools/search', requestData);
+    const response = await this.client.post('/tools/search/rerank', requestData);
     
     // Handle both wrapped and unwrapped responses
     if (Array.isArray(response.data)) {

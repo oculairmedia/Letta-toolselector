@@ -1,0 +1,194 @@
+[
+  {
+    "id": "tool-sample-mcp-1",
+    "name": "huly_create_issue",
+    "description": "Create a new issue in a project",
+    "tool_type": "external_mcp",
+    "source_type": "python",
+    "tags": ["mcp:huly"],
+    "mcp_server_name": "huly",
+    "json_schema": {
+      "name": "huly_create_issue",
+      "description": "Create a new issue in a project",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_identifier": {
+            "type": "string",
+            "description": "Project identifier (e.g., \"LMP\")"
+          },
+          "title": {
+            "type": "string", 
+            "description": "Issue title"
+          },
+          "description": {
+            "type": "string",
+            "description": "Issue description"
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["low", "medium", "high", "urgent"],
+            "default": "medium",
+            "description": "Issue priority"
+          }
+        },
+        "required": ["project_identifier", "title"]
+      }
+    },
+    "metadata_": {
+      "mcp": {
+        "server_name": "huly",
+        "server_id": "mcp_server-huly-001"
+      }
+    },
+    "category": "Project Management"
+  },
+  {
+    "id": "tool-sample-core-1", 
+    "name": "archival_memory_search",
+    "description": "Search archival memory for relevant information",
+    "tool_type": "letta_core",
+    "source_type": "python",
+    "tags": [],
+    "json_schema": {
+      "name": "archival_memory_search",
+      "description": "Search archival memory for relevant information",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query string"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for pagination",
+            "default": 0
+          },
+          "request_heartbeat": {
+            "type": "boolean",
+            "description": "Request immediate heartbeat after execution"
+          }
+        },
+        "required": ["query", "request_heartbeat"]
+      }
+    },
+    "category": "Memory Management"
+  },
+  {
+    "id": "tool-sample-mcp-2",
+    "name": "create_book",
+    "description": "Creates a new book in Bookstack",
+    "tool_type": "external_mcp", 
+    "source_type": "python",
+    "tags": ["mcp:bookstack"],
+    "mcp_server_name": "bookstack",
+    "json_schema": {
+      "name": "create_book",
+      "description": "Creates a new book in Bookstack",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the book"
+          },
+          "description": {
+            "type": "string",
+            "description": "A description of the book"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {"type": "string"},
+                "value": {"type": "string"}
+              }
+            },
+            "description": "List of tag objects"
+          }
+        },
+        "required": ["name", "description"]
+      }
+    },
+    "metadata_": {
+      "mcp": {
+        "server_name": "bookstack", 
+        "server_id": "mcp_server-bookstack-001"
+      }
+    },
+    "category": "Knowledge Base"
+  },
+  {
+    "id": "tool-sample-builtin-1",
+    "name": "web_search",
+    "description": "Search the web for information",
+    "tool_type": "letta_builtin",
+    "source_type": "python", 
+    "tags": [],
+    "json_schema": {
+      "name": "web_search",
+      "description": "Search the web for information",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query"
+          },
+          "request_heartbeat": {
+            "type": "boolean", 
+            "description": "Request heartbeat after execution"
+          }
+        },
+        "required": ["query", "request_heartbeat"]
+      }
+    },
+    "category": "Information Retrieval"
+  },
+  {
+    "id": "tool-sample-mcp-3",
+    "name": "create_agent",
+    "description": "Create a new Letta agent with specified configuration",
+    "tool_type": "external_mcp",
+    "source_type": "python",
+    "tags": ["mcp:letta"],
+    "mcp_server_name": "letta", 
+    "json_schema": {
+      "name": "create_agent",
+      "description": "Create a new Letta agent with specified configuration",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the new agent"
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the agent's purpose/role"
+          },
+          "model": {
+            "type": "string", 
+            "default": "openai/gpt-4",
+            "description": "The model to use for the agent"
+          },
+          "embedding": {
+            "type": "string",
+            "default": "openai/text-embedding-ada-002",
+            "description": "The embedding model to use"
+          }
+        },
+        "required": ["name", "description"]
+      }
+    },
+    "metadata_": {
+      "mcp": {
+        "server_name": "letta",
+        "server_id": "mcp_server-letta-001"
+      }
+    },
+    "category": "Agent Management" 
+  }
+]

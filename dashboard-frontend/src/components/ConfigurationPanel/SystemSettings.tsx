@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Card,
@@ -14,6 +14,21 @@ import {
   ListItemIcon,
   Divider,
   LinearProgress,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Slider,
+  FormControlLabel,
+  Switch,
+  TextField,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import {
   Storage as StorageIcon,
@@ -24,18 +39,80 @@ import {
   Extension as ExtensionIcon,
   Speed as SpeedIcon,
   Memory as MemoryIcon,
+  Settings as SettingsIcon,
+  CloudSync as EmbeddingIcon,
+  Tune as TuneIcon,
+  ExpandMore as ExpandMoreIcon,
+  PlayArrow as StartIcon,
 } from '@mui/icons-material';
 
-import { useTools, useRefreshTools, useHealthCheck } from '../../hooks/useApi';
+import {
+  useTools,
+  useRefreshTools,
+  useHealthCheck,
+  useEmbeddingConfig,
+  useEmbeddingModels,
+  useUpdateEmbeddingConfig,
+  useStartReembedding,
+} from '../../hooks/useApi';
 import { formatNumber, formatRelativeTime } from '../../utils';
+import ReembeddingProgress from '../ReembeddingProgress';
 
 const SystemSettings: React.FC = () => {
+  const [embeddingDialogOpen, setEmbeddingDialogOpen] = useState(false);
+  const [selectedEmbeddingModel, setSelectedEmbeddingModel] = useState('');
+  const [selectedEmbeddingProvider, setSelectedEmbeddingProvider] = useState('');
+  const [toolSelectorConfig, setToolSelectorConfig] = useState({
+    maxTotalTools: 30,
+    maxMcpTools: 20,
+    minMcpTools: 7,
+    dropRate: 0.6,
+    excludeLettaCore: true,
+    excludeOfficial: true,
+    manageOnlyMcp: true,
+  });
+
   const { data: tools, isLoading: toolsLoading } = useTools();
   const { data: healthData } = useHealthCheck();
+  const { data: embeddingConfig, isLoading: embeddingConfigLoading } = useEmbeddingConfig();
+  const { data: embeddingModels } = useEmbeddingModels();
   const refreshToolsMutation = useRefreshTools();
+  const updateEmbeddingConfigMutation = useUpdateEmbeddingConfig();
+  const startReembeddingMutation = useStartReembedding();
 
   const handleRefreshTools = () => {
     refreshToolsMutation.mutate();
+  };
+
+  const handleStartReembedding = async () => {
+    if (!selectedEmbeddingModel || !selectedEmbeddingProvider) {
+      return;
+    }
+
+    try {
+      // Update embedding configuration
+      await updateEmbeddingConfigMutation.mutateAsync({
+        model: selectedEmbeddingModel,
+        provider: selectedEmbeddingProvider,
+      });
+
+      // Start reembedding process
+      await startReembeddingMutation.mutateAsync({
+        embedding_model: selectedEmbeddingModel,
+        batch_size: 100,
+      });
+
+      setEmbeddingDialogOpen(false);
+    } catch (error) {
+      console.error('Failed to start reembedding:', error);
+    }
+  };
+
+  const handleToolSelectorConfigChange = (field: string, value: any) => {
+    setToolSelectorConfig(prev => ({
+      ...prev,
+      [field]: value,
+    }));
   };
 
   const systemStats = React.useMemo(() => {

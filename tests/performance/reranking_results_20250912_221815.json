@@ -1,0 +1,23 @@
+{
+  "timestamp": "2025-09-12T22:18:15.320056",
+  "test_count": 8,
+  "performance": {
+    "average_response_time": {
+      "with_reranking_ms": 3793.0426001548767,
+      "without_reranking_ms": 262.5528872013092,
+      "overhead_percent": 1344.6775430988148
+    },
+    "accuracy_metrics": {
+      "precision_at_5": {
+        "with_reranking": 0.20625,
+        "without_reranking": 0.15000000000000002,
+        "improvement_percent": 37.49999999999997
+      },
+      "ndcg_at_5": {
+        "with_reranking": 0.16694773524457585,
+        "without_reranking": 0.2211372396680446,
+        "improvement_percent": -24.50492034033443
+      }
+    }
+  }
+}

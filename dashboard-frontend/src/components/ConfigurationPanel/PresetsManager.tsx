@@ -258,7 +258,7 @@ const PresetsManager: React.FC = () => {
             />
 
             {/* Configuration Preview */}
-            <Card sx={{ bgcolor: 'grey.50' }}>
+            <Card sx={{ bgcolor: 'action.hover' }}>
               <CardContent>
                 <Typography variant="subtitle2" gutterBottom>
                   Configuration Summary

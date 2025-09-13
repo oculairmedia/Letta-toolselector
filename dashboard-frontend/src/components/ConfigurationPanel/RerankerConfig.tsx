@@ -609,7 +609,7 @@ const RerankerConfig: React.FC<RerankerConfigProps> = ({ config, isLoading }) =>
 
         {/* Configuration Preview */}
         <Grid item xs={12}>
-          <Card sx={{ bgcolor: 'grey.50' }}>
+          <Card sx={{ bgcolor: 'action.hover' }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>
                 Configuration Preview

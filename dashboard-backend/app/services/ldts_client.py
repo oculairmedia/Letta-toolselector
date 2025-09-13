@@ -114,7 +114,33 @@ class LDTSClient:
 
             async with self.session.post(search_url, json=search_payload) as response:
                 response.raise_for_status()
-                tools = await response.json()
+                response_data = await response.json()
+
+                # Parse API response format
+                if enable_reranking:
+                    # Reranked endpoint returns: {"success": true, "data": {"results": [...]}}
+                    if response_data.get("success") and response_data.get("data", {}).get("results"):
+                        tools = response_data["data"]["results"]
+                        # Convert from API format {rank, score, tool: {}} to flat format
+                        formatted_tools = []
+                        for item in tools:
+                            if isinstance(item, dict) and "tool" in item:
+                                tool = item["tool"].copy()
+                                tool["score"] = item.get("score", 0)
+                                tool["rank"] = item.get("rank", 0)
+                                formatted_tools.append(tool)
+                            else:
+                                # Handle direct tool format
+                                formatted_tools.append(item)
+                        tools = formatted_tools
+                    else:
+                        tools = []
+                else:
+                    # Baseline endpoint returns: [tool, tool, ...]
+                    if isinstance(response_data, list):
+                        tools = response_data
+                    else:
+                        tools = response_data.get("results", response_data)
 
                 # Format response to match expected structure
                 return {

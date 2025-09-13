@@ -657,6 +657,50 @@ class ApiService {
     }
   }
 
+  // Tool Selector Configuration endpoints
+  async getToolSelectorConfig(): Promise<{
+    tool_limits: {
+      max_total_tools: number;
+      max_mcp_tools: number;
+      min_mcp_tools: number;
+    };
+    behavior: {
+      default_drop_rate: number;
+      exclude_letta_core_tools: boolean;
+      exclude_official_tools: boolean;
+      manage_only_mcp_tools: boolean;
+    };
+    scoring: {
+      min_score_default: number;
+      semantic_weight: number;
+      keyword_weight: number;
+    };
+    current_stats?: {
+      total_tools: number;
+      mcp_tools: number;
+      mcp_tools_ratio: number;
+      last_updated: string;
+    };
+  }> {
+    const response = await this.client.get<ApiResponse<any>>('/config/tool-selector');
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get tool selector configuration');
+    }
+    return response.data.data!;
+  }
+
+  async updateToolSelectorConfig(config: any): Promise<{
+    success: boolean;
+    applied_config: any;
+    warnings?: string[];
+  }> {
+    const response = await this.client.put<ApiResponse<any>>('/config/tool-selector', config);
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to update tool selector configuration');
+    }
+    return response.data.data || response.data;
+  }
+
   // Health check
   async healthCheck(): Promise<{ status: string; version?: string }> {
     const response = await this.client.get<ApiResponse<{ status: string; version?: string }>>('/health');

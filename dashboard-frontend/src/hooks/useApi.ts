@@ -23,6 +23,7 @@ export const queryKeys = {
   rerankerModels: ['rerankerModels'] as const,
   embeddingConfig: ['embeddingConfig'] as const,
   reembeddingProgress: ['reembeddingProgress'] as const,
+  toolSelectorConfig: ['toolSelectorConfig'] as const,
   configPresets: ['configPresets'] as const,
   evaluations: (query?: string, limit?: number) => ['evaluations', query, limit] as const,
   analytics: (dateRange?: { start: string; end: string }) => ['analytics', dateRange] as const,
@@ -426,6 +427,26 @@ export const useCancelReembedding = () => {
     mutationFn: () => apiService.cancelReembedding(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.reembeddingProgress });
+    },
+  });
+};
+
+// Tool Selector Configuration hooks
+export const useToolSelectorConfig = () => {
+  return useQuery({
+    queryKey: queryKeys.toolSelectorConfig,
+    queryFn: () => apiService.getToolSelectorConfig(),
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  });
+};
+
+export const useUpdateToolSelectorConfig = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (config: any) => apiService.updateToolSelectorConfig(config),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.toolSelectorConfig });
     },
   });
 };

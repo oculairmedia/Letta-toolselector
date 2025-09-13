@@ -26,7 +26,7 @@ import {
   Warning as WarningIcon,
   Timeline as TimelineIcon,
   Computer as ComputerIcon,
-  Database as DatabaseIcon,
+  TableChart as DatabaseIcon,
 } from '@mui/icons-material';
 import { apiService } from '../../services/api';
 

@@ -90,7 +90,7 @@ services:
       - RERANKER_MODEL=${RERANKER_MODEL:-dengcao/Qwen3-Reranker-4B:Q5_K_M}
       - RERANKER_PROVIDER=${RERANKER_PROVIDER:-ollama}
       - RERANKER_TEMPERATURE=${RERANKER_TEMPERATURE:-0.1}
-      - OLLAMA_RERANKER_BASE_URL=${OLLAMA_RERANKER_BASE_URL:-http://192.168.50.80:11434}
+      - OLLAMA_RERANKER_BASE_URL=${OLLAMA_RERANKER_BASE_URL:-http://ollama-reranker-adapter:8080}
     restart: unless-stopped
     volumes:
       - ./.env:/app/.env:ro

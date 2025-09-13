@@ -105,7 +105,7 @@ class LDTSClient:
                 search_payload["reranker_config"] = {
                     "enabled": True,
                     "model": "bge-reranker-v2-m3",  # Default reranker model
-                    "base_url": "http://localhost:8091"  # Default reranker URL
+                    "base_url": "http://ollama-reranker-adapter:8080"  # Internal Docker network URL
                 }
                 search_url = f"{self.api_url}/api/v1/tools/search/rerank"
             else:

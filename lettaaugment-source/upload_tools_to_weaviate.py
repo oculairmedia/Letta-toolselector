@@ -1,6 +1,9 @@
 import weaviate
 import json
 import os
+import sys
+import time
+from pathlib import Path
 from weaviate.classes.init import Auth, AdditionalConfig, Timeout
 import asyncio # Added asyncio
 from weaviate.collections import Collection
@@ -13,6 +16,18 @@ from embedding_config import OPENAI_EMBEDDING_MODEL, WEAVIATE_VECTORIZER
 # Import specialized embedding functionality
 from specialized_embedding import enhance_tool_for_embedding
 from embedding_providers import EmbeddingProviderFactory
+
+# Import LLM enhancement framework (experimental integration)
+try:
+    sys.path.append(str(Path(__file__).parent.parent / "experiments" / "tool_description_enhancement"))
+    from enhancement_prompts import EnhancementPrompts, ToolContext
+    from ollama_client import OllamaClient
+    from enhancement_cache import get_cache, cache_tool_enhancement, get_cached_tool_enhancement
+    LLM_ENHANCEMENT_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  LLM Enhancement framework not available: {e}")
+    print("   Falling back to basic enhancement only.")
+    LLM_ENHANCEMENT_AVAILABLE = False
 
 def get_or_create_tool_schema(client) -> Collection:
     """Get existing schema or create new one if it doesn't exist."""
@@ -98,6 +113,148 @@ def get_or_create_tool_schema(client) -> Collection:
         print(f"FATAL: Failed to create schema '{collection_name}': {e}")
         raise  # Re-raise the exception to halt the script
 
+
+class EnhancedToolUploader:
+    """Tool uploader with optional LLM enhancement integration"""
+
+    def __init__(self):
+        # Check environment variables for LLM enhancement settings
+        self.enable_llm_enhancement = os.getenv("ENABLE_LLM_ENHANCEMENT", "false").lower() == "true"
+        self.ollama_base_url = os.getenv("OLLAMA_LLM_BASE_URL", "http://100.81.139.20:11434/v1")
+        self.ollama_model = os.getenv("OLLAMA_LLM_MODEL", "gemma3:12b")
+        self.batch_size = int(os.getenv("LLM_BATCH_SIZE", "3"))
+
+        # Initialize LLM client if enhancement is enabled and available
+        self.llm_client = None
+        self.cache = None
+
+        if self.enable_llm_enhancement and LLM_ENHANCEMENT_AVAILABLE:
+            try:
+                self.llm_client = OllamaClient(
+                    base_url=self.ollama_base_url,
+                    model=self.ollama_model,
+                    timeout=300,  # 5 minute timeout for complex descriptions
+                    max_retries=3
+                )
+                self.cache = get_cache()
+                print(f"🤖 LLM Enhancement ENABLED using {self.ollama_model}")
+            except Exception as e:
+                print(f"⚠️  Failed to initialize LLM client: {e}")
+                print("   Falling back to basic enhancement only.")
+                self.enable_llm_enhancement = False
+        else:
+            if self.enable_llm_enhancement:
+                print("⚠️  LLM Enhancement requested but framework not available")
+            print("📝 Using basic specialized enhancement only")
+
+        # Statistics tracking
+        self.stats = {
+            "tools_processed": 0,
+            "llm_enhancements_successful": 0,
+            "llm_enhancements_failed": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "basic_enhancements": 0,
+            "uploads_successful": 0,
+            "uploads_skipped": 0,
+            "uploads_failed": 0,
+            "total_enhancement_time": 0.0
+        }
+
+    async def enhance_tool_description(self, tool: dict) -> str:
+        """
+        Enhance tool description using LLM (if available) or basic enhancement.
+
+        Args:
+            tool: Tool dictionary with metadata
+
+        Returns:
+            Enhanced description string
+        """
+        start_time = time.time()
+
+        raw_description = tool.get("description", "")
+        tool_name = tool.get("name", "")
+
+        # Try LLM enhancement first if enabled
+        if self.enable_llm_enhancement and self.llm_client and self.cache:
+            try:
+                # Check cache first
+                cache_key = f"{tool_name}:{hash(raw_description)}"
+                cached_result = get_cached_tool_enhancement(self.cache, cache_key)
+
+                if cached_result:
+                    self.stats["cache_hits"] += 1
+                    enhancement_time = time.time() - start_time
+                    self.stats["total_enhancement_time"] += enhancement_time
+                    return cached_result
+
+                self.stats["cache_misses"] += 1
+
+                # Create tool context for LLM enhancement
+                tool_context = ToolContext(
+                    name=tool_name,
+                    description=raw_description,
+                    tool_type=tool.get("tool_type", "general"),
+                    source_type=tool.get("source_type", "python"),
+                    tags=tool.get("tags", []),
+                    json_schema=tool.get("json_schema", {})
+                )
+
+                # Generate LLM enhancement
+                enhanced_description = await self.llm_client.enhance_tool_description(tool_context)
+
+                if enhanced_description and enhanced_description.strip():
+                    # Cache the successful enhancement
+                    cache_tool_enhancement(self.cache, cache_key, enhanced_description)
+                    self.stats["llm_enhancements_successful"] += 1
+
+                    enhancement_time = time.time() - start_time
+                    self.stats["total_enhancement_time"] += enhancement_time
+
+                    return enhanced_description
+                else:
+                    raise ValueError("Empty enhancement returned")
+
+            except Exception as e:
+                print(f"⚠️  LLM enhancement failed for '{tool_name}': {e}")
+                self.stats["llm_enhancements_failed"] += 1
+
+        # Fallback to basic specialized enhancement
+        self.stats["basic_enhancements"] += 1
+        enhanced_description = enhance_tool_for_embedding(
+            tool_description=raw_description,
+            tool_name=tool_name,
+            tool_type=tool.get("tool_type", "general"),
+            tool_source=tool.get("source_type", "python")
+        )
+
+        enhancement_time = time.time() - start_time
+        self.stats["total_enhancement_time"] += enhancement_time
+
+        return enhanced_description
+
+    def print_stats(self):
+        """Print enhancement and upload statistics"""
+        print(f"\n{'='*60}")
+        print("📊 UPLOAD STATISTICS")
+        print(f"{'='*60}")
+        print(f"Tools processed: {self.stats['tools_processed']}")
+        print(f"Uploads successful: {self.stats['uploads_successful']}")
+        print(f"Uploads skipped: {self.stats['uploads_skipped']}")
+        print(f"Uploads failed: {self.stats['uploads_failed']}")
+        print(f"\n🤖 ENHANCEMENT STATISTICS")
+        print(f"LLM enhancements successful: {self.stats['llm_enhancements_successful']}")
+        print(f"LLM enhancements failed: {self.stats['llm_enhancements_failed']}")
+        print(f"Basic enhancements: {self.stats['basic_enhancements']}")
+        print(f"Cache hits: {self.stats['cache_hits']}")
+        print(f"Cache misses: {self.stats['cache_misses']}")
+        print(f"Total enhancement time: {self.stats['total_enhancement_time']:.2f}s")
+        if self.stats['tools_processed'] > 0:
+            avg_time = self.stats['total_enhancement_time'] / self.stats['tools_processed']
+            print(f"Average enhancement time: {avg_time:.2f}s per tool")
+
+
 async def upload_tools(): # Make the function async
     """Upload tools to Weaviate."""
     # Load environment variables
@@ -146,11 +303,13 @@ async def upload_tools(): # Make the function async
 
         print(f"Found {len(tools)} tools fetched/registered to process for Weaviate upload")
 
-        # Prepare batch import with Weaviate's automatic vectorization
-        print("\nUploading tools with Ollama-powered specialized embeddings...")
-        successful_uploads = 0
-        skipped_uploads = 0
-        failed_uploads = 0
+        # Initialize enhanced uploader with LLM integration
+        uploader = EnhancedToolUploader()
+
+        # Prepare batch import with enhanced descriptions
+        print(f"\nUploading tools with enhanced descriptions...")
+        print(f"   LLM Enhancement: {'ENABLED' if uploader.enable_llm_enhancement else 'DISABLED'}")
+        print(f"   Batch size: {uploader.batch_size}")
 
         with collection.batch.dynamic() as batch:
             for i, tool in enumerate(tools, 1):
@@ -164,48 +323,40 @@ async def upload_tools(): # Make the function async
 
                     # If tool exists, skip it
                     if query.objects:
-                        skipped_uploads += 1
+                        uploader.stats["uploads_skipped"] += 1
                         if i % 25 == 0:
                             print(f"Progress: {i}/{len(tools)} tools processed...")
                         continue
 
-                    # Enhanced tool description with specialized prompting
-                    raw_description = tool.get("description", "")
-                    enhanced_description = enhance_tool_for_embedding(
-                        tool_description=raw_description,
-                        tool_name=tool["name"],
-                        tool_type=tool.get("tool_type", "general"),
-                        tool_source=tool.get("source_type", "python")
-                    )
+                    # Enhanced tool description using new integrated system
+                    enhanced_description = await uploader.enhance_tool_description(tool)
+                    uploader.stats["tools_processed"] += 1
 
                     # Prepare tool properties - Weaviate will automatically vectorize enhanced_description
                     properties = {
                         "tool_id": tool.get("id", ""),
                         "name": tool["name"],
-                        "description": raw_description,  # Original description for display
+                        "description": tool.get("description", ""),  # Original description for display
                         "enhanced_description": enhanced_description,  # This will be automatically vectorized by Weaviate
                         "source_type": tool.get("source_type", "python"),
                         "tool_type": tool.get("tool_type", "external_mcp"),
                         "tags": tool.get("tags", []),
                         "json_schema": json.dumps(tool.get("json_schema", {})) if tool.get("json_schema") else ""
                     }
-                    
+
                     # Add object to batch - Weaviate will handle embedding generation
                     batch.add_object(properties=properties)
-                    successful_uploads += 1
+                    uploader.stats["uploads_successful"] += 1
 
                     if i % 25 == 0:
                         print(f"Progress: {i}/{len(tools)} tools processed...")
                         
                 except Exception as e:
-                    failed_uploads += 1
+                    uploader.stats["uploads_failed"] += 1
                     print(f"Error uploading tool {tool.get('name', 'Unknown')}: {str(e)}")
 
-        print(f"\nUpload complete:")
-        print(f"- Successfully uploaded: {successful_uploads} tools")
-        print(f"- Skipped (already exist): {skipped_uploads} tools")
-        if failed_uploads > 0:
-            print(f"- Failed uploads: {failed_uploads} tools")
+        # Print comprehensive statistics
+        uploader.print_stats()
         
         client.close()
 

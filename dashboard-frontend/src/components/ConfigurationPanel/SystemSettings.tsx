@@ -60,6 +60,13 @@ import {
 } from '../../hooks/useApi';
 import { formatNumber, formatRelativeTime } from '../../utils';
 import ReembeddingProgress from '../ReembeddingProgress';
+import MetricsDashboard from '../MetricsDashboard/MetricsDashboard';
+import ComponentStatus from '../ComponentStatus/ComponentStatus';
+import LogViewer from '../LogViewer/LogViewer';
+import ConfigurationManager from '../ConfigurationManager/ConfigurationManager';
+import ValidationPanel from '../ValidationPanel/ValidationPanel';
+import ValidatedTextField from '../ValidatedTextField/ValidatedTextField';
+import EmbeddingHealthIndicator from '../EmbeddingHealthIndicator/EmbeddingHealthIndicator';
 
 const SystemSettings: React.FC = () => {
   const [embeddingDialogOpen, setEmbeddingDialogOpen] = useState(false);
@@ -73,6 +80,9 @@ const SystemSettings: React.FC = () => {
     excludeLettaCore: true,
     excludeOfficial: true,
     manageOnlyMcp: true,
+    enableReranking: false,
+    enableLlmEnhancement: true,
+    enableSafetyMode: true,
   });
 
   // Update local state when API data loads
@@ -86,6 +96,9 @@ const SystemSettings: React.FC = () => {
         excludeLettaCore: toolSelectorConfig.behavior.exclude_letta_core_tools,
         excludeOfficial: toolSelectorConfig.behavior.exclude_official_tools,
         manageOnlyMcp: toolSelectorConfig.behavior.manage_only_mcp_tools,
+        enableReranking: toolSelectorConfig.behavior.enable_reranking || false,
+        enableLlmEnhancement: toolSelectorConfig.behavior.enable_llm_enhancement !== false,
+        enableSafetyMode: toolSelectorConfig.behavior.enable_safety_mode !== false,
       });
     }
   }, [toolSelectorConfig]);
@@ -158,6 +171,9 @@ const SystemSettings: React.FC = () => {
           exclude_letta_core_tools: localToolSelectorConfig.excludeLettaCore,
           exclude_official_tools: localToolSelectorConfig.excludeOfficial,
           manage_only_mcp_tools: localToolSelectorConfig.manageOnlyMcp,
+          enable_reranking: localToolSelectorConfig.enableReranking,
+          enable_llm_enhancement: localToolSelectorConfig.enableLlmEnhancement,
+          enable_safety_mode: localToolSelectorConfig.enableSafetyMode,
         }
       };
 
@@ -196,6 +212,83 @@ const SystemSettings: React.FC = () => {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
         Monitor system health, manage tool inventory, and view performance metrics.
       </Typography>
+
+      {/* Real-time Metrics Dashboard */}
+      <Box mb={4}>
+        <MetricsDashboard />
+      </Box>
+
+      {/* Component Status Monitor */}
+      <Box mb={4}>
+        <ComponentStatus />
+      </Box>
+
+      {/* Error Log Viewer and Analysis */}
+      <Box mb={4}>
+        <LogViewer />
+      </Box>
+
+      {/* Configuration Save and Reset */}
+      <Box mb={4}>
+        <ConfigurationManager />
+      </Box>
+
+      {/* Real-time Configuration Validation */}
+      <Box mb={4}>
+        <ValidationPanel
+          title="Real-time Configuration Validation"
+          autoValidate={true}
+          configFields={[
+            {
+              fieldId: 'max_total_tools',
+              configType: 'tool_selector',
+              field: 'max_total_tools',
+              label: 'Max Total Tools',
+              value: localToolSelectorConfig.maxTotalTools
+            },
+            {
+              fieldId: 'max_mcp_tools',
+              configType: 'tool_selector',
+              field: 'max_mcp_tools',
+              label: 'Max MCP Tools',
+              value: localToolSelectorConfig.maxMcpTools
+            },
+            {
+              fieldId: 'min_mcp_tools',
+              configType: 'tool_selector',
+              field: 'min_mcp_tools',
+              label: 'Min MCP Tools',
+              value: localToolSelectorConfig.minMcpTools
+            },
+            {
+              fieldId: 'default_drop_rate',
+              configType: 'tool_selector',
+              field: 'default_drop_rate',
+              label: 'Tool Drop Rate',
+              value: localToolSelectorConfig.dropRate
+            },
+            {
+              fieldId: 'embedding_provider',
+              configType: 'embedding',
+              field: 'provider',
+              label: 'Embedding Provider',
+              value: selectedEmbeddingProvider
+            },
+            {
+              fieldId: 'embedding_model',
+              configType: 'embedding',
+              field: selectedEmbeddingProvider === 'openai' ? 'openai_model' : 'ollama_model',
+              label: 'Embedding Model',
+              value: selectedEmbeddingModel
+            }
+          ]}
+        />
+      </Box>
+
+      {/* Embedding Model Health and Status Indicators */}
+      <Box mb={4}>
+        <EmbeddingHealthIndicator autoRefresh={true} refreshInterval={30000} />
+      </Box>
 
       <Grid container spacing={3}>
         {/* System Health */}
@@ -486,68 +579,159 @@ const SystemSettings: React.FC = () => {
                     </Typography>
 
                     <Box sx={{ mb: 3 }}>
-                      <Typography gutterBottom>
-                        Drop Rate: {(localToolSelectorConfig.dropRate * 100).toFixed(0)}%
+                      <Typography gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <TuneIcon fontSize="small" />
+                        Tool Drop Rate: {(localToolSelectorConfig.dropRate * 100).toFixed(0)}%
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" gutterBottom display="block">
+                        Controls how aggressively tools are removed when agent reaches tool limits.
+                        Higher values remove more irrelevant tools.
                       </Typography>
                       <Slider
                         value={localToolSelectorConfig.dropRate}
                         onChange={(_, value) => handleToolSelectorConfigChange('dropRate', value)}
-                        min={0.1}
-                        max={0.9}
-                        step={0.1}
+                        min={0.0}
+                        max={1.0}
+                        step={0.05}
                         marks={[
-                          { value: 0.3, label: 'Conservative' },
+                          { value: 0.2, label: 'Minimal' },
+                          { value: 0.4, label: 'Conservative' },
                           { value: 0.6, label: 'Balanced' },
-                          { value: 0.9, label: 'Aggressive' },
+                          { value: 0.8, label: 'Aggressive' },
                         ]}
                         valueLabelDisplay="auto"
                         valueLabelFormat={(value) => `${(value * 100).toFixed(0)}%`}
+                        track="normal"
+                        color="primary"
+                        sx={{
+                          '& .MuiSlider-mark': {
+                            backgroundColor: '#bfbfbf',
+                            height: 8,
+                            width: 1,
+                            '&.MuiSlider-markActive': {
+                              backgroundColor: 'currentColor',
+                            },
+                          },
+                          '& .MuiSlider-markLabel': {
+                            fontSize: '0.75rem',
+                          },
+                        }}
                       />
                     </Box>
 
-                    <Box>
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={localToolSelectorConfig.excludeLettaCore}
-                            onChange={(e) => handleToolSelectorConfigChange('excludeLettaCore', e.target.checked)}
-                          />
-                        }
-                        label="Exclude Letta Core Tools"
-                      />
-                      <Typography variant="caption" display="block" color="textSecondary">
-                        Skip Letta's built-in tools during management operations
-                      </Typography>
-                    </Box>
+                    <Typography variant="subtitle2" gutterBottom sx={{ mt: 3, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <SettingsIcon fontSize="small" />
+                      Policy Configuration
+                    </Typography>
 
-                    <Box sx={{ mt: 2 }}>
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={localToolSelectorConfig.excludeOfficial}
-                            onChange={(e) => handleToolSelectorConfigChange('excludeOfficial', e.target.checked)}
-                          />
-                        }
-                        label="Exclude Official Tools"
-                      />
-                      <Typography variant="caption" display="block" color="textSecondary">
-                        Skip official Letta tools from attachment/detachment
-                      </Typography>
-                    </Box>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <Card variant="outlined" sx={{ p: 2 }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={localToolSelectorConfig.excludeLettaCore}
+                              onChange={(e) => handleToolSelectorConfigChange('excludeLettaCore', e.target.checked)}
+                              color="primary"
+                            />
+                          }
+                          label="Exclude Letta Core Tools"
+                          sx={{ mb: 1 }}
+                        />
+                        <Typography variant="caption" display="block" color="text.secondary">
+                          Skip Letta's built-in core tools during management operations.
+                          Recommended to keep enabled to prevent interference with essential functions.
+                        </Typography>
+                      </Card>
 
-                    <Box sx={{ mt: 2 }}>
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={localToolSelectorConfig.manageOnlyMcp}
-                            onChange={(e) => handleToolSelectorConfigChange('manageOnlyMcp', e.target.checked)}
-                          />
-                        }
-                        label="Manage Only MCP Tools"
-                      />
-                      <Typography variant="caption" display="block" color="textSecondary">
-                        Only manage external MCP tools, ignore all Letta tools
-                      </Typography>
+                      <Card variant="outlined" sx={{ p: 2 }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={localToolSelectorConfig.excludeOfficial}
+                              onChange={(e) => handleToolSelectorConfigChange('excludeOfficial', e.target.checked)}
+                              color="primary"
+                            />
+                          }
+                          label="Exclude Official Tools"
+                          sx={{ mb: 1 }}
+                        />
+                        <Typography variant="caption" display="block" color="text.secondary">
+                          Skip official Letta tools from attachment/detachment operations.
+                          This prevents modification of verified official tool sets.
+                        </Typography>
+                      </Card>
+
+                      <Card variant="outlined" sx={{ p: 2 }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={localToolSelectorConfig.manageOnlyMcp}
+                              onChange={(e) => handleToolSelectorConfigChange('manageOnlyMcp', e.target.checked)}
+                              color="primary"
+                            />
+                          }
+                          label="Manage Only MCP Tools"
+                          sx={{ mb: 1 }}
+                        />
+                        <Typography variant="caption" display="block" color="text.secondary">
+                          Only manage external MCP tools, completely ignore all Letta tools.
+                          Use this for strict separation between Letta and external tool management.
+                        </Typography>
+                      </Card>
+
+                      <Card variant="outlined" sx={{ p: 2 }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={localToolSelectorConfig.enableReranking}
+                              onChange={(e) => handleToolSelectorConfigChange('enableReranking', e.target.checked)}
+                              color="primary"
+                            />
+                          }
+                          label="Enable Query Reranking"
+                          sx={{ mb: 1 }}
+                        />
+                        <Typography variant="caption" display="block" color="text.secondary">
+                          Use LLM-based reranking to improve search result relevance.
+                          May increase API costs but provides better tool selection accuracy.
+                        </Typography>
+                      </Card>
+
+                      <Card variant="outlined" sx={{ p: 2 }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={localToolSelectorConfig.enableLlmEnhancement}
+                              onChange={(e) => handleToolSelectorConfigChange('enableLlmEnhancement', e.target.checked)}
+                              color="primary"
+                            />
+                          }
+                          label="Enable LLM Description Enhancement"
+                          sx={{ mb: 1 }}
+                        />
+                        <Typography variant="caption" display="block" color="text.secondary">
+                          Automatically enhance tool descriptions using LLM for better searchability.
+                          Recommended for improved semantic matching but increases processing time.
+                        </Typography>
+                      </Card>
+
+                      <Card variant="outlined" sx={{ p: 2 }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={localToolSelectorConfig.enableSafetyMode}
+                              onChange={(e) => handleToolSelectorConfigChange('enableSafetyMode', e.target.checked)}
+                              color="warning"
+                            />
+                          }
+                          label="Enable Safety Mode"
+                          sx={{ mb: 1 }}
+                        />
+                        <Typography variant="caption" display="block" color="text.secondary">
+                          Enable additional safety checks and protections during tool operations.
+                          Recommended for production environments to prevent accidental modifications.
+                        </Typography>
+                      </Card>
                     </Box>
                   </Grid>
 
@@ -601,18 +785,23 @@ const SystemSettings: React.FC = () => {
 
                 {/* Current Configuration Display */}
                 <Grid item xs={12} md={6}>
-                  <Card variant="outlined" sx={{ height: '100%', display: 'flex', alignItems: 'center' }}>
+                  <Card variant="outlined" sx={{ height: '100%' }}>
                     <CardContent>
                       <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                        Current Configuration
+                        Current Configuration & Status
                       </Typography>
-                      <Typography variant="body1">
+                      <Typography variant="body1" gutterBottom>
                         {embeddingConfigLoading
                           ? 'Loading...'
                           : embeddingConfig?.data
                             ? `${embeddingConfig.data.provider}: ${embeddingConfig.data.model}`
                             : 'Not configured'}
                       </Typography>
+                      {embeddingConfig?.data && (
+                        <Box mt={2}>
+                          <EmbeddingHealthIndicator compact={true} autoRefresh={true} />
+                        </Box>
+                      )}
                     </CardContent>
                   </Card>
                 </Grid>

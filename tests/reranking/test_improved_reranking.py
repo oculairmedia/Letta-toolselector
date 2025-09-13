@@ -22,14 +22,27 @@ TEST_QUERIES = [
 
 async def search_tools(session: aiohttp.ClientSession, query: str, enable_reranking: bool) -> Dict[str, Any]:
     """Search for tools with or without reranking."""
-    url = f"{API_BASE_URL}/api/v1/search"
-    payload = {
-        "query": query,
-        "limit": 10,
-        "enable_reranking": enable_reranking,
-        "min_score": 0.0,
-        "include_metadata": True
-    }
+    if enable_reranking:
+        # Use the dedicated rerank endpoint
+        url = f"{API_BASE_URL}/api/v1/tools/search/rerank"
+        payload = {
+            "query": query,
+            "limit": 10,
+            "min_score": 0.0,
+            "reranker_config": {
+                "enabled": True,
+                "model": "bge-reranker-v2-m3",
+                "base_url": "http://localhost:8091"
+            }
+        }
+    else:
+        # Use regular search endpoint
+        url = f"{API_BASE_URL}/api/v1/tools/search"
+        payload = {
+            "query": query,
+            "limit": 10,
+            "min_score": 0.0,
+        }
     
     try:
         async with session.post(url, json=payload) as response:

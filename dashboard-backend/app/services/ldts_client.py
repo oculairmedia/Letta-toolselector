@@ -93,21 +93,29 @@ class LDTSClient:
         """Search for tools using LDTS search functionality."""
         if not self.session:
             raise RuntimeError("LDTS client not initialized")
-        
-        # Call API server's search endpoint directly
+
         search_payload = {
             "query": query,
             "limit": limit,
-            "enable_reranking": enable_reranking
         }
-        
+
         try:
-            # Use the API server URL for search
-            search_url = f"{self.api_url}/api/v1/tools/search"
+            if enable_reranking:
+                # Use the dedicated rerank endpoint with proper reranker config
+                search_payload["reranker_config"] = {
+                    "enabled": True,
+                    "model": "bge-reranker-v2-m3",  # Default reranker model
+                    "base_url": "http://localhost:8091"  # Default reranker URL
+                }
+                search_url = f"{self.api_url}/api/v1/tools/search/rerank"
+            else:
+                # Use regular search endpoint for baseline results
+                search_url = f"{self.api_url}/api/v1/tools/search"
+
             async with self.session.post(search_url, json=search_payload) as response:
                 response.raise_for_status()
                 tools = await response.json()
-                
+
                 # Format response to match expected structure
                 return {
                     "tools": tools,

@@ -706,6 +706,47 @@ class ApiService {
     const response = await this.client.get<ApiResponse<{ status: string; version?: string }>>('/health');
     return response.data.data || { status: 'unknown' };
   }
+
+  // Maintenance and monitoring endpoints
+  async getMaintenanceStatus(): Promise<any> {
+    const response = await this.client.get<ApiResponse<any>>('/maintenance/status');
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get maintenance status');
+    }
+    return response.data.data!;
+  }
+
+  async performSystemCleanup(operations: string[], dry_run: boolean = false): Promise<any> {
+    const response = await this.client.post<ApiResponse<any>>('/maintenance/cleanup', {
+      operations,
+      dry_run
+    });
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to perform system cleanup');
+    }
+    return response.data.data!;
+  }
+
+  async restartSystemComponents(components: string[], force: boolean = false): Promise<any> {
+    const response = await this.client.post<ApiResponse<any>>('/maintenance/restart', {
+      components,
+      force
+    });
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to restart system components');
+    }
+    return response.data.data!;
+  }
+
+  async optimizeSystem(operations: string[]): Promise<any> {
+    const response = await this.client.post<ApiResponse<any>>('/maintenance/optimize', {
+      operations
+    });
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to optimize system');
+    }
+    return response.data.data!;
+  }
 }
 
 export const apiService = new ApiService();

@@ -124,7 +124,7 @@ const Analytics: React.FC = () => {
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h4" color="primary" gutterBottom>
-                {formatNumber(data.search_count)}
+                {formatNumber(data?.search_count ?? 0)}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
                 <SearchIcon fontSize="small" />
@@ -138,7 +138,7 @@ const Analytics: React.FC = () => {
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h4" color="success.main" gutterBottom>
-                {formatNumber(data.total_evaluations)}
+                {formatNumber(data?.total_evaluations ?? 0)}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
                 <AssessmentIcon fontSize="small" />
@@ -152,7 +152,7 @@ const Analytics: React.FC = () => {
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h4" color="info.main" gutterBottom>
-                {data.avg_rating.toFixed(1)}⭐
+                {(data?.avg_rating ?? 0).toFixed(1)}⭐
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
                 <TrendingUpIcon fontSize="small" />
@@ -166,7 +166,7 @@ const Analytics: React.FC = () => {
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h4" color="secondary.main" gutterBottom>
-                {formatNumber(data.top_tools.length)}
+                {formatNumber(data?.top_tools?.length ?? 0)}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
                 <SpeedIcon fontSize="small" />
@@ -197,7 +197,7 @@ const Analytics: React.FC = () => {
               </Typography>
               <Box sx={{ height: 300 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={data.recent_searches.slice(0, 10)}>
+                  <BarChart data={(data?.recent_searches ?? []).slice(0, 10)}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis 
                       dataKey="query" 
@@ -225,7 +225,7 @@ const Analytics: React.FC = () => {
               </Typography>
               <Box sx={{ height: 300 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={data.top_tools}>
+                  <BarChart data={data?.top_tools ?? []}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis 
                       dataKey="tool_name" 
@@ -257,7 +257,7 @@ const Analytics: React.FC = () => {
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
-                          data={Object.entries(data.tool_usage).map(([tool_name, count]) => ({ tool_name, count }))}
+                          data={Object.entries(data?.tool_usage ?? {}).map(([tool_name, count]) => ({ tool_name, count }))}
                           cx="50%"
                           cy="50%"
                           outerRadius={80}
@@ -265,7 +265,7 @@ const Analytics: React.FC = () => {
                           dataKey="count"
                           label={(entry: any) => `${entry.tool_name}: ${entry.count}`}
                         >
-                          {Object.entries(data.tool_usage).map((_, index) => (
+                          {Object.entries(data?.tool_usage ?? {}).map((_, index) => (
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
@@ -285,7 +285,7 @@ const Analytics: React.FC = () => {
                   </Typography>
                   <Box sx={{ height: 300 }}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={data.top_tools.slice(0, 5)}>
+                      <BarChart data={(data?.top_tools ?? []).slice(0, 5)}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis 
                           dataKey="tool_name" 
@@ -318,7 +318,7 @@ const Analytics: React.FC = () => {
               </Typography>
               <Box sx={{ height: 300 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={data.recent_searches.slice(0, 10).map((item, index) => ({
+                  <LineChart data={(data?.recent_searches ?? []).slice(0, 10).map((item, index) => ({
                     ...item,
                     index: index + 1,
                     query_short: item.query.length > 15 ? item.query.substring(0, 15) + '...' : item.query

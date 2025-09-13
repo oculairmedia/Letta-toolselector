@@ -3,12 +3,26 @@ import requests
 
 def search_tools(query, limit=5, enable_reranking=False):
     """Search tools with or without reranking."""
-    url = "http://localhost:8020/api/v1/tools/search"
-    payload = {
-        "query": query,
-        "limit": limit,
-        "enable_reranking": enable_reranking
-    }
+    if enable_reranking:
+        # Use the dedicated rerank endpoint
+        url = "http://localhost:8020/api/v1/tools/search/rerank"
+        payload = {
+            "query": query,
+            "limit": limit,
+            "reranker_config": {
+                "enabled": True,
+                "model": "bge-reranker-v2-m3",
+                "base_url": "http://localhost:8091"
+            }
+        }
+    else:
+        # Use regular search endpoint
+        url = "http://localhost:8020/api/v1/tools/search"
+        payload = {
+            "query": query,
+            "limit": limit,
+        }
+
     response = requests.post(url, json=payload)
     return response.json()
 

@@ -138,7 +138,7 @@ def search_tools_with_reranking(
                     alpha=0.75,  # 75% vector search, 25% keyword search
                     limit=rerank_initial_limit,  # Get more candidates for reranking
                     fusion_type=HybridFusion.RELATIVE_SCORE,
-                    query_properties=["name^2", "description^2", "tags"],
+                    query_properties=["name^2", "enhanced_description^2", "description^1.5", "tags"],
                     return_metadata=MetadataQuery(score=True)
                 )
                 
@@ -218,7 +218,7 @@ def search_tools_with_reranking(
                     alpha=0.75,
                     limit=limit,
                     fusion_type=HybridFusion.RELATIVE_SCORE,
-                    query_properties=["name^2", "description^2", "tags"],
+                    query_properties=["name^2", "enhanced_description^2", "description^1.5", "tags"],
                     return_metadata=MetadataQuery(score=True)
                 )
 
@@ -228,7 +228,7 @@ def search_tools_with_reranking(
                 for obj in result.objects:
                     tool_data = obj.properties
                     
-                    # No need to remove enhanced_description as it doesn't exist in current schema
+                    # Enhanced descriptions are now included in the search and available in results
                     
                     # Handle scoring
                     if hasattr(obj, 'rerank_score'):

@@ -181,17 +181,22 @@ def upload_tools_to_weaviate(tools_file: str) -> Dict[str, Any]:
 
 
 def find_tools_weaviate(query: str, limit: int = 5) -> Dict[str, Any]:
-    """Implementation of the find_tools tool using Weaviate"""
+    """Implementation of the find_tools tool using Weaviate with enhanced descriptions"""
     try:
         conn = WeaviateConnection()
         
         # Get the Tool collection
         collection = conn.client.collections.get("Tool")
         
-        # Perform semantic search using v4 API
-        result = collection.query.near_text(
+        # Perform hybrid search (combines vector + keyword) with enhanced descriptions
+        # This gives better results than pure vector search
+        from weaviate.classes.query import HybridFusion
+        result = collection.query.hybrid(
             query=query,
-            limit=limit
+            alpha=0.75,  # 75% vector, 25% keyword search
+            limit=limit,
+            fusion_type=HybridFusion.RELATIVE_SCORE,
+            query_properties=["name^2", "enhanced_description^2", "description^1.5", "tags"]
         )
 
         # Extract tools from response

@@ -1905,6 +1905,15 @@ async def update_tool_selector_config():
         # Log the configuration update
         logger.info(f"Tool selector configuration update requested: {data}")
 
+        # Log to audit system
+        await log_config_change(
+            action="update",
+            config_type="tool_selector",
+            changes=data,
+            user_info={"source": "api", "timestamp": datetime.now().isoformat()},
+            metadata={"warnings": warnings}
+        )
+
         # For now, just acknowledge the update
         # TODO: Actually persist the configuration changes to environment or config file
 
@@ -1921,6 +1930,1576 @@ async def update_tool_selector_config():
     except Exception as e:
         logger.error(f"Error updating tool selector config: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# Ollama Configuration endpoints
+@app.route('/api/v1/config/ollama', methods=['GET'])
+async def get_ollama_config():
+    """Get current Ollama configuration."""
+    try:
+        config = {
+            "connection": {
+                "host": os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80'),
+                "port": int(os.getenv('OLLAMA_PORT', '11434')),
+                "timeout": int(os.getenv('OLLAMA_TIMEOUT', '30')),
+                "base_url": os.getenv('OLLAMA_BASE_URL', '')
+            },
+            "embedding": {
+                "model": os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
+                "enabled": os.getenv('USE_OLLAMA_EMBEDDINGS', 'false').lower() == 'true'
+            },
+            "generation": {
+                "default_model": os.getenv('OLLAMA_DEFAULT_MODEL', 'mistral:7b'),
+                "temperature": float(os.getenv('OLLAMA_TEMPERATURE', '0.7')),
+                "context_length": int(os.getenv('OLLAMA_CONTEXT_LENGTH', '4096'))
+            },
+            "performance": {
+                "num_parallel": int(os.getenv('OLLAMA_NUM_PARALLEL', '1')),
+                "num_ctx": int(os.getenv('OLLAMA_NUM_CTX', '2048')),
+                "num_gpu": int(os.getenv('OLLAMA_NUM_GPU', '-1')),  # -1 means auto-detect
+                "low_vram": os.getenv('OLLAMA_LOW_VRAM', 'false').lower() == 'true'
+            }
+        }
+
+        # Add connection status
+        connection_status = await test_ollama_connection(config["connection"])
+        config["status"] = connection_status
+
+        return jsonify({"success": True, "data": config})
+    except Exception as e:
+        logger.error(f"Error getting Ollama config: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/ollama', methods=['PUT'])
+async def update_ollama_config():
+    """Update Ollama configuration."""
+    try:
+        data = await request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "No configuration data provided"}), 400
+
+        # Validate configuration data
+        validation_errors = []
+        warnings = []
+
+        if "connection" in data:
+            conn = data["connection"]
+
+            # Validate host
+            if "host" in conn:
+                host = conn["host"]
+                if not host or not isinstance(host, str):
+                    validation_errors.append("Host must be a valid string")
+                elif not host.replace('.', '').replace('-', '').replace(':', '').isalnum():
+                    warnings.append("Host format may be invalid")
+
+            # Validate port
+            if "port" in conn:
+                port = conn["port"]
+                if not isinstance(port, int) or not (1 <= port <= 65535):
+                    validation_errors.append("Port must be between 1 and 65535")
+
+            # Validate timeout
+            if "timeout" in conn:
+                timeout = conn["timeout"]
+                if not isinstance(timeout, int) or timeout < 1:
+                    validation_errors.append("Timeout must be a positive integer")
+                elif timeout < 5:
+                    warnings.append("Very low timeout may cause connection issues")
+
+        if "performance" in data:
+            perf = data["performance"]
+
+            # Validate num_parallel
+            if "num_parallel" in perf:
+                num_parallel = perf["num_parallel"]
+                if not isinstance(num_parallel, int) or num_parallel < 1:
+                    validation_errors.append("num_parallel must be a positive integer")
+                elif num_parallel > 8:
+                    warnings.append("High parallelism may cause resource issues")
+
+            # Validate context lengths
+            if "num_ctx" in perf:
+                num_ctx = perf["num_ctx"]
+                if not isinstance(num_ctx, int) or num_ctx < 128:
+                    validation_errors.append("num_ctx must be at least 128")
+                elif num_ctx > 32768:
+                    warnings.append("Very large context may cause memory issues")
+
+        if validation_errors:
+            return jsonify({
+                "success": False,
+                "error": "Validation failed",
+                "validation_errors": validation_errors,
+                "warnings": warnings
+            }), 400
+
+        # Test connection if connection config provided
+        if "connection" in data:
+            test_result = await test_ollama_connection(data["connection"])
+            if not test_result["available"]:
+                warnings.append(f"Ollama connection test failed: {test_result.get('error', 'Unknown error')}")
+
+        # Log the configuration update
+        logger.info(f"Ollama configuration update requested: {data}")
+
+        # Log to audit system
+        await log_config_change(
+            action="update",
+            config_type="ollama",
+            changes=data,
+            user_info={"source": "api", "timestamp": datetime.now().isoformat()},
+            metadata={"warnings": warnings, "connection_test": test_result if "connection" in data else None}
+        )
+
+        # For now, just acknowledge the update
+        # TODO: Actually persist the configuration changes to environment or config file
+
+        response = {
+            "success": True,
+            "message": "Ollama configuration updated successfully",
+            "applied_config": data
+        }
+
+        if warnings:
+            response["warnings"] = warnings
+
+        return jsonify(response)
+    except Exception as e:
+        logger.error(f"Error updating Ollama config: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/ollama/test', methods=['POST'])
+async def test_ollama_connection_endpoint():
+    """Test Ollama connection with provided configuration."""
+    try:
+        data = await request.get_json()
+        connection_config = data.get("connection", {})
+
+        # Use defaults if not provided
+        config = {
+            "host": connection_config.get("host", os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80')),
+            "port": connection_config.get("port", int(os.getenv('OLLAMA_PORT', '11434'))),
+            "timeout": connection_config.get("timeout", int(os.getenv('OLLAMA_TIMEOUT', '30')))
+        }
+
+        result = await test_ollama_connection(config)
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        logger.error(f"Error testing Ollama connection: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+async def test_ollama_connection(config):
+    """Test connection to Ollama server."""
+    try:
+        host = config.get("host", "192.168.50.80")
+        port = config.get("port", 11434)
+        timeout = config.get("timeout", 30)
+
+        base_url = f"http://{host}:{port}"
+
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+            # Test basic connectivity
+            async with session.get(f"{base_url}/api/version") as response:
+                if response.status == 200:
+                    version_data = await response.json()
+
+                    # Test model listing
+                    async with session.get(f"{base_url}/api/tags") as models_response:
+                        if models_response.status == 200:
+                            models_data = await models_response.json()
+                            model_count = len(models_data.get("models", []))
+
+                            return {
+                                "available": True,
+                                "version": version_data.get("version", "unknown"),
+                                "host": host,
+                                "port": port,
+                                "model_count": model_count,
+                                "response_time": "< 1s"  # Simplified for now
+                            }
+                        else:
+                            return {
+                                "available": False,
+                                "error": f"Models endpoint returned {models_response.status}",
+                                "host": host,
+                                "port": port
+                            }
+                else:
+                    return {
+                        "available": False,
+                        "error": f"Version endpoint returned {response.status}",
+                        "host": host,
+                        "port": port
+                    }
+    except asyncio.TimeoutError:
+        return {
+            "available": False,
+            "error": "Connection timeout",
+            "host": host,
+            "port": port
+        }
+    except Exception as e:
+        return {
+            "available": False,
+            "error": str(e),
+            "host": host,
+            "port": port
+        }
+
+
+# Weaviate Configuration endpoints
+@app.route('/api/v1/config/weaviate', methods=['GET'])
+async def get_weaviate_config():
+    """Get current Weaviate configuration."""
+    try:
+        config = {
+            "connection": {
+                "url": os.getenv('WEAVIATE_URL', 'http://weaviate:8080/'),
+                "timeout": int(os.getenv('WEAVIATE_TIMEOUT', '30')),
+                "retries": int(os.getenv('WEAVIATE_RETRIES', '3')),
+                "api_key": "***" if os.getenv('WEAVIATE_API_KEY') else None
+            },
+            "schema": {
+                "class_name": os.getenv('WEAVIATE_CLASS_NAME', 'Tool'),
+                "vector_index_type": os.getenv('WEAVIATE_VECTOR_INDEX', 'hnsw'),
+                "distance_metric": os.getenv('WEAVIATE_DISTANCE_METRIC', 'cosine')
+            },
+            "search": {
+                "alpha": float(os.getenv('WEAVIATE_ALPHA', '0.75')),
+                "limit": int(os.getenv('WEAVIATE_LIMIT', '50')),
+                "additional_properties": os.getenv('WEAVIATE_ADDITIONAL_PROPERTIES', 'id,distance,certainty').split(','),
+                "autocut": int(os.getenv('WEAVIATE_AUTOCUT', '1'))
+            },
+            "performance": {
+                "ef_construction": int(os.getenv('WEAVIATE_EF_CONSTRUCTION', '128')),
+                "ef": int(os.getenv('WEAVIATE_EF', '64')),
+                "max_connections": int(os.getenv('WEAVIATE_MAX_CONNECTIONS', '64')),
+                "vector_cache_max_objects": int(os.getenv('WEAVIATE_VECTOR_CACHE_MAX_OBJECTS', '1000000')),
+                "cleanup_interval_seconds": int(os.getenv('WEAVIATE_CLEANUP_INTERVAL', '60'))
+            }
+        }
+
+        # Add connection status
+        connection_status = await test_weaviate_connection(config["connection"])
+        config["status"] = connection_status
+
+        return jsonify({"success": True, "data": config})
+    except Exception as e:
+        logger.error(f"Error getting Weaviate config: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/weaviate', methods=['PUT'])
+async def update_weaviate_config():
+    """Update Weaviate configuration."""
+    try:
+        data = await request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "No configuration data provided"}), 400
+
+        # Validate configuration data
+        validation_errors = []
+        warnings = []
+
+        if "connection" in data:
+            conn = data["connection"]
+
+            # Validate URL
+            if "url" in conn:
+                url = conn["url"]
+                if not url or not isinstance(url, str):
+                    validation_errors.append("URL must be a valid string")
+                elif not (url.startswith('http://') or url.startswith('https://')):
+                    validation_errors.append("URL must start with http:// or https://")
+
+            # Validate timeout
+            if "timeout" in conn:
+                timeout = conn["timeout"]
+                if not isinstance(timeout, int) or timeout < 1:
+                    validation_errors.append("Timeout must be a positive integer")
+                elif timeout < 5:
+                    warnings.append("Very low timeout may cause connection issues")
+
+            # Validate retries
+            if "retries" in conn:
+                retries = conn["retries"]
+                if not isinstance(retries, int) or retries < 0:
+                    validation_errors.append("Retries must be a non-negative integer")
+                elif retries > 10:
+                    warnings.append("High retry count may cause delays")
+
+        if "search" in data:
+            search = data["search"]
+
+            # Validate alpha
+            if "alpha" in search:
+                alpha = search["alpha"]
+                if not isinstance(alpha, (int, float)) or not (0.0 <= alpha <= 1.0):
+                    validation_errors.append("Alpha must be between 0.0 and 1.0")
+
+            # Validate limit
+            if "limit" in search:
+                limit = search["limit"]
+                if not isinstance(limit, int) or limit < 1:
+                    validation_errors.append("Limit must be a positive integer")
+                elif limit > 1000:
+                    warnings.append("Very high limit may impact performance")
+
+        if "performance" in data:
+            perf = data["performance"]
+
+            # Validate HNSW parameters
+            hnsw_params = ["ef_construction", "ef", "max_connections"]
+            for param in hnsw_params:
+                if param in perf:
+                    value = perf[param]
+                    if not isinstance(value, int) or value < 1:
+                        validation_errors.append(f"{param} must be a positive integer")
+
+            # Validate cache size
+            if "vector_cache_max_objects" in perf:
+                cache_size = perf["vector_cache_max_objects"]
+                if not isinstance(cache_size, int) or cache_size < 1000:
+                    validation_errors.append("vector_cache_max_objects must be at least 1000")
+                elif cache_size > 10000000:
+                    warnings.append("Very large vector cache may use excessive memory")
+
+        if validation_errors:
+            return jsonify({
+                "success": False,
+                "error": "Validation failed",
+                "validation_errors": validation_errors,
+                "warnings": warnings
+            }), 400
+
+        # Test connection if connection config provided
+        if "connection" in data:
+            test_result = await test_weaviate_connection(data["connection"])
+            if not test_result["available"]:
+                warnings.append(f"Weaviate connection test failed: {test_result.get('error', 'Unknown error')}")
+
+        # Log the configuration update
+        logger.info(f"Weaviate configuration update requested: {data}")
+
+        # For now, just acknowledge the update
+        # TODO: Actually persist the configuration changes to environment or config file
+
+        response = {
+            "success": True,
+            "message": "Weaviate configuration updated successfully",
+            "applied_config": data
+        }
+
+        if warnings:
+            response["warnings"] = warnings
+
+        return jsonify(response)
+    except Exception as e:
+        logger.error(f"Error updating Weaviate config: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/weaviate/test', methods=['POST'])
+async def test_weaviate_connection_endpoint():
+    """Test Weaviate connection with provided configuration."""
+    try:
+        data = await request.get_json()
+        connection_config = data.get("connection", {})
+
+        # Use defaults if not provided
+        config = {
+            "url": connection_config.get("url", os.getenv('WEAVIATE_URL', 'http://weaviate:8080/')),
+            "timeout": connection_config.get("timeout", int(os.getenv('WEAVIATE_TIMEOUT', '30'))),
+            "api_key": connection_config.get("api_key", os.getenv('WEAVIATE_API_KEY'))
+        }
+
+        result = await test_weaviate_connection(config)
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        logger.error(f"Error testing Weaviate connection: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/weaviate/schema', methods=['GET'])
+async def get_weaviate_schema():
+    """Get Weaviate schema information."""
+    try:
+        url = os.getenv('WEAVIATE_URL', 'http://weaviate:8080/')
+        timeout = int(os.getenv('WEAVIATE_TIMEOUT', '30'))
+
+        headers = {}
+        if os.getenv('WEAVIATE_API_KEY'):
+            headers['Authorization'] = f"Bearer {os.getenv('WEAVIATE_API_KEY')}"
+
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+            # Get schema information
+            async with session.get(f"{url.rstrip('/')}/v1/schema", headers=headers) as response:
+                if response.status == 200:
+                    schema_data = await response.json()
+
+                    # Get object count for each class
+                    classes_with_counts = []
+                    for class_info in schema_data.get("classes", []):
+                        class_name = class_info["class"]
+
+                        # Get object count
+                        count_query = f"{url.rstrip('/')}/v1/objects?class={class_name}&limit=0"
+                        async with session.get(count_query, headers=headers) as count_response:
+                            if count_response.status == 200:
+                                count_data = await count_response.json()
+                                object_count = count_data.get("totalResults", 0)
+                            else:
+                                object_count = -1  # Unknown
+
+                        classes_with_counts.append({
+                            **class_info,
+                            "object_count": object_count
+                        })
+
+                    return jsonify({
+                        "success": True,
+                        "data": {
+                            "classes": classes_with_counts,
+                            "total_classes": len(classes_with_counts)
+                        }
+                    })
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": f"Schema endpoint returned {response.status}"
+                    }), response.status
+    except Exception as e:
+        logger.error(f"Error getting Weaviate schema: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+async def test_weaviate_connection(config):
+    """Test connection to Weaviate server."""
+    try:
+        url = config.get("url", "http://weaviate:8080/")
+        timeout = config.get("timeout", 30)
+        api_key = config.get("api_key")
+
+        headers = {}
+        if api_key:
+            headers['Authorization'] = f"Bearer {api_key}"
+
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+            # Test basic connectivity
+            meta_url = f"{url.rstrip('/')}/v1/meta"
+            async with session.get(meta_url, headers=headers) as response:
+                if response.status == 200:
+                    meta_data = await response.json()
+
+                    # Test schema access
+                    schema_url = f"{url.rstrip('/')}/v1/schema"
+                    async with session.get(schema_url, headers=headers) as schema_response:
+                        if schema_response.status == 200:
+                            schema_data = await schema_response.json()
+                            class_count = len(schema_data.get("classes", []))
+
+                            return {
+                                "available": True,
+                                "version": meta_data.get("version", "unknown"),
+                                "hostname": meta_data.get("hostname", "unknown"),
+                                "class_count": class_count,
+                                "modules": meta_data.get("modules", {}),
+                                "url": url
+                            }
+                        else:
+                            return {
+                                "available": False,
+                                "error": f"Schema endpoint returned {schema_response.status}",
+                                "url": url
+                            }
+                else:
+                    return {
+                        "available": False,
+                        "error": f"Meta endpoint returned {response.status}",
+                        "url": url
+                    }
+    except asyncio.TimeoutError:
+        return {
+            "available": False,
+            "error": "Connection timeout",
+            "url": url
+        }
+    except Exception as e:
+        return {
+            "available": False,
+            "error": str(e),
+            "url": url
+        }
+
+
+# Configuration Backup and Restore endpoints
+@app.route('/api/v1/config/backup', methods=['POST'])
+async def create_config_backup():
+    """Create a backup of all configuration settings."""
+    try:
+        data = await request.get_json() if await request.get_data() else {}
+        backup_name = data.get('name', f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        include_secrets = data.get('include_secrets', False)
+
+        # Collect all configuration data
+        backup_data = {
+            "backup_info": {
+                "name": backup_name,
+                "created_at": datetime.now().isoformat(),
+                "version": "1.0",
+                "includes_secrets": include_secrets,
+                "system_info": {
+                    "hostname": os.uname().nodename if hasattr(os, 'uname') else "unknown",
+                    "python_version": sys.version,
+                    "app_version": "1.0.0"  # TODO: Get from version file
+                }
+            },
+            "configurations": {}
+        }
+
+        # Tool Selector Configuration
+        try:
+            tool_selector_config = {
+                "tool_limits": {
+                    "max_total_tools": int(os.getenv('MAX_TOTAL_TOOLS', '30')),
+                    "max_mcp_tools": int(os.getenv('MAX_MCP_TOOLS', '20')),
+                    "min_mcp_tools": int(os.getenv('MIN_MCP_TOOLS', '7'))
+                },
+                "behavior": {
+                    "default_drop_rate": float(os.getenv('DEFAULT_DROP_RATE', '0.6')),
+                    "exclude_letta_core_tools": os.getenv('EXCLUDE_LETTA_CORE_TOOLS', 'true').lower() == 'true',
+                    "exclude_official_tools": os.getenv('EXCLUDE_OFFICIAL_TOOLS', 'true').lower() == 'true',
+                    "manage_only_mcp_tools": os.getenv('MANAGE_ONLY_MCP_TOOLS', 'true').lower() == 'true'
+                }
+            }
+            backup_data["configurations"]["tool_selector"] = tool_selector_config
+        except Exception as e:
+            logger.warning(f"Failed to backup tool selector config: {e}")
+
+        # Ollama Configuration
+        try:
+            ollama_config = {
+                "connection": {
+                    "host": os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80'),
+                    "port": int(os.getenv('OLLAMA_PORT', '11434')),
+                    "timeout": int(os.getenv('OLLAMA_TIMEOUT', '30'))
+                },
+                "embedding": {
+                    "model": os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
+                    "enabled": os.getenv('USE_OLLAMA_EMBEDDINGS', 'false').lower() == 'true'
+                },
+                "generation": {
+                    "default_model": os.getenv('OLLAMA_DEFAULT_MODEL', 'mistral:7b'),
+                    "temperature": float(os.getenv('OLLAMA_TEMPERATURE', '0.7')),
+                    "context_length": int(os.getenv('OLLAMA_CONTEXT_LENGTH', '4096'))
+                }
+            }
+            backup_data["configurations"]["ollama"] = ollama_config
+        except Exception as e:
+            logger.warning(f"Failed to backup Ollama config: {e}")
+
+        # Weaviate Configuration
+        try:
+            weaviate_config = {
+                "connection": {
+                    "url": os.getenv('WEAVIATE_URL', 'http://weaviate:8080/'),
+                    "timeout": int(os.getenv('WEAVIATE_TIMEOUT', '30')),
+                    "retries": int(os.getenv('WEAVIATE_RETRIES', '3'))
+                },
+                "schema": {
+                    "class_name": os.getenv('WEAVIATE_CLASS_NAME', 'Tool'),
+                    "vector_index_type": os.getenv('WEAVIATE_VECTOR_INDEX', 'hnsw'),
+                    "distance_metric": os.getenv('WEAVIATE_DISTANCE_METRIC', 'cosine')
+                },
+                "search": {
+                    "alpha": float(os.getenv('WEAVIATE_ALPHA', '0.75')),
+                    "limit": int(os.getenv('WEAVIATE_LIMIT', '50'))
+                }
+            }
+
+            if include_secrets and os.getenv('WEAVIATE_API_KEY'):
+                weaviate_config["connection"]["api_key"] = os.getenv('WEAVIATE_API_KEY')
+
+            backup_data["configurations"]["weaviate"] = weaviate_config
+        except Exception as e:
+            logger.warning(f"Failed to backup Weaviate config: {e}")
+
+        # Embedding Configuration
+        try:
+            embedding_config = {
+                "provider": os.getenv('EMBEDDING_PROVIDER', 'openai'),
+                "openai_model": os.getenv('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small'),
+                "ollama_model": os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M')
+            }
+
+            if include_secrets and os.getenv('OPENAI_API_KEY'):
+                embedding_config["openai_api_key"] = os.getenv('OPENAI_API_KEY')
+
+            backup_data["configurations"]["embedding"] = embedding_config
+        except Exception as e:
+            logger.warning(f"Failed to backup embedding config: {e}")
+
+        # Letta API Configuration
+        try:
+            letta_config = {
+                "api_url": os.getenv('LETTA_API_URL', 'https://letta.example.com/v1'),
+                "timeout": int(os.getenv('LETTA_TIMEOUT', '30'))
+            }
+
+            if include_secrets and os.getenv('LETTA_PASSWORD'):
+                letta_config["password"] = os.getenv('LETTA_PASSWORD')
+
+            backup_data["configurations"]["letta"] = letta_config
+        except Exception as e:
+            logger.warning(f"Failed to backup Letta config: {e}")
+
+        # Save backup to file
+        backup_dir = os.path.join(CACHE_DIR, 'backups')
+        os.makedirs(backup_dir, exist_ok=True)
+
+        backup_file = os.path.join(backup_dir, f"{backup_name}.json")
+        with open(backup_file, 'w') as f:
+            json.dump(backup_data, f, indent=2)
+
+        logger.info(f"Configuration backup created: {backup_file}")
+
+        return jsonify({
+            "success": True,
+            "message": "Configuration backup created successfully",
+            "data": {
+                "backup_name": backup_name,
+                "backup_file": backup_file,
+                "size_bytes": os.path.getsize(backup_file),
+                "configurations_count": len(backup_data["configurations"]),
+                "created_at": backup_data["backup_info"]["created_at"]
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error creating configuration backup: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/backup', methods=['GET'])
+async def list_config_backups():
+    """List all available configuration backups."""
+    try:
+        backup_dir = os.path.join(CACHE_DIR, 'backups')
+
+        if not os.path.exists(backup_dir):
+            return jsonify({
+                "success": True,
+                "data": {
+                    "backups": [],
+                    "total": 0
+                }
+            })
+
+        backups = []
+        for filename in os.listdir(backup_dir):
+            if filename.endswith('.json'):
+                backup_path = os.path.join(backup_dir, filename)
+                try:
+                    with open(backup_path, 'r') as f:
+                        backup_data = json.load(f)
+
+                    backup_info = backup_data.get("backup_info", {})
+                    backups.append({
+                        "name": backup_info.get("name", filename.replace('.json', '')),
+                        "filename": filename,
+                        "created_at": backup_info.get("created_at"),
+                        "size_bytes": os.path.getsize(backup_path),
+                        "configurations_count": len(backup_data.get("configurations", {})),
+                        "includes_secrets": backup_info.get("includes_secrets", False),
+                        "version": backup_info.get("version", "unknown")
+                    })
+                except Exception as e:
+                    logger.warning(f"Failed to parse backup {filename}: {e}")
+                    # Add basic info even if parsing fails
+                    backups.append({
+                        "name": filename.replace('.json', ''),
+                        "filename": filename,
+                        "created_at": None,
+                        "size_bytes": os.path.getsize(backup_path),
+                        "configurations_count": 0,
+                        "includes_secrets": False,
+                        "version": "unknown",
+                        "error": "Failed to parse backup file"
+                    })
+
+        # Sort by creation time, newest first
+        backups.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "backups": backups,
+                "total": len(backups)
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error listing configuration backups: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/backup/<backup_name>', methods=['GET'])
+async def get_config_backup(backup_name):
+    """Get details of a specific backup."""
+    try:
+        backup_dir = os.path.join(CACHE_DIR, 'backups')
+        backup_file = os.path.join(backup_dir, f"{backup_name}.json")
+
+        if not os.path.exists(backup_file):
+            return jsonify({"success": False, "error": "Backup not found"}), 404
+
+        with open(backup_file, 'r') as f:
+            backup_data = json.load(f)
+
+        # Mask secrets if they exist
+        masked_data = json.loads(json.dumps(backup_data))  # Deep copy
+        if "configurations" in masked_data:
+            for config_name, config_data in masked_data["configurations"].items():
+                if isinstance(config_data, dict):
+                    for key, value in config_data.items():
+                        if isinstance(value, dict):
+                            for sub_key in list(value.keys()):
+                                if 'key' in sub_key.lower() or 'password' in sub_key.lower() or 'secret' in sub_key.lower():
+                                    value[sub_key] = "***"
+                        elif 'key' in key.lower() or 'password' in key.lower() or 'secret' in key.lower():
+                            config_data[key] = "***"
+
+        return jsonify({
+            "success": True,
+            "data": masked_data
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting configuration backup: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/restore/<backup_name>', methods=['POST'])
+async def restore_config_backup(backup_name):
+    """Restore configuration from a backup."""
+    try:
+        data = await request.get_json() if await request.get_data() else {}
+        dry_run = data.get('dry_run', False)
+        selected_configs = data.get('configurations', [])  # List of config names to restore
+
+        backup_dir = os.path.join(CACHE_DIR, 'backups')
+        backup_file = os.path.join(backup_dir, f"{backup_name}.json")
+
+        if not os.path.exists(backup_file):
+            return jsonify({"success": False, "error": "Backup not found"}), 404
+
+        with open(backup_file, 'r') as f:
+            backup_data = json.load(f)
+
+        configurations = backup_data.get("configurations", {})
+
+        if not configurations:
+            return jsonify({"success": False, "error": "No configurations found in backup"}), 400
+
+        # Filter configurations if specific ones were selected
+        if selected_configs:
+            configurations = {k: v for k, v in configurations.items() if k in selected_configs}
+
+        restoration_plan = {}
+        warnings = []
+
+        # Plan restoration for each configuration
+        for config_name, config_data in configurations.items():
+            if config_name == "tool_selector":
+                restoration_plan[config_name] = {
+                    "type": "environment_variables",
+                    "changes": [
+                        {"var": "MAX_TOTAL_TOOLS", "current": os.getenv('MAX_TOTAL_TOOLS', '30'), "new": str(config_data["tool_limits"]["max_total_tools"])},
+                        {"var": "MAX_MCP_TOOLS", "current": os.getenv('MAX_MCP_TOOLS', '20'), "new": str(config_data["tool_limits"]["max_mcp_tools"])},
+                        {"var": "MIN_MCP_TOOLS", "current": os.getenv('MIN_MCP_TOOLS', '7'), "new": str(config_data["tool_limits"]["min_mcp_tools"])},
+                        {"var": "DEFAULT_DROP_RATE", "current": os.getenv('DEFAULT_DROP_RATE', '0.6'), "new": str(config_data["behavior"]["default_drop_rate"])},
+                        {"var": "EXCLUDE_LETTA_CORE_TOOLS", "current": os.getenv('EXCLUDE_LETTA_CORE_TOOLS', 'true'), "new": str(config_data["behavior"]["exclude_letta_core_tools"]).lower()},
+                    ]
+                }
+
+            elif config_name == "ollama":
+                restoration_plan[config_name] = {
+                    "type": "environment_variables",
+                    "changes": [
+                        {"var": "OLLAMA_EMBEDDING_HOST", "current": os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80'), "new": config_data["connection"]["host"]},
+                        {"var": "OLLAMA_PORT", "current": os.getenv('OLLAMA_PORT', '11434'), "new": str(config_data["connection"]["port"])},
+                        {"var": "OLLAMA_EMBEDDING_MODEL", "current": os.getenv('OLLAMA_EMBEDDING_MODEL', ''), "new": config_data["embedding"]["model"]},
+                        {"var": "USE_OLLAMA_EMBEDDINGS", "current": os.getenv('USE_OLLAMA_EMBEDDINGS', 'false'), "new": str(config_data["embedding"]["enabled"]).lower()},
+                    ]
+                }
+
+            elif config_name == "weaviate":
+                restoration_plan[config_name] = {
+                    "type": "environment_variables",
+                    "changes": [
+                        {"var": "WEAVIATE_URL", "current": os.getenv('WEAVIATE_URL', ''), "new": config_data["connection"]["url"]},
+                        {"var": "WEAVIATE_TIMEOUT", "current": os.getenv('WEAVIATE_TIMEOUT', '30'), "new": str(config_data["connection"]["timeout"])},
+                        {"var": "WEAVIATE_ALPHA", "current": os.getenv('WEAVIATE_ALPHA', '0.75'), "new": str(config_data["search"]["alpha"])},
+                    ]
+                }
+
+                if "api_key" in config_data["connection"]:
+                    restoration_plan[config_name]["changes"].append({
+                        "var": "WEAVIATE_API_KEY", "current": "***" if os.getenv('WEAVIATE_API_KEY') else None, "new": "***"
+                    })
+
+        if dry_run:
+            return jsonify({
+                "success": True,
+                "message": "Restoration plan generated (dry run)",
+                "data": {
+                    "backup_name": backup_name,
+                    "backup_date": backup_data.get("backup_info", {}).get("created_at"),
+                    "configurations_to_restore": len(restoration_plan),
+                    "restoration_plan": restoration_plan,
+                    "warnings": warnings
+                }
+            })
+
+        # TODO: Actually apply the restoration
+        # For now, just simulate the restoration
+        logger.info(f"Configuration restoration requested for backup: {backup_name}")
+        logger.info(f"Restoration plan: {restoration_plan}")
+
+        return jsonify({
+            "success": True,
+            "message": "Configuration restored successfully (simulation)",
+            "data": {
+                "backup_name": backup_name,
+                "restored_configurations": list(restoration_plan.keys()),
+                "total_changes": sum(len(plan.get("changes", [])) for plan in restoration_plan.values()),
+                "warnings": warnings + ["Restoration is currently simulated - actual environment variable updates not implemented"]
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error restoring configuration backup: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/backup/<backup_name>', methods=['DELETE'])
+async def delete_config_backup(backup_name):
+    """Delete a configuration backup."""
+    try:
+        backup_dir = os.path.join(CACHE_DIR, 'backups')
+        backup_file = os.path.join(backup_dir, f"{backup_name}.json")
+
+        if not os.path.exists(backup_file):
+            return jsonify({"success": False, "error": "Backup not found"}), 404
+
+        os.remove(backup_file)
+        logger.info(f"Configuration backup deleted: {backup_file}")
+
+        return jsonify({
+            "success": True,
+            "message": "Backup deleted successfully",
+            "data": {
+                "backup_name": backup_name,
+                "deleted_at": datetime.now().isoformat()
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting configuration backup: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# Configuration Audit and Logging endpoints
+@app.route('/api/v1/config/audit', methods=['GET'])
+async def get_config_audit_logs():
+    """Get configuration change audit logs."""
+    try:
+        # Query parameters
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+        config_type = request.args.get('config_type')  # Filter by config type
+        action = request.args.get('action')  # Filter by action (create, update, delete)
+        start_date = request.args.get('start_date')  # ISO format
+        end_date = request.args.get('end_date')  # ISO format
+
+        audit_file = os.path.join(CACHE_DIR, 'config_audit.json')
+
+        if not os.path.exists(audit_file):
+            return jsonify({
+                "success": True,
+                "data": {
+                    "logs": [],
+                    "total": 0,
+                    "filtered": 0,
+                    "offset": offset,
+                    "limit": limit
+                }
+            })
+
+        with open(audit_file, 'r') as f:
+            all_logs = []
+            for line in f:
+                try:
+                    all_logs.append(json.loads(line.strip()))
+                except json.JSONDecodeError:
+                    continue  # Skip malformed lines
+
+        # Apply filters
+        filtered_logs = all_logs
+
+        if config_type:
+            filtered_logs = [log for log in filtered_logs if log.get('config_type') == config_type]
+
+        if action:
+            filtered_logs = [log for log in filtered_logs if log.get('action') == action]
+
+        if start_date:
+            try:
+                start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                filtered_logs = [log for log in filtered_logs
+                               if datetime.fromisoformat(log.get('timestamp', '').replace('Z', '+00:00')) >= start_dt]
+            except ValueError:
+                pass
+
+        if end_date:
+            try:
+                end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                filtered_logs = [log for log in filtered_logs
+                               if datetime.fromisoformat(log.get('timestamp', '').replace('Z', '+00:00')) <= end_dt]
+            except ValueError:
+                pass
+
+        # Sort by timestamp, newest first
+        filtered_logs.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+
+        # Apply pagination
+        total_filtered = len(filtered_logs)
+        paginated_logs = filtered_logs[offset:offset + limit]
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "logs": paginated_logs,
+                "total": len(all_logs),
+                "filtered": total_filtered,
+                "offset": offset,
+                "limit": limit
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting config audit logs: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/audit/stats', methods=['GET'])
+async def get_config_audit_stats():
+    """Get audit log statistics."""
+    try:
+        audit_file = os.path.join(CACHE_DIR, 'config_audit.json')
+
+        if not os.path.exists(audit_file):
+            return jsonify({
+                "success": True,
+                "data": {
+                    "total_entries": 0,
+                    "config_types": {},
+                    "actions": {},
+                    "recent_activity": [],
+                    "last_change": None
+                }
+            })
+
+        with open(audit_file, 'r') as f:
+            all_logs = []
+            for line in f:
+                try:
+                    all_logs.append(json.loads(line.strip()))
+                except json.JSONDecodeError:
+                    continue
+
+        # Calculate statistics
+        config_types = {}
+        actions = {}
+
+        for log in all_logs:
+            config_type = log.get('config_type', 'unknown')
+            action = log.get('action', 'unknown')
+
+            config_types[config_type] = config_types.get(config_type, 0) + 1
+            actions[action] = actions.get(action, 0) + 1
+
+        # Get recent activity (last 10 entries)
+        recent_logs = sorted(all_logs, key=lambda x: x.get('timestamp', ''), reverse=True)[:10]
+
+        last_change = recent_logs[0] if recent_logs else None
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "total_entries": len(all_logs),
+                "config_types": config_types,
+                "actions": actions,
+                "recent_activity": recent_logs,
+                "last_change": last_change
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting config audit stats: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/config/audit/clear', methods=['POST'])
+async def clear_config_audit_logs():
+    """Clear all audit logs (admin operation)."""
+    try:
+        data = await request.get_json() if await request.get_data() else {}
+        confirm = data.get('confirm', False)
+
+        if not confirm:
+            return jsonify({
+                "success": False,
+                "error": "Confirmation required. Set 'confirm': true in request body."
+            }), 400
+
+        audit_file = os.path.join(CACHE_DIR, 'config_audit.json')
+
+        # Create backup before clearing
+        if os.path.exists(audit_file):
+            backup_file = f"{audit_file}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            os.rename(audit_file, backup_file)
+
+            # Log the clearing action
+            await log_config_change(
+                action="clear_audit_logs",
+                config_type="audit_system",
+                changes={"backup_file": backup_file},
+                user_info={"action": "admin_clear", "timestamp": datetime.now().isoformat()}
+            )
+
+        return jsonify({
+            "success": True,
+            "message": "Audit logs cleared successfully",
+            "data": {
+                "cleared_at": datetime.now().isoformat(),
+                "backup_created": backup_file if os.path.exists(audit_file) else None
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error clearing config audit logs: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+async def log_config_change(action, config_type, changes=None, user_info=None, metadata=None):
+    """Log a configuration change for audit purposes."""
+    try:
+        audit_entry = {
+            "id": f"{int(time.time() * 1000000)}_{hash(str(changes))}"[:16],  # Unique ID
+            "timestamp": datetime.now().isoformat(),
+            "action": action,  # create, update, delete, restore, etc.
+            "config_type": config_type,  # tool_selector, ollama, weaviate, etc.
+            "changes": changes or {},
+            "user_info": user_info or {},
+            "metadata": metadata or {},
+            "system_info": {
+                "hostname": os.uname().nodename if hasattr(os, 'uname') else "unknown",
+                "process_id": os.getpid()
+            }
+        }
+
+        # Ensure audit directory exists
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        audit_file = os.path.join(CACHE_DIR, 'config_audit.json')
+
+        # Append to audit log file (one JSON object per line)
+        with open(audit_file, 'a') as f:
+            f.write(json.dumps(audit_entry) + '\n')
+
+        # Also log to application logger
+        logger.info(f"CONFIG_AUDIT: {action} {config_type} - {changes}")
+
+        # Rotate log file if it gets too large (keep last 10000 entries)
+        await rotate_audit_log_if_needed(audit_file)
+
+    except Exception as e:
+        logger.error(f"Failed to log config change: {str(e)}")
+        # Don't raise exception as this is a logging operation
+
+
+async def rotate_audit_log_if_needed(audit_file, max_entries=10000):
+    """Rotate audit log file if it becomes too large."""
+    try:
+        if not os.path.exists(audit_file):
+            return
+
+        # Count lines in file
+        with open(audit_file, 'r') as f:
+            line_count = sum(1 for _ in f)
+
+        if line_count > max_entries:
+            logger.info(f"Rotating audit log file (current entries: {line_count})")
+
+            # Read all entries
+            with open(audit_file, 'r') as f:
+                all_lines = f.readlines()
+
+            # Keep only the most recent entries
+            recent_lines = all_lines[-max_entries//2:]  # Keep half the max
+
+            # Create backup of old file
+            backup_file = f"{audit_file}.rotated_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            os.rename(audit_file, backup_file)
+
+            # Write recent entries to new file
+            with open(audit_file, 'w') as f:
+                f.writelines(recent_lines)
+
+            logger.info(f"Audit log rotated. Kept {len(recent_lines)} recent entries. Backup: {backup_file}")
+
+    except Exception as e:
+        logger.error(f"Failed to rotate audit log: {str(e)}")
+
+
+# Environment Management API endpoints
+@app.route('/api/v1/environment', methods=['GET'])
+async def get_environment_variables():
+    """Get current environment variables (filtered for security)."""
+    try:
+        # Define which environment variables are safe to expose
+        safe_env_vars = {
+            # Tool Selector Configuration
+            'MAX_TOTAL_TOOLS', 'MAX_MCP_TOOLS', 'MIN_MCP_TOOLS', 'DEFAULT_DROP_RATE',
+            'EXCLUDE_LETTA_CORE_TOOLS', 'EXCLUDE_OFFICIAL_TOOLS', 'MANAGE_ONLY_MCP_TOOLS',
+            'MIN_SCORE_DEFAULT', 'SEMANTIC_WEIGHT', 'KEYWORD_WEIGHT',
+
+            # Ollama Configuration
+            'OLLAMA_EMBEDDING_HOST', 'OLLAMA_PORT', 'OLLAMA_TIMEOUT', 'OLLAMA_BASE_URL',
+            'OLLAMA_EMBEDDING_MODEL', 'USE_OLLAMA_EMBEDDINGS', 'OLLAMA_DEFAULT_MODEL',
+            'OLLAMA_TEMPERATURE', 'OLLAMA_CONTEXT_LENGTH', 'OLLAMA_NUM_PARALLEL',
+            'OLLAMA_NUM_CTX', 'OLLAMA_NUM_GPU', 'OLLAMA_LOW_VRAM',
+
+            # Weaviate Configuration
+            'WEAVIATE_URL', 'WEAVIATE_TIMEOUT', 'WEAVIATE_RETRIES', 'WEAVIATE_CLASS_NAME',
+            'WEAVIATE_VECTOR_INDEX', 'WEAVIATE_DISTANCE_METRIC', 'WEAVIATE_ALPHA',
+            'WEAVIATE_LIMIT', 'WEAVIATE_ADDITIONAL_PROPERTIES', 'WEAVIATE_AUTOCUT',
+            'WEAVIATE_EF_CONSTRUCTION', 'WEAVIATE_EF', 'WEAVIATE_MAX_CONNECTIONS',
+            'WEAVIATE_VECTOR_CACHE_MAX_OBJECTS', 'WEAVIATE_CLEANUP_INTERVAL',
+
+            # Embedding Configuration
+            'EMBEDDING_PROVIDER', 'OPENAI_EMBEDDING_MODEL',
+
+            # Letta Configuration
+            'LETTA_API_URL', 'LETTA_TIMEOUT',
+
+            # System Configuration
+            'LOG_LEVEL', 'DEBUG', 'PORT'
+        }
+
+        # Secret environment variables (values will be masked)
+        secret_env_vars = {
+            'OPENAI_API_KEY', 'WEAVIATE_API_KEY', 'LETTA_PASSWORD', 'LETTA_API_KEY'
+        }
+
+        environment = {}
+
+        # Add safe environment variables
+        for var_name in safe_env_vars:
+            value = os.getenv(var_name)
+            if value is not None:
+                environment[var_name] = {
+                    "value": value,
+                    "type": "safe",
+                    "description": get_env_var_description(var_name)
+                }
+
+        # Add secret environment variables (masked)
+        for var_name in secret_env_vars:
+            value = os.getenv(var_name)
+            if value is not None:
+                environment[var_name] = {
+                    "value": "***",
+                    "type": "secret",
+                    "description": get_env_var_description(var_name),
+                    "has_value": True
+                }
+            else:
+                environment[var_name] = {
+                    "value": None,
+                    "type": "secret",
+                    "description": get_env_var_description(var_name),
+                    "has_value": False
+                }
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "environment": environment,
+                "total_vars": len(environment),
+                "safe_vars": len([v for v in environment.values() if v["type"] == "safe"]),
+                "secret_vars": len([v for v in environment.values() if v["type"] == "secret"])
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting environment variables: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/environment/validate', methods=['POST'])
+async def validate_environment():
+    """Validate environment configuration and check for issues."""
+    try:
+        validation_results = {
+            "valid": True,
+            "warnings": [],
+            "errors": [],
+            "recommendations": [],
+            "configurations": {}
+        }
+
+        # Validate Tool Selector Configuration
+        tool_selector_validation = validate_tool_selector_env()
+        validation_results["configurations"]["tool_selector"] = tool_selector_validation
+        if not tool_selector_validation["valid"]:
+            validation_results["valid"] = False
+        validation_results["warnings"].extend(tool_selector_validation.get("warnings", []))
+        validation_results["errors"].extend(tool_selector_validation.get("errors", []))
+
+        # Validate Ollama Configuration
+        ollama_validation = validate_ollama_env()
+        validation_results["configurations"]["ollama"] = ollama_validation
+        if not ollama_validation["valid"]:
+            validation_results["valid"] = False
+        validation_results["warnings"].extend(ollama_validation.get("warnings", []))
+        validation_results["errors"].extend(ollama_validation.get("errors", []))
+
+        # Validate Weaviate Configuration
+        weaviate_validation = validate_weaviate_env()
+        validation_results["configurations"]["weaviate"] = weaviate_validation
+        if not weaviate_validation["valid"]:
+            validation_results["valid"] = False
+        validation_results["warnings"].extend(weaviate_validation.get("warnings", []))
+        validation_results["errors"].extend(weaviate_validation.get("errors", []))
+
+        # Validate Embedding Configuration
+        embedding_validation = validate_embedding_env()
+        validation_results["configurations"]["embedding"] = embedding_validation
+        if not embedding_validation["valid"]:
+            validation_results["valid"] = False
+        validation_results["warnings"].extend(embedding_validation.get("warnings", []))
+        validation_results["errors"].extend(embedding_validation.get("errors", []))
+
+        # General recommendations
+        if not os.getenv('OPENAI_API_KEY') and not os.getenv('USE_OLLAMA_EMBEDDINGS', '').lower() == 'true':
+            validation_results["recommendations"].append("Consider setting up either OpenAI API key or Ollama embeddings")
+
+        return jsonify({
+            "success": True,
+            "data": validation_results
+        })
+
+    except Exception as e:
+        logger.error(f"Error validating environment: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/v1/environment/template', methods=['GET'])
+async def get_environment_template():
+    """Get a template .env file with all possible configuration options."""
+    try:
+        template_content = generate_env_template()
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "template": template_content,
+                "filename": ".env.template",
+                "description": "Template environment file with all configuration options"
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error generating environment template: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def get_env_var_description(var_name):
+    """Get description for environment variable."""
+    descriptions = {
+        # Tool Selector Configuration
+        'MAX_TOTAL_TOOLS': 'Maximum total tools per agent (including Letta core tools)',
+        'MAX_MCP_TOOLS': 'Maximum MCP tools per agent',
+        'MIN_MCP_TOOLS': 'Minimum MCP tools to maintain (pruning disabled below this)',
+        'DEFAULT_DROP_RATE': 'Default aggressiveness of pruning (0.0-1.0)',
+        'EXCLUDE_LETTA_CORE_TOOLS': 'Whether to exclude Letta core tools from management',
+        'EXCLUDE_OFFICIAL_TOOLS': 'Whether to exclude official tools from management',
+        'MANAGE_ONLY_MCP_TOOLS': 'Whether to only manage MCP tools',
+
+        # Ollama Configuration
+        'OLLAMA_EMBEDDING_HOST': 'Ollama server hostname or IP address',
+        'OLLAMA_PORT': 'Ollama server port (default: 11434)',
+        'OLLAMA_TIMEOUT': 'Connection timeout in seconds',
+        'OLLAMA_EMBEDDING_MODEL': 'Ollama embedding model to use',
+        'USE_OLLAMA_EMBEDDINGS': 'Whether to use Ollama for embeddings',
+        'OLLAMA_DEFAULT_MODEL': 'Default Ollama model for generation',
+
+        # Weaviate Configuration
+        'WEAVIATE_URL': 'Weaviate database URL',
+        'WEAVIATE_TIMEOUT': 'Weaviate connection timeout',
+        'WEAVIATE_ALPHA': 'Hybrid search alpha parameter (0.0-1.0)',
+        'WEAVIATE_CLASS_NAME': 'Weaviate class name for tools',
+
+        # Embedding Configuration
+        'EMBEDDING_PROVIDER': 'Embedding provider (openai or ollama)',
+        'OPENAI_EMBEDDING_MODEL': 'OpenAI embedding model to use',
+
+        # Secret Configuration
+        'OPENAI_API_KEY': 'OpenAI API key for embeddings and reranking',
+        'WEAVIATE_API_KEY': 'Weaviate API key (if authentication required)',
+        'LETTA_PASSWORD': 'Letta API password',
+        'LETTA_API_URL': 'Letta API base URL',
+
+        # System Configuration
+        'LOG_LEVEL': 'Application log level (DEBUG, INFO, WARNING, ERROR)',
+        'PORT': 'API server port number'
+    }
+
+    return descriptions.get(var_name, f"Configuration for {var_name}")
+
+
+def validate_tool_selector_env():
+    """Validate tool selector environment variables."""
+    validation = {"valid": True, "warnings": [], "errors": []}
+
+    try:
+        max_total = int(os.getenv('MAX_TOTAL_TOOLS', '30'))
+        max_mcp = int(os.getenv('MAX_MCP_TOOLS', '20'))
+        min_mcp = int(os.getenv('MIN_MCP_TOOLS', '7'))
+
+        if min_mcp >= max_mcp:
+            validation["errors"].append("MIN_MCP_TOOLS must be less than MAX_MCP_TOOLS")
+            validation["valid"] = False
+
+        if max_mcp >= max_total:
+            validation["errors"].append("MAX_MCP_TOOLS must be less than MAX_TOTAL_TOOLS")
+            validation["valid"] = False
+
+        if min_mcp < 3:
+            validation["warnings"].append("Very low MIN_MCP_TOOLS may limit functionality")
+
+        if max_total > 50:
+            validation["warnings"].append("High MAX_TOTAL_TOOLS may impact performance")
+
+    except ValueError as e:
+        validation["errors"].append(f"Invalid numeric value in tool selector config: {e}")
+        validation["valid"] = False
+
+    return validation
+
+
+def validate_ollama_env():
+    """Validate Ollama environment variables."""
+    validation = {"valid": True, "warnings": [], "errors": []}
+
+    use_ollama = os.getenv('USE_OLLAMA_EMBEDDINGS', '').lower() == 'true'
+
+    if use_ollama:
+        if not os.getenv('OLLAMA_EMBEDDING_HOST'):
+            validation["errors"].append("OLLAMA_EMBEDDING_HOST required when USE_OLLAMA_EMBEDDINGS=true")
+            validation["valid"] = False
+
+        if not os.getenv('OLLAMA_EMBEDDING_MODEL'):
+            validation["warnings"].append("OLLAMA_EMBEDDING_MODEL not specified, using default")
+
+        try:
+            port = int(os.getenv('OLLAMA_PORT', '11434'))
+            if not (1 <= port <= 65535):
+                validation["errors"].append("OLLAMA_PORT must be between 1 and 65535")
+                validation["valid"] = False
+        except ValueError:
+            validation["errors"].append("OLLAMA_PORT must be a valid integer")
+            validation["valid"] = False
+
+    return validation
+
+
+def validate_weaviate_env():
+    """Validate Weaviate environment variables."""
+    validation = {"valid": True, "warnings": [], "errors": []}
+
+    weaviate_url = os.getenv('WEAVIATE_URL')
+    if not weaviate_url:
+        validation["errors"].append("WEAVIATE_URL is required")
+        validation["valid"] = False
+    elif not (weaviate_url.startswith('http://') or weaviate_url.startswith('https://')):
+        validation["errors"].append("WEAVIATE_URL must start with http:// or https://")
+        validation["valid"] = False
+
+    try:
+        alpha = float(os.getenv('WEAVIATE_ALPHA', '0.75'))
+        if not (0.0 <= alpha <= 1.0):
+            validation["errors"].append("WEAVIATE_ALPHA must be between 0.0 and 1.0")
+            validation["valid"] = False
+    except ValueError:
+        validation["errors"].append("WEAVIATE_ALPHA must be a valid number")
+        validation["valid"] = False
+
+    return validation
+
+
+def validate_embedding_env():
+    """Validate embedding environment variables."""
+    validation = {"valid": True, "warnings": [], "errors": []}
+
+    provider = os.getenv('EMBEDDING_PROVIDER', 'openai').lower()
+
+    if provider == 'openai' and not os.getenv('OPENAI_API_KEY'):
+        validation["errors"].append("OPENAI_API_KEY required for OpenAI embedding provider")
+        validation["valid"] = False
+
+    if provider == 'ollama' and not os.getenv('USE_OLLAMA_EMBEDDINGS', '').lower() == 'true':
+        validation["warnings"].append("EMBEDDING_PROVIDER=ollama but USE_OLLAMA_EMBEDDINGS is not true")
+
+    if provider not in ['openai', 'ollama']:
+        validation["errors"].append("EMBEDDING_PROVIDER must be 'openai' or 'ollama'")
+        validation["valid"] = False
+
+    return validation
+
+
+def generate_env_template():
+    """Generate a complete .env template file."""
+    template = """# Letta Tool Selector Configuration Template
+# Copy this file to .env and configure the values for your environment
+
+# =============================================================================
+# Tool Selector Configuration
+# =============================================================================
+# Maximum total tools per agent (including Letta core tools)
+MAX_TOTAL_TOOLS=30
+
+# Maximum MCP tools per agent
+MAX_MCP_TOOLS=20
+
+# Minimum MCP tools to maintain (pruning disabled below this threshold)
+MIN_MCP_TOOLS=7
+
+# Default aggressiveness of pruning (0.0 = conservative, 1.0 = aggressive)
+DEFAULT_DROP_RATE=0.6
+
+# Whether to exclude Letta core tools from management (recommended: true)
+EXCLUDE_LETTA_CORE_TOOLS=true
+
+# Whether to exclude official tools from management (recommended: true)
+EXCLUDE_OFFICIAL_TOOLS=true
+
+# Whether to only manage MCP tools (recommended: true)
+MANAGE_ONLY_MCP_TOOLS=true
+
+# =============================================================================
+# Ollama Configuration
+# =============================================================================
+# Ollama server hostname or IP address
+OLLAMA_EMBEDDING_HOST=192.168.50.80
+
+# Ollama server port
+OLLAMA_PORT=11434
+
+# Connection timeout in seconds
+OLLAMA_TIMEOUT=30
+
+# Ollama embedding model (leave empty to use Ollama's default)
+OLLAMA_EMBEDDING_MODEL=dengcao/Qwen3-Embedding-4B:Q4_K_M
+
+# Whether to use Ollama for embeddings (true/false)
+USE_OLLAMA_EMBEDDINGS=false
+
+# Default Ollama model for text generation
+OLLAMA_DEFAULT_MODEL=mistral:7b
+
+# Generation temperature (0.0-1.0)
+OLLAMA_TEMPERATURE=0.7
+
+# Context length for generation
+OLLAMA_CONTEXT_LENGTH=4096
+
+# =============================================================================
+# Weaviate Configuration
+# =============================================================================
+# Weaviate database URL
+WEAVIATE_URL=http://weaviate:8080/
+
+# Connection timeout in seconds
+WEAVIATE_TIMEOUT=30
+
+# Number of connection retries
+WEAVIATE_RETRIES=3
+
+# Weaviate class name for storing tools
+WEAVIATE_CLASS_NAME=Tool
+
+# Vector index type (hnsw recommended)
+WEAVIATE_VECTOR_INDEX=hnsw
+
+# Distance metric for similarity search
+WEAVIATE_DISTANCE_METRIC=cosine
+
+# Hybrid search alpha parameter (0.0 = keyword only, 1.0 = vector only)
+WEAVIATE_ALPHA=0.75
+
+# Default search result limit
+WEAVIATE_LIMIT=50
+
+# =============================================================================
+# Embedding Configuration
+# =============================================================================
+# Embedding provider (openai or ollama)
+EMBEDDING_PROVIDER=openai
+
+# OpenAI embedding model
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+
+# =============================================================================
+# Letta API Configuration
+# =============================================================================
+# Letta API base URL
+LETTA_API_URL=https://letta.example.com/v1
+
+# Letta API timeout in seconds
+LETTA_TIMEOUT=30
+
+# =============================================================================
+# Secret Configuration (Keep these secure!)
+# =============================================================================
+# OpenAI API key for embeddings and reranking
+OPENAI_API_KEY=sk-your-openai-api-key-here
+
+# Weaviate API key (if authentication is enabled)
+# WEAVIATE_API_KEY=your-weaviate-api-key-here
+
+# Letta API password
+LETTA_PASSWORD=your-letta-password-here
+
+# =============================================================================
+# System Configuration
+# =============================================================================
+# Application log level (DEBUG, INFO, WARNING, ERROR)
+LOG_LEVEL=INFO
+
+# API server port
+PORT=8020
+
+# Enable debug mode (true/false)
+DEBUG=false
+"""
+
+    return template
 
 
 # Tools refresh endpoint

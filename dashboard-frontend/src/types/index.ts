@@ -93,6 +93,59 @@ export interface EvaluationRating {
   timestamp: Date;
 }
 
+export interface Context7Evaluation {
+  id: string;
+  query: string;
+  query_context?: string;
+  search_session_id: string;
+  original_results: SearchResult[];
+  reranked_results: SearchResult[];
+
+  // Context7 Standard Metrics
+  overall_relevance: number; // 1-5: How well do selected tools match query intent
+  completeness_score: number; // 1-5: Were all necessary tools found
+  precision_score: number; // 1-5: Were irrelevant tools excluded
+  contextual_appropriateness: number; // 1-5: Tools fit the specific use case
+  improvement_rating: number; // 1-5: Reranked results vs original
+
+  // Individual tool ratings
+  tool_evaluations: ToolEvaluation[];
+
+  // Qualitative feedback
+  strengths: string;
+  weaknesses: string;
+  suggestions: string;
+  edge_cases: string[];
+
+  // Metadata
+  evaluator_id?: string;
+  evaluation_time: number; // Time spent in seconds
+  timestamp: Date;
+  flagged_for_review?: boolean;
+}
+
+export interface ToolEvaluation {
+  tool_id: string;
+  tool_name: string;
+  relevance_score: number; // 1-5
+  confidence_score: number; // 1-5: How confident in this rating
+  found_in_original: boolean;
+  found_in_reranked: boolean;
+  original_rank?: number;
+  reranked_rank?: number;
+  notes?: string;
+}
+
+export interface EvaluationSession {
+  session_id: string;
+  evaluations: Context7Evaluation[];
+  total_queries: number;
+  completed_evaluations: number;
+  start_time: Date;
+  end_time?: Date;
+  evaluator_id?: string;
+}
+
 export interface Analytics {
   search_count: number;
   total_evaluations: number;

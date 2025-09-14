@@ -15,19 +15,38 @@ import {
   Chip,
   Divider,
   Alert,
+  Tabs,
+  Tab,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import {
   Assessment as AssessmentIcon,
   Star as StarIcon,
   Save as SaveIcon,
   History as HistoryIcon,
+  Science as ScienceIcon,
+  Speed as SpeedIcon,
 } from '@mui/icons-material';
 
 import { useSubmitEvaluation, useEvaluations } from '../../hooks/useApi';
 import { EvaluationRating } from '../../types';
 import { formatRelativeTime } from '../../utils';
+import Context7EvaluationInterface from './Context7EvaluationInterface';
 
-const EvaluationInterface: React.FC = () => {
+interface EvaluationInterfaceProps {
+  searchResults?: {
+    query: string;
+    query_context?: string;
+    original_results: any[];
+    reranked_results: any[];
+    search_session_id: string;
+  };
+}
+
+const EvaluationInterface: React.FC<EvaluationInterfaceProps> = ({ searchResults }) => {
+  const [currentTab, setCurrentTab] = useState(0);
+  const [useContext7Mode, setUseContext7Mode] = useState(true);
   const [selectedResult, setSelectedResult] = useState<any>(null);
   const [relevanceRating, setRelevanceRating] = useState<number>(0);
   const [usefulnessRating, setUsefulnessRating] = useState<number>(0);
@@ -58,17 +77,62 @@ const EvaluationInterface: React.FC = () => {
     }
   };
 
+  // If Context7 mode is enabled, use the enhanced interface
+  if (useContext7Mode) {
+    return (
+      <Box>
+        {/* Mode Selector */}
+        <Paper elevation={1} sx={{ p: 2, mb: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <AssessmentIcon />
+              Evaluation Interface
+            </Typography>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={useContext7Mode}
+                  onChange={(e) => setUseContext7Mode(e.target.checked)}
+                  icon={<SpeedIcon />}
+                  checkedIcon={<ScienceIcon />}
+                />
+              }
+              label={useContext7Mode ? 'Context7 Standards' : 'Simple Mode'}
+            />
+          </Box>
+        </Paper>
+
+        <Context7EvaluationInterface searchResults={searchResults} />
+      </Box>
+    );
+  }
+
   return (
     <Box>
       {/* Header */}
       <Paper elevation={1} sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h4" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <AssessmentIcon />
-          Manual Evaluation Interface
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Manually evaluate search results to improve reranker performance and build evaluation datasets.
-        </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box>
+            <Typography variant="h4" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <AssessmentIcon />
+              Simple Evaluation Interface
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Quick evaluation mode for basic search result assessment.
+            </Typography>
+          </Box>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={useContext7Mode}
+                onChange={(e) => setUseContext7Mode(e.target.checked)}
+                icon={<SpeedIcon />}
+                checkedIcon={<ScienceIcon />}
+              />
+            }
+            label={useContext7Mode ? 'Context7 Standards' : 'Simple Mode'}
+          />
+        </Box>
       </Paper>
 
       <Grid container spacing={3}>

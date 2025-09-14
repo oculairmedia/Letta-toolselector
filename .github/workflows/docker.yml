@@ -133,6 +133,16 @@ jobs:
             REACT_APP_COMMIT_SHA=${{ github.sha }}
 
       # Build Dashboard Backend
+      - name: Verify dashboard backend files before build
+        if: matrix.service == 'dashboard-backend'
+        run: |
+          echo "Checking dashboard-backend files:"
+          ls -la dashboard-backend/
+          echo "Checking for missing_endpoints.py:"
+          cat dashboard-backend/missing_endpoints.py | head -10
+          echo "Checking main.py imports:"
+          grep -n "missing_endpoints" dashboard-backend/main.py || echo "missing_endpoints not found in main.py"
+
       - name: Build and push Dashboard Backend
         if: matrix.service == 'dashboard-backend'
         id: build-dashboard-backend
@@ -144,6 +154,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
+          no-cache: true  # Force complete rebuild to ensure API changes are included
           # Temporarily disable cache due to GitHub issues
           # cache-from: type=gha
           # cache-to: type=gha,mode=max

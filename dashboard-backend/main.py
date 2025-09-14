@@ -27,6 +27,7 @@ from api_server import app as existing_app
 from weaviate_tool_search_with_reranking import WeaviateToolSearch
 from safety import safety_check, SafetyLevel, verify_production_isolation, get_safety_status
 from search_endpoints import router as search_router
+from missing_endpoints import router as missing_endpoints_router
 from integration_layer import integration_layer
 from config_validation import validate_configuration, validate_yaml_config, ConfigValidationResponse
 from audit_logging import AuditLogger, AuditEventType, audit_logger
@@ -117,6 +118,9 @@ app.add_middleware(RequestAuditMiddleware, enabled=True)
 
 # Include search endpoints router
 app.include_router(search_router)
+
+# Include missing endpoints router for frontend compatibility
+app.include_router(missing_endpoints_router)
 
 # Global state for ML resources
 ml_resources: Dict[str, Any] = {}

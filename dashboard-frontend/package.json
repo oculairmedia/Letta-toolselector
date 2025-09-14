@@ -23,7 +23,8 @@
     "react-scripts": "5.0.1",
     "recharts": "^3.2.0",
     "typescript": "^4.9.5",
-    "web-vitals": "^2.1.4"
+    "web-vitals": "^2.1.4",
+    "@types/lodash": "^4.17.20"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -49,8 +50,5 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "http://localhost:8030",
-  "devDependencies": {
-    "@types/lodash": "^4.17.20"
-  }
+  "proxy": "http://localhost:8030"
 }

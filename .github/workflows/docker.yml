@@ -158,8 +158,16 @@ jobs:
         service: [mcp-server, api-server, sync-service, frontend, dashboard-backend]
     permissions:
       contents: read
+      packages: read  # Required to access container images
       security-events: write  # Required for SARIF upload
     steps:
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Sanitize branch name for Docker tag
         id: sanitize
         run: |
@@ -175,6 +183,9 @@ jobs:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ steps.sanitize.outputs.tag }}
           format: 'sarif'
           output: 'trivy-image-${{ matrix.service }}.sarif'
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check if SARIF file exists
         id: check-sarif
@@ -247,18 +258,21 @@ jobs:
     runs-on: ubuntu-latest
     needs: [deploy-staging, deploy-production]
     if: always() && (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Delete old container images
         uses: snok/container-retention-policy@v2
+        continue-on-error: true  # Don't fail the pipeline if cleanup fails
         with:
           image-names: |
-            oculairmedia/letta-toolselector-mcp-server
-            oculairmedia/letta-toolselector-api-server  
-            oculairmedia/letta-toolselector-sync-service
-            oculairmedia/letta-toolselector-frontend
-            oculairmedia/letta-toolselector-dashboard-backend
+            letta-toolselector-mcp-server
+            letta-toolselector-api-server
+            letta-toolselector-sync-service
+            letta-toolselector-frontend
+            letta-toolselector-dashboard-backend
           cut-off: 30 days ago UTC
-          account-type: org
-          org-name: ${{ github.repository_owner }}
+          account-type: personal  # Changed from 'org' to 'personal' as GitHub org packages have different permissions
           keep-at-least: 5
           token: ${{ secrets.GITHUB_TOKEN }}

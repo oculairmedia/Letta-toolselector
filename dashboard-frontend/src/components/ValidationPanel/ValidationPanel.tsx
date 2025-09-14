@@ -258,17 +258,17 @@ const ValidationPanel: React.FC<ValidationPanelProps> = ({
                         secondary={
                           <Box>
                             {result.errors.map((error, idx) => (
-                              <Alert key={idx} severity="error" size="small" sx={{ mt: 0.5 }}>
+                              <Alert key={idx} severity="error" sx={{ mt: 0.5 }}>
                                 {error}
                               </Alert>
                             ))}
                             {result.warnings.map((warning, idx) => (
-                              <Alert key={idx} severity="warning" size="small" sx={{ mt: 0.5 }}>
+                              <Alert key={idx} severity="warning" sx={{ mt: 0.5 }}>
                                 {warning}
                               </Alert>
                             ))}
                             {result.suggestions.map((suggestion, idx) => (
-                              <Alert key={idx} severity="info" size="small" sx={{ mt: 0.5 }}>
+                              <Alert key={idx} severity="info" sx={{ mt: 0.5 }}>
                                 {suggestion}
                               </Alert>
                             ))}

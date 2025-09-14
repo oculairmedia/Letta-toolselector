@@ -203,7 +203,7 @@ const ValidatedTextField: React.FC<ValidatedTextFieldProps> = ({
 
     if (hasErrors) {
       messages.push(...validationResult!.errors.map(error => (
-        <Alert key={error} severity="error" size="small" sx={{ mt: 0.5, mb: 0.5 }}>
+        <Alert key={error} severity="error" sx={{ mt: 0.5, mb: 0.5 }}>
           {error}
         </Alert>
       )));
@@ -211,7 +211,7 @@ const ValidatedTextField: React.FC<ValidatedTextFieldProps> = ({
 
     if (hasWarnings) {
       messages.push(...validationResult!.warnings.map(warning => (
-        <Alert key={warning} severity="warning" size="small" sx={{ mt: 0.5, mb: 0.5 }}>
+        <Alert key={warning} severity="warning" sx={{ mt: 0.5, mb: 0.5 }}>
           {warning}
         </Alert>
       )));
@@ -219,7 +219,7 @@ const ValidatedTextField: React.FC<ValidatedTextFieldProps> = ({
 
     if (hasInfo) {
       messages.push(...validationResult!.suggestions.map(suggestion => (
-        <Alert key={suggestion} severity="info" size="small" sx={{ mt: 0.5, mb: 0.5 }}>
+        <Alert key={suggestion} severity="info" sx={{ mt: 0.5, mb: 0.5 }}>
           {suggestion}
         </Alert>
       )));
@@ -229,14 +229,14 @@ const ValidatedTextField: React.FC<ValidatedTextFieldProps> = ({
     if (connectionResult) {
       if (connectionResult.available) {
         messages.push(
-          <Alert key="connection-success" severity="success" size="small" sx={{ mt: 0.5, mb: 0.5 }}>
+          <Alert key="connection-success" severity="success" sx={{ mt: 0.5, mb: 0.5 }}>
             Connection test successful
             {connectionResult.model && ` - Model: ${connectionResult.model}`}
           </Alert>
         );
       } else {
         messages.push(
-          <Alert key="connection-error" severity="error" size="small" sx={{ mt: 0.5, mb: 0.5 }}>
+          <Alert key="connection-error" severity="error" sx={{ mt: 0.5, mb: 0.5 }}>
             Connection failed: {connectionResult.error}
           </Alert>
         );
@@ -252,8 +252,8 @@ const ValidatedTextField: React.FC<ValidatedTextFieldProps> = ({
         {...textFieldProps}
         value={value}
         onChange={onChange}
-        error={hasErrors}
-        helperText={textFieldProps.helperText || getHelperContent()}
+        error={hasErrors || false}
+        helperText={getHelperContent()}
         InputProps={{
           ...textFieldProps.InputProps,
           endAdornment: (

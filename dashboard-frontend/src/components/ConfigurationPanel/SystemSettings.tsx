@@ -85,6 +85,17 @@ const SystemSettings: React.FC = () => {
     enableSafetyMode: true,
   });
 
+  // All hooks must be declared before useEffect
+  const { data: tools, isLoading: toolsLoading } = useTools();
+  const { data: healthData } = useHealthCheck();
+  const { data: embeddingConfig, isLoading: embeddingConfigLoading } = useEmbeddingConfig();
+  const { data: embeddingModels } = useEmbeddingModels();
+  const { data: toolSelectorConfig, isLoading: toolSelectorConfigLoading } = useToolSelectorConfig();
+  const refreshToolsMutation = useRefreshTools();
+  const updateEmbeddingConfigMutation = useUpdateEmbeddingConfig();
+  const startReembeddingMutation = useStartReembedding();
+  const updateToolSelectorConfigMutation = useUpdateToolSelectorConfig();
+
   // Update local state when API data loads
   React.useEffect(() => {
     if (toolSelectorConfig?.tool_limits && toolSelectorConfig?.behavior) {
@@ -105,23 +116,13 @@ const SystemSettings: React.FC = () => {
 
   // Update embedding provider state when API data loads
   React.useEffect(() => {
-    if (embeddingConfig?.data?.provider) {
-      setSelectedEmbeddingProvider(embeddingConfig.data.provider);
+    if (embeddingConfig?.provider) {
+      setSelectedEmbeddingProvider(embeddingConfig.provider);
     }
-    if (embeddingConfig?.data?.model) {
-      setSelectedEmbeddingModel(embeddingConfig.data.model);
+    if (embeddingConfig?.model) {
+      setSelectedEmbeddingModel(embeddingConfig.model);
     }
   }, [embeddingConfig]);
-
-  const { data: tools, isLoading: toolsLoading } = useTools();
-  const { data: healthData } = useHealthCheck();
-  const { data: embeddingConfig, isLoading: embeddingConfigLoading } = useEmbeddingConfig();
-  const { data: embeddingModels } = useEmbeddingModels();
-  const { data: toolSelectorConfig, isLoading: toolSelectorConfigLoading } = useToolSelectorConfig();
-  const refreshToolsMutation = useRefreshTools();
-  const updateEmbeddingConfigMutation = useUpdateEmbeddingConfig();
-  const startReembeddingMutation = useStartReembedding();
-  const updateToolSelectorConfigMutation = useUpdateToolSelectorConfig();
 
   const handleRefreshTools = () => {
     refreshToolsMutation.mutate();
@@ -793,11 +794,11 @@ const SystemSettings: React.FC = () => {
                       <Typography variant="body1" gutterBottom>
                         {embeddingConfigLoading
                           ? 'Loading...'
-                          : embeddingConfig?.data
-                            ? `${embeddingConfig.data.provider}: ${embeddingConfig.data.model}`
+                          : embeddingConfig
+                            ? `${embeddingConfig.provider}: ${embeddingConfig.model}`
                             : 'Not configured'}
                       </Typography>
-                      {embeddingConfig?.data && (
+                      {embeddingConfig && (
                         <Box mt={2}>
                           <EmbeddingHealthIndicator compact={true} autoRefresh={true} />
                         </Box>
@@ -820,7 +821,7 @@ const SystemSettings: React.FC = () => {
                         <MenuItem value="">
                           <em>Select Model</em>
                         </MenuItem>
-                        {embeddingModels
+                        {embeddingModels?.models
                           ?.filter((model: any) => model.provider === selectedEmbeddingProvider)
                           .map((model: any) => (
                             <MenuItem key={model.id} value={model.id}>
@@ -850,7 +851,7 @@ const SystemSettings: React.FC = () => {
                           Model Details
                         </Typography>
                         {(() => {
-                          const model = embeddingModels.find((m: any) => m.id === selectedEmbeddingModel);
+                          const model = embeddingModels?.models?.find((m: any) => m.id === selectedEmbeddingModel);
                           if (!model) return <Typography>Model not found</Typography>;
                           return (
                             <Box>
@@ -976,8 +977,8 @@ const SystemSettings: React.FC = () => {
                 </Grid>
 
                 {/* Warning for configuration changes */}
-                {(selectedEmbeddingProvider !== embeddingConfig?.data?.provider ||
-                  selectedEmbeddingModel !== embeddingConfig?.data?.model) &&
+                {(selectedEmbeddingProvider !== embeddingConfig?.provider ||
+                  selectedEmbeddingModel !== embeddingConfig?.model) &&
                   selectedEmbeddingProvider && selectedEmbeddingModel && (
                     <Grid item xs={12}>
                       <Alert severity="warning">
@@ -1019,8 +1020,8 @@ const SystemSettings: React.FC = () => {
                     secondary={
                       embeddingConfigLoading
                         ? 'Loading...'
-                        : embeddingConfig?.data
-                          ? `${embeddingConfig.data.provider}: ${embeddingConfig.data.model}`
+                        : embeddingConfig
+                          ? `${embeddingConfig.provider}: ${embeddingConfig.model}`
                           : 'Not configured'
                     }
                   />

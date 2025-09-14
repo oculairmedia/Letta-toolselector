@@ -21,6 +21,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  CircularProgress,
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
@@ -359,7 +360,7 @@ const ComponentStatus: React.FC = () => {
                   </Box>
 
                   {component.error_message && (
-                    <Alert severity="error" size="small" sx={{ mb: 1 }}>
+                    <Alert severity="error" sx={{ mb: 1 }}>
                       {component.error_message}
                     </Alert>
                   )}
@@ -375,8 +376,8 @@ const ComponentStatus: React.FC = () => {
                           <LinearProgress
                             variant="determinate"
                             value={component.memory_usage}
-                            size="small"
                             color={component.memory_usage > 80 ? 'warning' : 'primary'}
+                            sx={{ height: 6 }}
                           />
                         </Box>
                       )}
@@ -388,8 +389,8 @@ const ComponentStatus: React.FC = () => {
                           <LinearProgress
                             variant="determinate"
                             value={component.cpu_usage}
-                            size="small"
                             color={component.cpu_usage > 80 ? 'warning' : 'primary'}
+                            sx={{ height: 6 }}
                           />
                         </Box>
                       )}

@@ -49,5 +49,8 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "http://localhost:8030"
+  "proxy": "http://localhost:8030",
+  "devDependencies": {
+    "@types/lodash": "^4.17.20"
+  }
 }

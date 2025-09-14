@@ -669,6 +669,9 @@ class ApiService {
       exclude_letta_core_tools: boolean;
       exclude_official_tools: boolean;
       manage_only_mcp_tools: boolean;
+      enable_reranking?: boolean;
+      enable_llm_enhancement?: boolean;
+      enable_safety_mode?: boolean;
     };
     scoring: {
       min_score_default: number;

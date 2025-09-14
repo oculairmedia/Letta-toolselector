@@ -253,18 +253,18 @@ jobs:
           echo "- **Registry**: ${{ env.REGISTRY }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Frontend URL**: http://192.168.50.90:8406" >> $GITHUB_STEP_SUMMARY
 
-  # Job 5: Cleanup old images
+  # Job 5: Cleanup old images (disabled due to GitHub API limitations)
   cleanup:
     runs-on: ubuntu-latest
     needs: [deploy-staging, deploy-production]
-    if: always() && (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+    if: false  # Temporarily disabled - GitHub Container Registry cleanup requires special permissions
     permissions:
       contents: read
       packages: write
     steps:
       - name: Delete old container images
         uses: snok/container-retention-policy@v2
-        continue-on-error: true  # Don't fail the pipeline if cleanup fails
+        continue-on-error: true
         with:
           image-names: |
             letta-toolselector-mcp-server
@@ -273,6 +273,13 @@ jobs:
             letta-toolselector-frontend
             letta-toolselector-dashboard-backend
           cut-off: 30 days ago UTC
-          account-type: personal  # Changed from 'org' to 'personal' as GitHub org packages have different permissions
+          account-type: org
+          org-name: ${{ github.repository_owner }}
           keep-at-least: 5
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup disabled notice
+        run: |
+          echo "🧹 Container cleanup is temporarily disabled"
+          echo "Manual cleanup may be required for old container images"
+          echo "This prevents build failures while maintaining successful deployments"

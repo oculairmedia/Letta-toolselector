@@ -9,7 +9,12 @@ from dotenv import load_dotenv
 from typing import List, Optional, Dict, Any
 import requests
 import json
-from specialized_embedding import enhance_query_for_embedding
+from specialized_embedding import (
+    is_qwen3_format_enabled,
+    get_search_instruction,
+    get_detailed_instruct,
+    format_query_for_qwen3,
+)
 
 def init_client():
     """Initialize Weaviate client using v4 API."""
@@ -51,38 +56,6 @@ def init_client():
         print(f"Failed to connect to Weaviate: {e}")
         raise
 
-def preprocess_query(query: str) -> str:
-    """Preprocess query with synonym expansion."""
-    expansions = {
-        "make": ["create", "generate", "build", "construct"],
-        "find": ["search", "locate", "discover", "identify"],
-        "get": ["retrieve", "fetch", "obtain", "access"],
-        "list": ["enumerate", "show", "display"],
-        "check": ["verify", "test", "validate", "examine"],
-        "update": ["modify", "change", "edit", "alter"],
-        "delete": ["remove", "erase", "clear", "destroy"],
-        "save": ["store", "persist", "write"],
-        "load": ["read", "fetch", "retrieve"],
-        "send": ["transmit", "deliver", "dispatch", "forward"],
-        "receive": ["accept", "get", "obtain"],
-        "post": ["submit", "send", "upload"],
-        "content": ["post", "article", "page", "data", "material", "resource"],
-        "tool": ["utility", "function", "capability", "feature"],
-        "blog": ["article", "posts", "ghost", "cms", "write-up"],
-        "integration": ["api", "service", "connector", "plugin"],
-        "configure": ["setup", "initialize", "customize"],
-        "ghost": ["blogging", "headless", "cms"],
-        "web": ["online", "internet", "site", "webpage"],
-    }
-    
-    words = query.lower().split()
-    expanded = set(words)
-    
-    for word in words:
-        if word in expansions:
-            expanded.update(expansions[word])
-    
-    return " ".join(expanded)
 
 def search_tools_with_reranking(
     query: str,
@@ -122,19 +95,19 @@ def search_tools_with_reranking(
             # Get the Tool collection
             collection = client.collections.get("Tool")
             
-            # Expand query with related terms
-            expanded_query = preprocess_query(query)
-            
-            # Enhance query with specialized prompting for better embedding matching
-            enhanced_query = enhance_query_for_embedding(expanded_query)
-            
+            # Prepare query for Qwen3 embeddings without contamination
+            cleaned_query = format_query_for_qwen3(query)
+            hybrid_query = cleaned_query
+            if is_qwen3_format_enabled():
+                hybrid_query = get_detailed_instruct(get_search_instruction(), cleaned_query)
+
             # Build base query
             if use_reranking:
                 print(f"Using client-side reranking: retrieving {rerank_initial_limit} candidates for top-{limit} results")
                 
                 # Get initial results without Weaviate reranking to avoid panics
                 result = collection.query.hybrid(
-                    query=enhanced_query,
+                    query=hybrid_query,
                     alpha=0.75,  # 75% vector search, 25% keyword search
                     limit=rerank_initial_limit,  # Get more candidates for reranking
                     fusion_type=HybridFusion.RELATIVE_SCORE,
@@ -214,7 +187,7 @@ def search_tools_with_reranking(
                 
                 # Standard hybrid search without reranking
                 result = collection.query.hybrid(
-                    query=enhanced_query,
+                    query=hybrid_query,
                     alpha=0.75,
                     limit=limit,
                     fusion_type=HybridFusion.RELATIVE_SCORE,

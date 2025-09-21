@@ -32,7 +32,22 @@ from embedding_config import (
     OLLAMA_EMBEDDING_MODEL, OLLAMA_EMBEDDING_DIMENSION, OLLAMA_BASE_URL
 )
 
+from specialized_embedding import (
+    is_qwen3_format_enabled,
+    get_search_instruction,
+    format_query_for_qwen3,
+    get_detailed_instruct,
+    QWEN3_LAST_TOKEN_POOLING,
+)
+
 logger = logging.getLogger(__name__)
+
+
+def _bool_from_env(value: Optional[str], default: bool) -> bool:
+    """Convert environment string flags to boolean values."""
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass
@@ -189,7 +204,11 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
         except Exception as e:
             logger.warning(f"Could not check Ollama model availability: {e}")
             return True  # Assume available and let embedding call fail if not
-    
+
+    def _build_extra_body(self) -> Optional[Dict[str, Any]]:
+        """Hook for subclasses to provide provider-specific request options."""
+        return None
+
     async def get_embeddings(self, texts: List[str]) -> EmbeddingResult:
         """Get embeddings using Ollama's OpenAI-compatible API."""
         try:
@@ -198,11 +217,16 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
                 logger.warning(f"Model {self.model} might not be available in Ollama")
             
             # Use OpenAI-compatible client
+            extra_body = self._build_extra_body()
+            request_kwargs = {}
+            if extra_body:
+                request_kwargs['extra_body'] = extra_body
             response = await self.client.embeddings.create(
                 model=self.model,
-                input=texts
+                input=texts,
+                **request_kwargs
             )
-            
+
             embeddings = [item.embedding for item in response.data]
             
             # Validate dimensions match expectation
@@ -237,13 +261,75 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
         await super().close()
 
 
+class Qwen3EmbeddingProvider(OllamaEmbeddingProvider):
+    """Qwen3-specific embedding provider with proper instruction formatting."""
+
+    def __init__(
+        self,
+        model: str = OLLAMA_EMBEDDING_MODEL,
+        dimensions: int = OLLAMA_EMBEDDING_DIMENSION,
+        base_url: str = OLLAMA_BASE_URL,
+        timeout: int = 120,
+        pooling_strategy: Optional[str] = None,
+        use_instruction_format: bool = True,
+        use_last_token_pooling: bool = QWEN3_LAST_TOKEN_POOLING,
+    ):
+        super().__init__(model=model, dimensions=dimensions, base_url=base_url, timeout=timeout)
+        env_pooling = os.getenv('QWEN3_POOLING_STRATEGY')
+        self.pooling_strategy = pooling_strategy or env_pooling or 'last_token'
+        self.use_instruction_format = _bool_from_env(os.getenv('QWEN3_USE_INSTRUCTION_FORMAT'), use_instruction_format)
+        self.use_last_token_pooling = _bool_from_env(os.getenv('QWEN3_LAST_TOKEN_POOLING'), use_last_token_pooling)
+        self.default_task_description = get_search_instruction()
+
+    @property
+    def provider_name(self) -> str:
+        return 'qwen3'
+
+    def _build_extra_body(self) -> Optional[Dict[str, Any]]:
+        if not self.use_last_token_pooling or not self.pooling_strategy:
+            return None
+        return {
+            'options': {'pooling': self.pooling_strategy},
+            'pooling': self.pooling_strategy
+        }
+
+    def _format_with_instruction(self, text: str, task_description: str) -> str:
+        if text and text.lstrip().lower().startswith('instruct:'):
+            return text
+        cleaned = format_query_for_qwen3(text)
+        return get_detailed_instruct(task_description, cleaned)
+
+    async def get_embeddings_with_instructions(
+        self,
+        texts: List[str],
+        task_description: Optional[str] = None
+    ) -> EmbeddingResult:
+        if not self.use_instruction_format:
+            return await self.get_embeddings(texts)
+        instruction = task_description or self.default_task_description
+        formatted_texts = [self._format_with_instruction(text, instruction) for text in texts]
+        return await super().get_embeddings(formatted_texts)
+
+    async def get_single_embedding(
+        self,
+        text: str,
+        task_description: Optional[str] = None
+    ) -> List[float]:
+        if self.use_instruction_format and task_description is not None:
+            result = await self.get_embeddings_with_instructions([text], task_description=task_description)
+            return result.embeddings[0] if result.embeddings else []
+        result = await super().get_embeddings([text])
+        return result.embeddings[0] if result.embeddings else []
+
+
 class EmbeddingProviderFactory:
     """Factory for creating embedding providers."""
     
     # Registry of available providers
     _providers = {
         'openai': OpenAIEmbeddingProvider,
-        'ollama': OllamaEmbeddingProvider
+        'ollama': OllamaEmbeddingProvider,
+        'qwen3': Qwen3EmbeddingProvider,
     }
     
     # Default configurations for each provider
@@ -256,6 +342,14 @@ class EmbeddingProviderFactory:
             'model': OLLAMA_EMBEDDING_MODEL,  # Graphiti-compatible Qwen3-Embedding-4B model
             'dimensions': OLLAMA_EMBEDDING_DIMENSION,  # 2560 dimensions for Qwen3-Embedding-4B
             'base_url': OLLAMA_BASE_URL
+        },
+        'qwen3': {
+            'model': OLLAMA_EMBEDDING_MODEL,
+            'dimensions': OLLAMA_EMBEDDING_DIMENSION,
+            'base_url': OLLAMA_BASE_URL,
+            'pooling_strategy': os.getenv('QWEN3_POOLING_STRATEGY', 'last_token'),
+            'use_instruction_format': True,
+            'use_last_token_pooling': QWEN3_LAST_TOKEN_POOLING,
         }
     }
     
@@ -289,9 +383,12 @@ class EmbeddingProviderFactory:
     def create_from_env(cls) -> EmbeddingProvider:
         """Create embedding provider based on environment variables."""
         provider_name = os.getenv('EMBEDDING_PROVIDER', 'openai').lower()
-        
+
+        if provider_name == 'ollama' and is_qwen3_format_enabled():
+            provider_name = 'qwen3'
+
         config_overrides = {}
-        
+
         if provider_name == 'openai':
             if os.getenv('OPENAI_API_KEY'):
                 config_overrides['api_key'] = os.getenv('OPENAI_API_KEY')
@@ -299,8 +396,8 @@ class EmbeddingProviderFactory:
                 config_overrides['base_url'] = os.getenv('OPENAI_BASE_URL')
             if os.getenv('OPENAI_EMBEDDING_MODEL'):
                 config_overrides['model'] = os.getenv('OPENAI_EMBEDDING_MODEL')
-        
-        elif provider_name == 'ollama':
+
+        elif provider_name in {'ollama', 'qwen3'}:
             if os.getenv('OLLAMA_EMBEDDING_HOST'):
                 # Support Graphiti's OLLAMA_EMBEDDING_HOST variable
                 host = os.getenv('OLLAMA_EMBEDDING_HOST')
@@ -315,6 +412,17 @@ class EmbeddingProviderFactory:
                 config_overrides['dimensions'] = int(os.getenv('EMBEDDING_DIMENSION'))
             elif os.getenv('OLLAMA_EMBEDDING_DIMENSIONS'):
                 config_overrides['dimensions'] = int(os.getenv('OLLAMA_EMBEDDING_DIMENSIONS'))
+            if provider_name == 'qwen3':
+                if os.getenv('QWEN3_POOLING_STRATEGY'):
+                    config_overrides['pooling_strategy'] = os.getenv('QWEN3_POOLING_STRATEGY')
+                if os.getenv('QWEN3_USE_INSTRUCTION_FORMAT'):
+                    config_overrides['use_instruction_format'] = _bool_from_env(
+                        os.getenv('QWEN3_USE_INSTRUCTION_FORMAT'), True
+                    )
+                if os.getenv('QWEN3_LAST_TOKEN_POOLING'):
+                    config_overrides['use_last_token_pooling'] = _bool_from_env(
+                        os.getenv('QWEN3_LAST_TOKEN_POOLING'), QWEN3_LAST_TOKEN_POOLING
+                    )
         
         return cls.create(provider_name, **config_overrides)
     

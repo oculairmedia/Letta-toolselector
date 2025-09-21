@@ -5,7 +5,7 @@ This document explains how embeddings are created, stored, queried, and consumed
 ## High-level overview
 - Vector DB: Weaviate (v4 client) hosts a Tool collection with text fields vectorized by OpenAI’s text embedding models.
 - Ingestion: Tools are inserted into Weaviate; the configured vectorizer automatically generates and stores embeddings for selected properties.
-- Query: Searches use Weaviate’s hybrid search (vector + keyword) with query expansion. Scores are returned per result.
+- Query: Searches use Weaviate’s hybrid search (vector + keyword) with Qwen3 instruction formatting (no synonym padding). Scores are returned per result.
 - Embedding retrieval: Utility functions fetch stored vectors or compute ad-hoc embeddings for a text via Weaviate or via a direct OpenAI fallback.
 - API surface: The Quart API exposes the search and attachment workflow; it imports embedding helpers and uses similarity utilities.
 - Agent-level config: Separate from Weaviate usage, when creating agents, the project configures the agent’s own embedding provider/model (Google AI text-embedding-004) — this is for the agent platform and is independent of the Weaviate store.
@@ -58,6 +58,10 @@ Implications:
 ### Environment requirements
 - OPENAI_API_KEY must be set (used by Weaviate vectorizer via header X-OpenAI-Api-Key and by direct OpenAI fallback calls).
 - WEAVIATE_HTTP_HOST/PORT and WEAVIATE_GRPC_HOST/PORT can override defaults (defaults often set to "weaviate" inside Docker; localhost for local tests).
+- USE_QWEN3_FORMAT controls whether the new instruction formatting is applied (default: true).
+- QWEN3_LAST_TOKEN_POOLING toggles the pooling strategy sent to Ollama’s embedding endpoint (default: true).
+- QWEN3_POOLING_STRATEGY can override the pooling label sent to Ollama (default: "last_token").
+- QWEN3_USE_INSTRUCTION_FORMAT allows disabling instruction wrapping while still using the Qwen3 provider (default: true).
 
 ## Ingestion workflow (embeddings at write time)
 File: lettaaugment-source/upload_tools_to_weaviate.py
@@ -72,18 +76,21 @@ File: lettaaugment-source/upload_tools_to_weaviate.py
 ## Query workflow (embeddings at read time)
 File: lettaaugment-source/weaviate_tool_search.py
 
-- preprocess_query(): expands the user query with domain synonyms to improve recall.
+- format_query_for_qwen3(): trims whitespace/punctuation and removes filler that can pollute last-token pooling.
+- enhance_query_for_embedding(): produces the Qwen3 instruction block ("Instruct: ...
+Query: ...") when Qwen3 formatting is enabled, otherwise falls back to the legacy templates.
 - search_tools(query, limit):
+  - Cleans the raw query and, when Qwen3 mode is active, sends the instruction-formatted string to Weaviate’s hybrid search.
   - client.collections.get("Tool").query.hybrid(
-    - query: expanded query
+    - query: instruction-formatted or raw query
     - alpha: 0.75 (75% vector, 25% keyword)
-    - query_properties: ["name^2", "description^1.5", "tags"]
+    - query_properties: ["name^2", "enhanced_description^2", "description^1.5", "tags"]
     - return_metadata: MetadataQuery(score=True)
   )
   - Post-processes results to attach distance = 1 - score for compatibility.
 
 Why hybrid search?
-- Hybrid search blends vector similarity with keyword matching; this is often helpful when data contains structured language (names, tags) but still benefits from semantic retrieval.
+- Hybrid search blends vector similarity with keyword matching while allowing us to rely on the instruction-formatted text for the vector component.
 
 ### Embeddings for arbitrary text (ad-hoc vectorization)
 - get_embedding_for_text(text):

@@ -14,7 +14,15 @@ import asyncio
 # Add the lettaaugment-source directory to the path
 sys.path.append('/opt/stacks/lettatoolsselector/lettaaugment-source')
 
-from specialized_embedding import enhance_tool_for_embedding, enhance_query_for_embedding
+os.environ.setdefault('USE_QWEN3_FORMAT', 'true')
+
+from specialized_embedding import (
+    enhance_tool_for_embedding,
+    enhance_query_for_embedding,
+    format_query_for_qwen3,
+    get_detailed_instruct,
+    get_search_instruction,
+)
 from embedding_providers import EmbeddingProviderFactory
 
 
@@ -69,24 +77,27 @@ async def test_specialized_embedding_integration():
         
         print(f"Original: {tool_desc}")
         print(f"Enhanced: {enhanced_desc[:100]}...")
-        
+
+        assert enhanced_desc == tool_desc.strip(), "Tool description should remain unchanged with Qwen3 preparation"
+
         # Generate embeddings for both
         original_embedding = await provider.get_single_embedding(tool_desc)
         enhanced_embedding = await provider.get_single_embedding(enhanced_desc)
-        
+
         if original_embedding and enhanced_embedding:
             print(f"✅ Both embeddings generated successfully")
-            
-            # Check if they're different
-            if original_embedding != enhanced_embedding:
-                print("✅ Enhanced embedding is different from original")
-            else:
-                print("⚠️ Enhanced embedding is identical to original")
-                
+            embeddings_identical = original_embedding == enhanced_embedding
+            print(f"Embeddings identical: {'✅' if embeddings_identical else '❌'}")
+
             # Test query enhancement
             query = "find GitHub tools"
             enhanced_query = enhance_query_for_embedding(query)
-            
+            expected_query = get_detailed_instruct(
+                get_search_instruction(),
+                format_query_for_qwen3(query)
+            )
+            assert enhanced_query.strip() == expected_query.strip(), "Query should follow Qwen3 instruction format"
+
             query_embedding = await provider.get_single_embedding(enhanced_query)
             if query_embedding:
                 print("✅ Query embedding generated successfully")

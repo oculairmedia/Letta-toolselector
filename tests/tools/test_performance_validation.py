@@ -16,10 +16,16 @@ from dataclasses import dataclass
 # Add the lettaaugment-source directory to the path
 sys.path.append('/opt/stacks/lettatoolsselector/lettaaugment-source')
 
+os.environ.setdefault('USE_QWEN3_FORMAT', 'true')
+
 from specialized_embedding import (
-    SpecializedEmbeddingPrompter, 
-    enhance_query_for_embedding, 
-    enhance_tool_for_embedding
+    SpecializedEmbeddingPrompter,
+    enhance_query_for_embedding,
+    enhance_tool_for_embedding,
+    format_query_for_qwen3,
+    get_detailed_instruct,
+    get_search_instruction,
+    is_qwen3_format_enabled,
 )
 
 
@@ -137,60 +143,53 @@ class PerformanceValidator:
         """Test the quality of prompt enhancement."""
         print("🎯 Testing Prompt Enhancement Quality")
         print("=" * 50)
-        
+
         start_time = time.time()
-        improvements = {}
-        
         total_queries = len(self.test_queries)
-        enhanced_queries = 0
-        
+        formatted_correctly = 0
+
         for test_query in self.test_queries:
             original = test_query.query
             enhanced = enhance_query_for_embedding(original, test_query.context)
-            
-            # Measure enhancement quality
-            original_word_count = len(original.split())
-            enhanced_word_count = len(enhanced.split())
-            
-            # Check if enhanced version includes expected keywords
-            expected_found = sum(1 for keyword in test_query.expected_keywords 
-                               if keyword.lower() in enhanced.lower())
-            expected_ratio = expected_found / len(test_query.expected_keywords) if test_query.expected_keywords else 0
-            
-            if enhanced != original and expected_ratio > 0.5:
-                enhanced_queries += 1
-            
+            expected = get_detailed_instruct(
+                get_search_instruction(),
+                format_query_for_qwen3(original)
+            )
+
             print(f"Query: {original}")
-            print(f"Enhanced: {enhanced[:100]}...")
-            print(f"Expected keywords found: {expected_found}/{len(test_query.expected_keywords)}")
+            print(f"Enhanced: {enhanced}")
+            print(f"Expected: {expected}")
             print()
-        
-        improvements['query_enhancement_rate'] = enhanced_queries / total_queries
-        improvements['avg_word_expansion'] = enhanced_word_count / original_word_count if original_word_count > 0 else 1
-        
+
+            if enhanced.strip() == expected.strip():
+                formatted_correctly += 1
+
+        instruction_rate = formatted_correctly / total_queries if total_queries else 0.0
+        improvements = {
+            'instruction_format_rate': instruction_rate,
+            'qwen3_format_enabled': 1.0 if is_qwen3_format_enabled() else 0.0,
+        }
+
         execution_time = (time.time() - start_time) * 1000
-        
+
         return PerformanceResult(
             test_name="Prompt Enhancement Quality",
             original_prompt="Original queries",
-            enhanced_prompt="Enhanced queries with instructions",
+            enhanced_prompt="Qwen3-formatted queries",
             improvement_metrics=improvements,
             execution_time_ms=execution_time,
-            success=improvements['query_enhancement_rate'] > 0.8
+            success=instruction_rate == 1.0
         )
-    
+
     def test_tool_description_enhancement(self) -> PerformanceResult:
-        """Test tool description enhancement effectiveness."""
-        print("🛠️ Testing Tool Description Enhancement")
+        """Test tool description preparation effectiveness."""
+        print("🛠️ Testing Tool Description Preparation")
         print("=" * 50)
-        
+
         start_time = time.time()
-        improvements = {}
-        
         total_tools = len(self.test_tools)
-        enhanced_tools = 0
-        total_length_increase = 0
-        
+        unchanged_descriptions = 0
+
         for tool in self.test_tools:
             original_desc = tool["description"]
             enhanced_desc = enhance_tool_for_embedding(
@@ -199,36 +198,31 @@ class PerformanceValidator:
                 tool_type=tool["tool_type"],
                 tool_source=tool["source_type"]
             )
-            
-            # Measure enhancement
-            original_length = len(original_desc)
-            enhanced_length = len(enhanced_desc)
-            length_increase = enhanced_length - original_length
-            total_length_increase += length_increase
-            
-            if enhanced_desc != original_desc and length_increase > 50:
-                enhanced_tools += 1
-            
+
             print(f"Tool: {tool['name']} ({tool['tool_type']})")
             print(f"Original: {original_desc}")
-            print(f"Enhanced: {enhanced_desc[:100]}...")
-            print(f"Length increase: {length_increase} chars")
+            print(f"Prepared: {enhanced_desc}")
             print()
-        
-        improvements['tool_enhancement_rate'] = enhanced_tools / total_tools
-        improvements['avg_length_increase'] = total_length_increase / total_tools
-        
+
+            if enhanced_desc == original_desc.strip():
+                unchanged_descriptions += 1
+
+        unchanged_rate = unchanged_descriptions / total_tools if total_tools else 0.0
+        improvements = {
+            'unchanged_description_rate': unchanged_rate,
+        }
+
         execution_time = (time.time() - start_time) * 1000
-        
+
         return PerformanceResult(
-            test_name="Tool Description Enhancement",
+            test_name="Tool Description Preparation",
             original_prompt="Original tool descriptions",
-            enhanced_prompt="Enhanced descriptions with context",
+            enhanced_prompt="Prepared descriptions",
             improvement_metrics=improvements,
             execution_time_ms=execution_time,
-            success=improvements['tool_enhancement_rate'] > 0.8
+            success=unchanged_rate == 1.0
         )
-    
+
     def test_prompt_type_detection_accuracy(self) -> PerformanceResult:
         """Test accuracy of prompt type detection."""
         print("🔍 Testing Prompt Type Detection Accuracy")

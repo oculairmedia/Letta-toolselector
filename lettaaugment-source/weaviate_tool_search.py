@@ -5,7 +5,12 @@ from dotenv import load_dotenv
 from typing import List
 import requests
 import json
-from specialized_embedding import enhance_query_for_embedding
+from specialized_embedding import (
+    is_qwen3_format_enabled,
+    get_search_instruction,
+    get_detailed_instruct,
+    format_query_for_qwen3,
+)
 
 def init_client():
     """Initialize Weaviate client using v4 API."""
@@ -63,37 +68,6 @@ def init_client():
 
     return client
 
-def preprocess_query(query: str) -> str:
-    """
-    Expand query with common synonyms and related terms for more robust matching.
-    Add or modify expansions as needed to capture domain-specific language.
-    """
-    expansions = {
-        "create": ["add", "new", "publish", "post", "initiate", "build"],
-        "post": ["publish", "entry", "article"],
-        "list": ["get", "fetch", "show", "display", "view", "enumerate"],
-        "delete": ["remove", "destroy", "clear", "erase", "purge"],
-        "update": ["edit", "modify", "change", "revise", "upgrade"],
-        "search": ["find", "query", "lookup", "locate", "explore"],
-        "manage": ["organize", "handle", "control", "track", "administer"],
-        "api": ["integration", "service", "endpoint", "connection"],
-        "content": ["post", "article", "page", "data", "material", "resource"],
-        "tool": ["utility", "function", "capability", "feature"],
-        "blog": ["article", "posts", "ghost", "cms", "write-up"],
-        "integration": ["api", "service", "connector", "plugin"],
-        "configure": ["setup", "initialize", "customize"],
-        "ghost": ["blogging", "headless", "cms"],
-        "web": ["online", "internet", "site", "webpage"],
-    }
-    
-    words = query.lower().split()
-    expanded = set(words)
-    
-    for word in words:
-        if word in expansions:
-            expanded.update(expansions[word])
-    
-    return " ".join(expanded)
 
 def search_tools(query: str, limit: int = 10) -> list:
     """
@@ -110,16 +84,15 @@ def search_tools(query: str, limit: int = 10) -> list:
             # Get the Tool collection
             collection = client.collections.get("Tool")
             
-            # Expand query with related terms
-            expanded_query = preprocess_query(query)
-            
-            # Enhance query with specialized prompting for better embedding matching
-            enhanced_query = enhance_query_for_embedding(expanded_query)
-            
+            # Prepare query for Qwen3 embeddings without introducing filler text
+            cleaned_query = format_query_for_qwen3(query)
+            hybrid_query = cleaned_query
+            if is_qwen3_format_enabled():
+                hybrid_query = get_detailed_instruct(get_search_instruction(), cleaned_query)
+
             # Use hybrid search with Weaviate's native Ollama vectorization
-            # This will automatically generate embeddings using the same model used for indexing
             result = collection.query.hybrid(
-                query=enhanced_query,
+                query=hybrid_query,
                 alpha=0.75,  # 75% vector search, 25% keyword search
                 limit=limit,
                 fusion_type=HybridFusion.RELATIVE_SCORE,
@@ -172,10 +145,17 @@ def _get_embedding_direct_provider(text: str) -> List[float]:
         async def get_embedding_async():
             provider = EmbeddingProviderFactory.create_from_env()
             try:
+                if is_qwen3_format_enabled() and hasattr(provider, 'get_embeddings_with_instructions'):
+                    result = await provider.get_embeddings_with_instructions(
+                        [text],
+                        task_description=get_search_instruction()
+                    )
+                    if result.embeddings:
+                        return result.embeddings[0]
                 return await provider.get_single_embedding(text)
             finally:
                 await provider.close()
-        
+
         embedding = asyncio.run(get_embedding_async())
         if embedding:
             print(f"✅ Unified provider embedding successful, length: {len(embedding)}")
@@ -203,8 +183,16 @@ def get_embedding_for_text(text: str, enhance_prompt: bool = True) -> list:
     try:
         client = init_client()
         
-        # Optionally enhance the text with specialized prompting for better embeddings
-        embedding_text = enhance_query_for_embedding(text) if enhance_prompt else text
+        # Optionally apply Qwen3 formatting without adding filler text
+        if enhance_prompt and is_qwen3_format_enabled():
+            embedding_text = get_detailed_instruct(
+                get_search_instruction(),
+                format_query_for_qwen3(text)
+            )
+        elif enhance_prompt:
+            embedding_text = format_query_for_qwen3(text)
+        else:
+            embedding_text = text
         
         # Use GraphQL to get vector representation of the text
         # This leverages the text2vec-ollama vectorizer configured for the Tool collection

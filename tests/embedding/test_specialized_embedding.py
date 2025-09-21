@@ -9,7 +9,14 @@ import os
 # Add the lettaaugment-source directory to the path
 sys.path.append('/opt/stacks/lettatoolsselector/lettaaugment-source')
 
-from specialized_embedding import SpecializedEmbeddingPrompter, enhance_query_for_embedding, enhance_tool_for_embedding
+os.environ.setdefault('USE_QWEN3_FORMAT', 'true')
+
+from specialized_embedding import (
+    SpecializedEmbeddingPrompter,
+    enhance_query_for_embedding,
+    enhance_tool_for_embedding,
+    format_query_for_qwen3,
+)
 from weaviate_tool_search import search_tools, get_embedding_for_text
 
 
@@ -30,16 +37,22 @@ def test_prompt_enhancement():
     print(f"Original: {tool_desc}")
     print(f"Enhanced: {enhanced_tool}")
     print()
-    
+
+    assert enhanced_tool == tool_desc.strip(), "Tool description should remain unchanged for Qwen3 format"
+
     # Test query enhancement
     query = "find tools to create blog posts"
     enhanced_query = enhance_query_for_embedding(query)
-    
+
     print("🔍 Query Enhancement:")
     print(f"Original: {query}")
     print(f"Enhanced: {enhanced_query}")
     print()
-    
+
+    expected_query_line = f"Query: {format_query_for_qwen3(query)}"
+    assert enhanced_query.startswith("Instruct:"), "Enhanced query should start with instruction prefix"
+    assert expected_query_line in enhanced_query.splitlines(), "Enhanced query should include cleaned query line"
+
     return True
 
 

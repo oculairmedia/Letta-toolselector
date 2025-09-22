@@ -5,8 +5,64 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+const DEFAULT_LIMIT = 10;
+const DEFAULT_MIN_SCORE = 50;
+const MAX_LIMIT = Number.isFinite(Number(process.env.FIND_TOOLS_MAX_LIMIT))
+    ? Math.max(1, Math.floor(Number(process.env.FIND_TOOLS_MAX_LIMIT)))
+    : 25;
+const PROCESS_TIMEOUT_MS = Number.isFinite(Number(process.env.FIND_TOOLS_PROCESS_TIMEOUT))
+    ? Math.max(5000, Math.floor(Number(process.env.FIND_TOOLS_PROCESS_TIMEOUT)))
+    : 30000;
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const sanitizeLimit = (value) => {
+    if (value === undefined || value === null || value === '') {
+        return DEFAULT_LIMIT;
+    }
+
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        return DEFAULT_LIMIT;
+    }
+
+    const bounded = Math.max(1, Math.floor(parsed));
+    return Math.min(bounded, MAX_LIMIT);
+};
+
+const sanitizeMinScore = (value) => {
+    if (value === undefined || value === null || value === '') {
+        return DEFAULT_MIN_SCORE;
+    }
+
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        return DEFAULT_MIN_SCORE;
+    }
+
+    if (parsed < 0) {
+        return 0;
+    }
+
+    if (parsed > 100) {
+        return 100;
+    }
+
+    return parsed;
+};
+
+const sanitizeBoolean = (value) => {
+    if (typeof value === 'boolean') {
+        return value;
+    }
+
+    if (typeof value === 'string') {
+        return value.toLowerCase() === 'true';
+    }
+
+    return Boolean(value);
+};
 
 class ToolSelectorServer {
     constructor() {
@@ -75,53 +131,88 @@ class ToolSelectorServer {
             const scriptPath = path.join(__dirname, '..', 'find_tools.py');
             
             const pythonArgs = ['python3', scriptPath];
-            
+
             if (args.query) pythonArgs.push('--query', args.query);
             if (args.agent_id) pythonArgs.push('--agent_id', args.agent_id);
             if (args.keep_tools) pythonArgs.push('--keep_tools', args.keep_tools);
-            if (args.limit !== undefined) pythonArgs.push('--limit', args.limit.toString());
-            if (args.min_score !== undefined) pythonArgs.push('--min_score', args.min_score.toString());
-            if (args.request_heartbeat) pythonArgs.push('--request_heartbeat', 'true');
 
-            return new Promise((resolve, reject) => {
-                const process = spawn(pythonArgs[0], pythonArgs.slice(1));
+            const sanitizedLimit = sanitizeLimit(args.limit);
+            const sanitizedMinScore = sanitizeMinScore(args.min_score);
+            const requestHeartbeat = sanitizeBoolean(args.request_heartbeat);
+
+            pythonArgs.push('--limit', sanitizedLimit.toString());
+            pythonArgs.push('--min_score', sanitizedMinScore.toString());
+            if (requestHeartbeat) {
+                pythonArgs.push('--request_heartbeat', 'true');
+            }
+
+            return new Promise((resolve) => {
+                const child = spawn(pythonArgs[0], pythonArgs.slice(1));
                 let stdout = '';
                 let stderr = '';
+                let timedOut = false;
 
-                process.stdout.on('data', (data) => {
+                const timeoutHandle = setTimeout(() => {
+                    timedOut = true;
+                    child.kill('SIGKILL');
+                }, PROCESS_TIMEOUT_MS);
+
+                child.stdout.on('data', (data) => {
                     stdout += data.toString();
                 });
 
-                process.stderr.on('data', (data) => {
+                child.stderr.on('data', (data) => {
                     stderr += data.toString();
                 });
 
-                process.on('close', (code) => {
-                    if (code !== 0) {
+                child.on('close', (code) => {
+                    clearTimeout(timeoutHandle);
+
+                    if (timedOut) {
                         resolve({
                             content: [
                                 {
                                     type: 'text',
-                                    text: `Error executing find_tools: ${stderr || 'Unknown error'}`,
+                                    text: 'The find_tools operation timed out. Please try again with narrower parameters.',
+                                },
+                            ],
+                        });
+                        return;
+                    }
+
+                    if (code !== 0) {
+                        const errorMessage = stderr.trim() || 'Unknown error';
+                        resolve({
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: `Error executing find_tools: ${errorMessage}`,
                                 },
                             ],
                         });
                     } else {
                         const lines = stdout.trim().split('\n');
                         const result = lines[lines.length - 1];
-                        
+                        const content = [];
+                        if (result) {
+                            content.push({ type: 'text', text: result });
+                        }
+                        if (stderr.trim()) {
+                            content.push({ type: 'text', text: `Warnings: ${stderr.trim()}` });
+                        }
                         resolve({
-                            content: [
+                            content: content.length ? content : [
                                 {
                                     type: 'text',
-                                    text: result,
-                                },
+                                    text: 'find_tools completed with no output.'
+                                }
                             ],
                         });
                     }
                 });
 
-                process.on('error', (error) => {
+                child.on('error', (error) => {
+                    clearTimeout(timeoutHandle);
                     resolve({
                         content: [
                             {

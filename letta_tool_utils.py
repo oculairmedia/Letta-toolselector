@@ -1,7 +1,7 @@
 import os
 import requests
 import json
-from typing import Optional
+from typing import Optional, Dict
 import sys
 
 # Environment configuration
@@ -13,6 +13,91 @@ if not LETTA_URL.endswith('/v1'):
     LETTA_URL = LETTA_URL.rstrip('/') + '/v1'
 
 LETTA_API_KEY = os.environ.get('LETTA_PASSWORD')
+
+_TOOL_SELECTOR_BASE_URL: Optional[str] = None
+_TOOL_SELECTOR_WARNING_EMITTED = False
+
+
+def _emit_tool_selector_warning(message: str) -> None:
+    """Log a warning to stderr only once to avoid spamming."""
+    global _TOOL_SELECTOR_WARNING_EMITTED
+    if not _TOOL_SELECTOR_WARNING_EMITTED:
+        print(f"[TOOL_SELECTOR] {message}", file=sys.stderr)
+        _TOOL_SELECTOR_WARNING_EMITTED = True
+
+
+def get_tool_selector_base_url() -> str:
+    """Resolve the Tool Selector API base URL with sensible defaults."""
+    global _TOOL_SELECTOR_BASE_URL
+    if _TOOL_SELECTOR_BASE_URL is not None:
+        return _TOOL_SELECTOR_BASE_URL
+
+    candidates = [
+        os.getenv('TOOLS_API_BASE_URL'),
+        os.getenv('TOOLS_API_URL'),
+        os.getenv('TOOL_SELECTOR_API_URL'),
+        os.getenv('LETTA_TOOL_SELECTOR_URL'),
+        os.getenv('WEAVIATE_TOOLS_API_URL'),
+        os.getenv('TOOLS_API_DEFAULT_URL'),
+    ]
+
+    base = next((c.strip() for c in candidates if c and c.strip()), None)
+
+    if not base:
+        base = 'https://tool-selector-api:8020'
+        _emit_tool_selector_warning(
+            "TOOLS_API_BASE_URL not set; defaulting to https://tool-selector-api:8020. "
+            "Set TOOLS_API_BASE_URL to the fully-qualified Tool Selector API endpoint."
+        )
+
+    if base.startswith('http://'):
+        allow_insecure = os.getenv('TOOLS_API_ALLOW_INSECURE_HTTP', '').lower() in {'1', 'true', 'yes', 'on'}
+        if not allow_insecure:
+            secure_base = 'https://' + base.split('://', 1)[1]
+            _emit_tool_selector_warning(
+                f"Promoting Tool Selector URL from '{base}' to '{secure_base}'. "
+                "Set TOOLS_API_ALLOW_INSECURE_HTTP=true to keep HTTP."
+            )
+            base = secure_base
+
+    _TOOL_SELECTOR_BASE_URL = base.rstrip('/')
+    return _TOOL_SELECTOR_BASE_URL
+
+
+def build_tool_selector_headers() -> Dict[str, str]:
+    """Create standard headers for Tool Selector API requests."""
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+    password = os.getenv('TOOL_SELECTOR_PASSWORD') or LETTA_API_KEY
+    if password:
+        headers["X-BARE-PASSWORD"] = f"password {password}"
+
+    bearer = os.getenv('TOOL_SELECTOR_BEARER_TOKEN')
+    if bearer:
+        headers["Authorization"] = f"Bearer {bearer}"
+
+    return headers
+
+
+def get_tool_selector_timeout(default: float = 15.0) -> float:
+    """Return the timeout (seconds) for Tool Selector API requests."""
+    timeout_value = os.getenv('TOOLS_API_TIMEOUT')
+    if not timeout_value:
+        return default
+
+    try:
+        timeout = float(timeout_value)
+        if timeout <= 0:
+            raise ValueError
+        return timeout
+    except ValueError:
+        _emit_tool_selector_warning(
+            f"Invalid TOOLS_API_TIMEOUT '{timeout_value}'; falling back to {default} seconds."
+        )
+        return default
 
 def get_find_tools_id(agent_id: Optional[str] = None) -> Optional[str]:
     """

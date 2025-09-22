@@ -127,6 +127,43 @@ services:
         condition: service_started
     networks:
       - letta-tools
+  worker-service:
+    build:
+      context: .
+      dockerfile: worker-service/Dockerfile
+    container_name: letta-toolselector-worker
+    ports:
+      - 3021:3021
+    environment:
+      - WORKER_SERVICE_PORT=3021
+      - WORKER_LOG_LEVEL=${WORKER_LOG_LEVEL:-INFO}
+      - WORKER_SESSION_POOL_CONNECTIONS=${WORKER_SESSION_POOL_CONNECTIONS:-10}
+      - WORKER_SESSION_POOL_MAXSIZE=${WORKER_SESSION_POOL_MAXSIZE:-25}
+      - WORKER_SESSION_MAX_RETRIES=${WORKER_SESSION_MAX_RETRIES:-3}
+      - TOOLS_API_BASE_URL=${TOOLS_API_BASE_URL}
+      - TOOLS_API_ALLOW_INSECURE_HTTP=${TOOLS_API_ALLOW_INSECURE_HTTP:-false}
+      - TOOL_SELECTOR_PASSWORD=${TOOL_SELECTOR_PASSWORD}
+      - TOOL_SELECTOR_BEARER_TOKEN=${TOOL_SELECTOR_BEARER_TOKEN}
+      - TOOLS_API_TIMEOUT=${TOOLS_API_TIMEOUT:-15}
+      - FIND_TOOLS_MAX_LIMIT=${FIND_TOOLS_MAX_LIMIT:-25}
+      - LETTA_API_URL=${LETTA_API_URL}
+      - LETTA_PASSWORD=${LETTA_PASSWORD}
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:3021/health
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      api-server:
+        condition: service_started
+    networks:
+      - letta-tools
+    restart: unless-stopped
   time-service:
     image: ghcr.io/oculairmedia/letta-toolselector-api-server:main
     container_name: weaviate-tools-time
@@ -157,6 +194,8 @@ services:
       - LETTA_API_URL=${LETTA_API_URL}
       - LETTA_PASSWORD=${LETTA_PASSWORD}
       - API_URL=http://api-server:3001
+      - WORKER_SERVICE_URL=http://worker-service:3021
+      - WORKER_REQUEST_TIMEOUT_MS=${WORKER_REQUEST_TIMEOUT_MS:-15000}
     restart: unless-stopped
     labels:
       - homepage.group=MCP Services
@@ -208,6 +247,8 @@ services:
     depends_on:
       api-server:
         condition: service_started
+      worker-service:
+        condition: service_healthy
       mcp-server:
         condition: service_healthy
       weaviate:

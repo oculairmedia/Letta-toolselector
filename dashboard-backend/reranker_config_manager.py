@@ -18,6 +18,12 @@ import numpy as np
 from pathlib import Path
 import os
 
+from qwen3_reranker_utils import (
+    DEFAULT_RERANK_INSTRUCTION,
+    build_prompt,
+    extract_yes_probability,
+)
+
 logger = logging.getLogger(__name__)
 
 class RerankerStatus(Enum):
@@ -250,82 +256,40 @@ class OllamaRerankerProvider(RerankerProvider):
     async def _score_document(self, query: str, document: str) -> float:
         """Score a single document against the query"""
         try:
-            # Construct reranker prompt
-            prompt = self._build_reranker_prompt(query, document)
-            
+            # Construct reranker prompt using Qwen3 format
+            prompt = build_prompt(
+                query=query,
+                document=document,
+                instruction=DEFAULT_RERANK_INSTRUCTION,
+            )
+
             async with self.session.post(
                 f"{self.base_url}/api/generate",
                 json={
                     "model": self.config.model,
                     "prompt": prompt,
                     "stream": False,
+                    "raw": True,
                     "options": {
-                        "temperature": self.config.temperature,
-                        "num_predict": self.num_predict,
-                        "stop": ["\n", "Score:", "Relevance:"]
+                        "temperature": 0.0,
+                        "top_p": 0.1,
+                        "num_predict": 4,
+                        "stop": ["\n", "<|im_end|>", "<|im_start|>"],
+                        "logprobs": 5,
                     },
                     "keep_alive": self.keep_alive
                 }
             ) as response:
                 response.raise_for_status()
                 result = await response.json()
-                
+
                 # Extract score from response
-                response_text = result.get("response", "").strip()
-                score = self._parse_score_from_response(response_text)
-                
+                score = extract_yes_probability(result)
+
                 return score
-                
+
         except Exception as e:
             logger.warning(f"Failed to score document: {e}")
-            return 0.0
-    
-    def _build_reranker_prompt(self, query: str, document: str) -> str:
-        """Build prompt for reranker model"""
-        return f"""You are a relevance scoring model. Score how relevant the following document is to the query on a scale of 0.0 to 1.0.
-
-Query: {query}
-
-Document: {document}
-
-Instructions:
-- Return only a numerical score between 0.0 and 1.0
-- 1.0 means extremely relevant
-- 0.0 means completely irrelevant
-- Consider semantic similarity, topic relevance, and usefulness
-
-Score: """
-    
-    def _parse_score_from_response(self, response: str) -> float:
-        """Parse relevance score from model response"""
-        try:
-            # Clean the response
-            response = response.strip()
-            
-            # Try to extract a float from the response
-            import re
-            
-            # Look for decimal numbers
-            matches = re.findall(r'\b\d+\.?\d*\b', response)
-            
-            if matches:
-                score = float(matches[0])
-                # Ensure score is in valid range
-                return max(0.0, min(1.0, score))
-            
-            # Fallback: look for keywords that indicate relevance
-            response_lower = response.lower()
-            if any(word in response_lower for word in ['relevant', 'related', 'matches']):
-                return 0.7
-            elif any(word in response_lower for word in ['somewhat', 'partially']):
-                return 0.4
-            elif any(word in response_lower for word in ['irrelevant', 'unrelated', 'no']):
-                return 0.1
-            
-            return 0.5  # Default neutral score
-            
-        except Exception as e:
-            logger.warning(f"Failed to parse score from response '{response}': {e}")
             return 0.0
     
     async def health_check(self) -> RerankerStatus:

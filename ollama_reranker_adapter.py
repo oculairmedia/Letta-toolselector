@@ -12,9 +12,17 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import httpx
 from dotenv import load_dotenv
+
+from qwen3_reranker_utils import (
+    DEFAULT_RERANK_INSTRUCTION,
+    build_prompt,
+    extract_yes_probability,
+    truncate_document,
+)
 
 # Load environment variables
 load_dotenv()
@@ -41,6 +49,10 @@ class RerankRequest(BaseModel):
     query: str = Field(..., description="Search query")
     documents: List[str] = Field(..., description="Documents to rerank")
     k: Optional[int] = Field(None, description="Number of top results to return")
+    instruction: Optional[str] = Field(
+        default=None,
+        description="Optional task-specific instruction override",
+    )
 
 class DocumentScore(BaseModel):
     """Individual document score in Cohere format"""
@@ -105,13 +117,16 @@ class Metrics:
 
 metrics = Metrics()
 
-# Instruction template for Qwen3-Reranker
-RERANK_INSTRUCTION_TEMPLATE = """Question: How relevant is this document to the query? Answer with only a number from 0.0 to 1.0.
+# Request options tuned for binary classification
+OLLAMA_GENERATE_OPTIONS: Dict[str, Any] = {
+    "temperature": 0.0,
+    "top_p": 0.1,
+    "num_predict": 4,
+    "stop": ["\n", "<|im_end|>", "<|im_start|>"],
+    "logprobs": 5,
+}
 
-Query: {query}
-Document: {document}
-
-Relevance score:"""
+CACHE_KEY_DOC_PREFIX = 120
 
 async def warmup_model():
     """Warm up the Ollama model to reduce first-request latency"""
@@ -120,21 +135,21 @@ async def warmup_model():
     
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            warmup_prompt = RERANK_INSTRUCTION_TEMPLATE.format(
+            warmup_prompt = build_prompt(
                 query="test query",
-                document="test document"
+                document="This is a placeholder document used to warm up the reranker model.",
+                instruction=DEFAULT_RERANK_INSTRUCTION,
             )
-            
+
             response = await client.post(
                 f"{OLLAMA_BASE_URL}/api/generate",
                 json={
                     "model": OLLAMA_MODEL,
                     "prompt": warmup_prompt,
                     "stream": False,
+                    "raw": True,
                     "options": {
-                        "temperature": 0.0,
-                        "top_p": 1.0,
-                        "num_predict": 10
+                        **OLLAMA_GENERATE_OPTIONS,
                     }
                 }
             )
@@ -150,20 +165,24 @@ async def warmup_model():
         logger.error(f"Model warmup error: {e}")
 
 async def score_document_pair(
-    query: str, 
+    query: str,
     document: str,
-    session: httpx.AsyncClient
+    session: httpx.AsyncClient,
+    instruction: Optional[str],
 ) -> float:
     """Score a single query-document pair using Ollama"""
-    
-    # Generate prompt
-    prompt = RERANK_INSTRUCTION_TEMPLATE.format(
+
+    prompt = build_prompt(
         query=query,
-        document=document[:1000]  # Truncate very long documents
+        document=document,
+        instruction=instruction,
     )
-    
+
     # Check cache if enabled
-    cache_key = f"{query}::{document[:100]}" if cache else None
+    cache_key = None
+    if cache:
+        truncated = truncate_document(document, CACHE_KEY_DOC_PREFIX)
+        cache_key = f"{instruction or DEFAULT_RERANK_INSTRUCTION}::{query}::{truncated}"
     if cache_key and cache:
         cached_score = cache.get(cache_key)
         if cached_score is not None:
@@ -178,41 +197,24 @@ async def score_document_pair(
                 "model": OLLAMA_MODEL,
                 "prompt": prompt,
                 "stream": False,
-                "options": {
-                    "temperature": 0.1,
-                    "top_p": 1.0,
-                    "num_predict": 10
-                }
+                "raw": True,
+                "options": OLLAMA_GENERATE_OPTIONS,
             },
             timeout=TIMEOUT_SECONDS
         )
-        
+
         if response.status_code != 200:
             logger.error(f"Ollama request failed: {response.status_code}")
             return 0.0
-        
+
         result = response.json()
-        score_text = result.get("response", "0.0").strip()
-        
-        # Parse score
-        try:
-            # Clean the response (sometimes contains extra text)
-            score_clean = score_text.split()[0] if score_text else "0.0"
-            # Remove any non-numeric characters except decimal point
-            score_clean = ''.join(c for c in score_clean if c.isdigit() or c == '.')
-            score = float(score_clean)
-            score = max(0.0, min(1.0, score))  # Clamp to [0,1]
-            
-            # Cache the result
-            if cache_key and cache:
-                cache.set(cache_key, score)
-            
-            return score
-            
-        except (ValueError, IndexError) as e:
-            logger.warning(f"Failed to parse score '{score_text}': {e}")
-            return 0.0
-    
+        probability = extract_yes_probability(result)
+
+        if cache_key and cache:
+            cache.set(cache_key, probability)
+
+        return probability
+
     except httpx.TimeoutException:
         logger.warning(f"Timeout scoring document")
         return 0.0
@@ -222,7 +224,8 @@ async def score_document_pair(
 
 async def batch_score_documents(
     query: str,
-    documents: List[str]
+    documents: List[str],
+    instruction: Optional[str],
 ) -> List[float]:
     """Score multiple documents in batches for efficiency"""
     if not documents:
@@ -243,7 +246,7 @@ async def batch_score_documents(
                 
                 # Score batch concurrently
                 tasks = [
-                    score_document_pair(query, doc, session)
+                    score_document_pair(query, doc, session, instruction)
                     for doc in batch
                 ]
                 
@@ -342,7 +345,11 @@ async def rerank_documents(request: RerankRequest):
         logger.info(f"Reranking {len(valid_documents)} valid documents (from {len(request.documents)} total) for query: '{request.query[:50]}...'")
         
         # Score all valid documents
-        scores = await batch_score_documents(request.query, valid_documents)
+        scores = await batch_score_documents(
+            request.query,
+            valid_documents,
+            request.instruction or DEFAULT_RERANK_INSTRUCTION,
+        )
         
         # Create indexed scores for sorting and selection (map back to original indices)
         indexed_scores = [(score, document_index_mapping[idx]) for idx, score in enumerate(scores)]

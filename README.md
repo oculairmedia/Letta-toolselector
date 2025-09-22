@@ -10,14 +10,16 @@ An intelligent tool selection and management service for Letta AI agents. This s
 - **Intelligent Pruning**: Configurable tool pruning to maintain optimal tool sets for agents
 - **Tool Type Filtering**: Can be configured to manage only MCP tools, excluding Letta core tools
 - **RESTful API**: Simple HTTP API for tool search, attachment, and management
+- **Low-Latency MCP Worker**: Persistent FastAPI worker eliminates per-request Python process spawning for MCP calls
 
 ## Architecture
 
-The system consists of three main services:
+The system consists of four main services:
 
 1. **API Server** (`api-server`): Main service handling tool search, attachment, and pruning
 2. **Sync Service** (`sync-service`): Synchronizes tools between Letta and Weaviate
-3. **Time Service** (`time-service`): Manages time-based memory updates
+3. **Worker Service** (`worker-service`): FastAPI process that provides a persistent `find_tools` endpoint for the MCP server with HTTP connection pooling
+4. **Time Service** (`time-service`): Manages time-based memory updates
 
 
 ## Further Documentation
@@ -55,6 +57,8 @@ Key environment variables:
 - `MAX_MCP_TOOLS`: Maximum MCP tools per agent (default: 20)
 - `MIN_MCP_TOOLS`: Minimum MCP tools per agent (default: 7)
 - `DEFAULT_DROP_RATE`: Tool pruning aggressiveness (0.0-1.0, default: 0.6)
+- `WORKER_SERVICE_URL`: Base URL the MCP server uses to reach the worker service (default: `http://worker-service:3021`)
+- `WORKER_REQUEST_TIMEOUT_MS`: Request timeout when the MCP server calls the worker (default: `15000`)
 
 ## API Endpoints
 

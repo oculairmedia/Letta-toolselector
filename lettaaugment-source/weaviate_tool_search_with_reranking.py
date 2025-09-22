@@ -15,6 +15,7 @@ from specialized_embedding import (
     get_detailed_instruct,
     format_query_for_qwen3,
 )
+from qwen3_reranker_utils import DEFAULT_RERANK_INSTRUCTION
 
 def init_client():
     """Initialize Weaviate client using v4 API."""
@@ -137,14 +138,12 @@ def search_tools_with_reranking(
                             # Call our reranker adapter with task-specific instruction
                             import httpx
                             reranker_url = "http://ollama-reranker-adapter:8080/rerank"
-                            
-                            # Add task-specific context to the query for better reranking
-                            instructed_query = f"Find tools that can: {query}"
-                            
+
                             payload = {
-                                "query": instructed_query,  # Use instructed query for better context
+                                "query": cleaned_query,
                                 "documents": documents,
-                                "k": min(limit, len(documents))
+                                "k": min(limit, len(documents)),
+                                "instruction": DEFAULT_RERANK_INSTRUCTION,
                             }
                             
                             response = httpx.post(reranker_url, json=payload, timeout=30.0)

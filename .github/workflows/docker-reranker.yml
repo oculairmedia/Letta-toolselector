@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
     paths:
       - 'ollama_reranker_adapter.py'
+      - 'qwen3_reranker_utils.py'
       - 'Dockerfile.reranker'
       - 'requirements-reranker.txt'
       - '.github/workflows/docker-reranker.yml'
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths:
       - 'ollama_reranker_adapter.py'
+      - 'qwen3_reranker_utils.py'
       - 'Dockerfile.reranker'
       - 'requirements-reranker.txt'
   workflow_dispatch:

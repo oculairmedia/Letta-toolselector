@@ -7,6 +7,7 @@ An intelligent tool selection and management service for Letta AI agents. This s
 - **Semantic Tool Search**: Uses Weaviate vector database with OpenAI embeddings for intelligent tool discovery
 - **Automatic Tool Management**: Automatically attaches relevant tools and detaches irrelevant ones based on context
 - **MCP Tool Support**: Full support for Model Context Protocol (MCP) tools with automatic registration
+- **Header-Aware MCP Requests**: Accepts `x-agent-id` headers so agents no longer need to send `agent_id` in tool payloads
 - **Intelligent Pruning**: Configurable tool pruning to maintain optimal tool sets for agents
 - **Tool Type Filtering**: Can be configured to manage only MCP tools, excluding Letta core tools
 - **RESTful API**: Simple HTTP API for tool search, attachment, and management
@@ -59,6 +60,33 @@ Key environment variables:
 - `DEFAULT_DROP_RATE`: Tool pruning aggressiveness (0.0-1.0, default: 0.6)
 - `WORKER_SERVICE_URL`: Base URL the MCP server uses to reach the worker service (default: `http://worker-service:3021`)
 - `WORKER_REQUEST_TIMEOUT_MS`: Request timeout when the MCP server calls the worker (default: `15000`)
+- `ENABLE_AGENT_ID_HEADER`: Enable `x-agent-id` header support (default: `true`)
+- `REQUIRE_AGENT_ID`: Require an agent identifier from either header or payload (default: `true`)
+- `STRICT_AGENT_ID_VALIDATION`: Reject headers that do not match the expected format (default: `false`)
+- `DEBUG_AGENT_ID_SOURCE`: Emit log lines showing whether the header or payload provided the agent ID (default: `false`)
+
+## Agent ID Handling
+
+Both MCP entry points (`src/index.js` and `src/simple-server.js`) now resolve agent identity from the `x-agent-id` HTTP header. The header value takes precedence over the `agent_id` argument, letting Letta agents omit the field entirely. When both are supplied they must match; otherwise the request fails with a `-32602` JSON-RPC error.
+
+Example header-only request:
+
+```bash
+curl -s http://localhost:3020/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'x-agent-id: agent-1234' \
+  -d '{
+        "jsonrpc": "2.0",
+        "id": "req-1",
+        "method": "tools/call",
+        "params": {
+          "name": "find_tools",
+          "arguments": {"query": "graphiti", "limit": 5}
+        }
+      }'
+```
+
+Set `ENABLE_AGENT_ID_HEADER=false` to disable header support or toggle the other environment variables listed above to adjust validation and logging behaviour.
 
 ## API Endpoints
 

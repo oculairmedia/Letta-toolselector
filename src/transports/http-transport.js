@@ -13,7 +13,11 @@ export async function runHTTP(toolServer) {
     app.use(express.json({ limit: '10mb' }));
 
     app.use((req, res, next) => {
-        console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+        const agentId = req.headers['x-agent-id'];
+        const logMessage = agentId
+            ? `[${new Date().toISOString()}] ${req.method} ${req.path} (agent: ${agentId})`
+            : `[${new Date().toISOString()}] ${req.method} ${req.path}`;
+        console.log(logMessage);
         next();
     });
 
@@ -62,8 +66,15 @@ export async function runHTTP(toolServer) {
                     });
                     return;
                 }
-                
-                const result = await tool.handler(req.body.params.arguments || {});
+
+                const agentIdHeader = req.headers['x-agent-id'];
+                const result = await tool.handler(
+                    req.body.params.arguments || {},
+                    {
+                        headers: req.headers,
+                        agentId: agentIdHeader,
+                    },
+                );
                 res.json({
                     jsonrpc: '2.0',
                     id: req.body.id,

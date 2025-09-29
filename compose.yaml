@@ -194,6 +194,8 @@ services:
       - LETTA_API_URL=${LETTA_API_URL}
       - LETTA_PASSWORD=${LETTA_PASSWORD}
       - API_URL=http://api-server:3001
+      - TOOLS_API_BASE_URL=http://api-server:3001
+      - TOOLS_API_ALLOW_INSECURE_HTTP=true
       - WORKER_SERVICE_URL=http://worker-service:3021
       - WORKER_REQUEST_TIMEOUT_MS=${WORKER_REQUEST_TIMEOUT_MS:-15000}
     restart: unless-stopped

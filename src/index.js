@@ -25,6 +25,10 @@ const WORKER_HEALTH_CHECK_INTERVAL_MS = Number.isFinite(Number(process.env.WORKE
     ? Math.max(1000, Math.floor(Number(process.env.WORKER_HEALTH_CHECK_INTERVAL_MS)))
     : 30000;
 const DISABLE_WORKER_SERVICE = (process.env.DISABLE_WORKER_SERVICE || '').toLowerCase() === 'true';
+const ENABLE_AGENT_ID_HEADER = (process.env.ENABLE_AGENT_ID_HEADER ?? 'true').toLowerCase() !== 'false';
+const REQUIRE_AGENT_ID = (process.env.REQUIRE_AGENT_ID ?? 'true').toLowerCase() === 'true';
+const DEBUG_AGENT_ID_SOURCE = (process.env.DEBUG_AGENT_ID_SOURCE ?? 'false').toLowerCase() === 'true';
+const STRICT_AGENT_ID_VALIDATION = (process.env.STRICT_AGENT_ID_VALIDATION ?? 'false').toLowerCase() === 'true';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -76,6 +80,24 @@ const sanitizeBoolean = (value) => {
     return Boolean(value);
 };
 
+const normalizeAgentIdValue = (value) => {
+    if (Array.isArray(value)) {
+        return normalizeAgentIdValue(value[0]);
+    }
+
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        return trimmed.length ? trimmed : undefined;
+    }
+
+    const stringified = String(value).trim();
+    return stringified.length ? stringified : undefined;
+};
+
 class ToolSelectorServer {
     constructor() {
         this.server = new Server(
@@ -110,7 +132,7 @@ class ToolSelectorServer {
                     },
                     agent_id: {
                         type: 'string',
-                        description: 'Your agent ID',
+                        description: 'Your agent ID (optional if x-agent-id header is provided)',
                     },
                     keep_tools: {
                         type: 'string',
@@ -133,7 +155,7 @@ class ToolSelectorServer {
                     },
                 },
             },
-            handler: async (args) => this.handleFindTools(args),
+            handler: async (args, context) => this.handleFindTools(args, context),
         });
     }
 
@@ -141,16 +163,80 @@ class ToolSelectorServer {
         // No need for manual request handlers with the new API
     }
 
-    async handleFindTools(args) {
+    extractAgentIdFromContext(context = {}) {
+        if (!ENABLE_AGENT_ID_HEADER || !context) {
+            return undefined;
+        }
+
+        if (context.agentId) {
+            return normalizeAgentIdValue(context.agentId);
+        }
+
+        const headers = context.headers || {};
+        // Node automatically normalizes header keys to lowercase, but we
+        // defensively check a capitalized version just in case.
+        return normalizeAgentIdValue(headers['x-agent-id'] ?? headers['X-Agent-Id']);
+    }
+
+    validateAgentId(headerAgentId, paramAgentId) {
+        const normalizedHeader = normalizeAgentIdValue(headerAgentId);
+        const normalizedParam = normalizeAgentIdValue(paramAgentId);
+        const hasHeader = Boolean(normalizedHeader);
+        const hasParam = Boolean(normalizedParam);
+
+        if (hasHeader && hasParam && normalizedHeader !== normalizedParam) {
+            const message = `Agent ID mismatch: header '${normalizedHeader}' != parameter '${normalizedParam}'`;
+            console.warn(`[find_tools] ${message}`);
+            throw new Error(message);
+        }
+
+        if (hasHeader) {
+            if (DEBUG_AGENT_ID_SOURCE) {
+                console.log(`[find_tools] Using agent ID from header: ${normalizedHeader}`);
+            }
+        } else if (hasParam) {
+            if (DEBUG_AGENT_ID_SOURCE) {
+                console.log(`[find_tools] Using agent ID from parameter: ${normalizedParam}`);
+            }
+        } else {
+            console.warn('[find_tools] No agent ID provided in header or parameter');
+            if (REQUIRE_AGENT_ID) {
+                throw new Error('Agent ID must be provided either in x-agent-id header or agent_id parameter');
+            }
+            return null;
+        }
+
+        const resolvedId = normalizedHeader || normalizedParam;
+
+        if (resolvedId && !/^[a-zA-Z0-9\-_]+$/.test(resolvedId)) {
+            const message = `Invalid agent ID format: ${resolvedId}`;
+            console.warn(`[find_tools] ${message}`);
+            if (STRICT_AGENT_ID_VALIDATION || REQUIRE_AGENT_ID) {
+                throw new Error(message);
+            }
+        }
+
+        return resolvedId;
+    }
+
+    async handleFindTools(args = {}, context = {}) {
         try {
+            const headerAgentId = this.extractAgentIdFromContext(context);
+            const resolvedAgentId = this.validateAgentId(headerAgentId, args?.agent_id);
+
             const sanitizedLimit = sanitizeLimit(args.limit);
             const sanitizedMinScore = sanitizeMinScore(args.min_score);
             const requestHeartbeat = sanitizeBoolean(args.request_heartbeat);
 
+            const argsWithResolvedAgent = {
+                ...args,
+                agent_id: resolvedAgentId,
+            };
+
             const workerPayload = {
-                query: args.query ?? null,
-                agent_id: args.agent_id ?? null,
-                keep_tools: args.keep_tools ?? null,
+                query: argsWithResolvedAgent.query ?? null,
+                agent_id: argsWithResolvedAgent.agent_id ?? null,
+                keep_tools: argsWithResolvedAgent.keep_tools ?? null,
                 limit: sanitizedLimit,
                 min_score: sanitizedMinScore,
                 request_heartbeat: requestHeartbeat,
@@ -162,7 +248,7 @@ class ToolSelectorServer {
             }
 
             return this.handleFindToolsViaProcess(
-                args,
+                argsWithResolvedAgent,
                 sanitizedLimit,
                 sanitizedMinScore,
                 requestHeartbeat,
@@ -376,7 +462,11 @@ async function main() {
     }
 }
 
-main().catch((error) => {
-    console.error('Server error:', error);
-    process.exit(1);
-});
+export { ToolSelectorServer };
+
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+    main().catch((error) => {
+        console.error('Server error:', error);
+        process.exit(1);
+    });
+}

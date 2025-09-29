@@ -5,6 +5,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 
+const ENABLE_AGENT_ID_HEADER = (process.env.ENABLE_AGENT_ID_HEADER ?? 'true').toLowerCase() !== 'false';
+const REQUIRE_AGENT_ID = (process.env.REQUIRE_AGENT_ID ?? 'true').toLowerCase() === 'true';
+const STRICT_AGENT_ID_VALIDATION = (process.env.STRICT_AGENT_ID_VALIDATION ?? 'false').toLowerCase() === 'true';
+const DEBUG_AGENT_ID_SOURCE = (process.env.DEBUG_AGENT_ID_SOURCE ?? 'false').toLowerCase() === 'true';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -20,9 +25,72 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 
 app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+    const agentId = req.headers['x-agent-id'] ?? req.headers['X-Agent-Id'];
+    const logMessage = agentId
+        ? `[${new Date().toISOString()}] ${req.method} ${req.path} (agent: ${agentId})`
+        : `[${new Date().toISOString()}] ${req.method} ${req.path}`;
+    console.log(logMessage);
     next();
 });
+
+const normalizeAgentIdValue = (value) => {
+    if (Array.isArray(value)) {
+        return normalizeAgentIdValue(value[0]);
+    }
+
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        return trimmed.length ? trimmed : undefined;
+    }
+
+    const stringified = String(value).trim();
+    return stringified.length ? stringified : undefined;
+};
+
+const resolveAgentId = (headerAgentId, paramAgentId) => {
+    const normalizedHeader = normalizeAgentIdValue(headerAgentId);
+    const normalizedParam = normalizeAgentIdValue(paramAgentId);
+    const hasHeader = Boolean(normalizedHeader);
+    const hasParam = Boolean(normalizedParam);
+
+    if (hasHeader && hasParam && normalizedHeader !== normalizedParam) {
+        const message = `Agent ID mismatch: header '${normalizedHeader}' != parameter '${normalizedParam}'`;
+        console.warn(`[find_tools] ${message}`);
+        throw new Error(message);
+    }
+
+    if (hasHeader) {
+        if (DEBUG_AGENT_ID_SOURCE) {
+            console.log(`[find_tools] Using agent ID from header: ${normalizedHeader}`);
+        }
+    } else if (hasParam) {
+        if (DEBUG_AGENT_ID_SOURCE) {
+            console.log(`[find_tools] Using agent ID from parameter: ${normalizedParam}`);
+        }
+    } else {
+        console.warn('[find_tools] No agent ID provided in header or parameter');
+        if (REQUIRE_AGENT_ID) {
+            throw new Error('Agent ID must be provided either in x-agent-id header or agent_id parameter');
+        }
+        return null;
+    }
+
+    const resolvedId = normalizedHeader || normalizedParam;
+
+    if (resolvedId && !/^[a-zA-Z0-9\-_]+$/.test(resolvedId)) {
+        const message = `Invalid agent ID format: ${resolvedId}`;
+        console.warn(`[find_tools] ${message}`);
+        if (STRICT_AGENT_ID_VALIDATION || REQUIRE_AGENT_ID) {
+            throw new Error(message);
+        }
+    }
+
+    return resolvedId;
+};
 
 async function executeFindTools(args) {
     try {
@@ -224,7 +292,30 @@ app.post('/mcp', async (req, res) => {
             const toolName = req.body.params.name;
             
             if (toolName === 'find_tools') {
-                const result = await executeFindTools(req.body.params.arguments || {});
+                const args = req.body.params.arguments || {};
+                const headerAgentId = ENABLE_AGENT_ID_HEADER
+                    ? (req.headers['x-agent-id'] ?? req.headers['X-Agent-Id'])
+                    : undefined;
+
+                let resolvedAgentId;
+                try {
+                    resolvedAgentId = resolveAgentId(headerAgentId, args.agent_id);
+                } catch (error) {
+                    res.json({
+                        jsonrpc: '2.0',
+                        id: req.body.id,
+                        error: {
+                            code: -32602,
+                            message: error.message,
+                        },
+                    });
+                    return;
+                }
+
+                const result = await executeFindTools({
+                    ...args,
+                    agent_id: resolvedAgentId,
+                });
                 res.json({
                     jsonrpc: '2.0',
                     id: req.body.id,

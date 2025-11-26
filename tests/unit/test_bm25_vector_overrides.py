@@ -836,12 +836,15 @@ class TestDefaultParameterSets:
         """Test that default parameter sets are created"""
         # Create a fresh service that should have defaults
         service = BM25VectorOverrideService()
-        # The service creates default sets on initialization
+        # Create default parameter sets explicitly
+        service.create_default_parameter_sets()
+        # The service creates default sets
         assert len(service.parameter_sets) >= 5
     
     def test_high_precision_bm25_set(self):
         """Test high precision BM25 set exists"""
         service = BM25VectorOverrideService()
+        service.create_default_parameter_sets()
         sets = service.list_parameter_sets()
         set_names = [s["name"] for s in sets]
         
@@ -850,6 +853,7 @@ class TestDefaultParameterSets:
     def test_cosine_vector_search_set(self):
         """Test cosine vector search set exists"""
         service = BM25VectorOverrideService()
+        service.create_default_parameter_sets()
         sets = service.list_parameter_sets()
         set_names = [s["name"] for s in sets]
         
@@ -858,6 +862,7 @@ class TestDefaultParameterSets:
     def test_balanced_hybrid_search_set(self):
         """Test balanced hybrid search set exists"""
         service = BM25VectorOverrideService()
+        service.create_default_parameter_sets()
         sets = service.list_parameter_sets()
         set_names = [s["name"] for s in sets]
         

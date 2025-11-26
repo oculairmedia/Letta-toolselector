@@ -36,8 +36,12 @@ from bm25_vector_overrides import (
 
 @pytest.fixture
 def override_service():
-    """Create fresh override service instance"""
-    return BM25VectorOverrideService()
+    """Create fresh override service instance without default sets"""
+    service = BM25VectorOverrideService()
+    # Clear default parameter sets for isolated testing
+    service.parameter_sets.clear()
+    service.statistics["total_parameter_sets"] = 0
+    return service
 
 
 @pytest.fixture
@@ -828,28 +832,33 @@ class TestStatisticsTracking:
 class TestDefaultParameterSets:
     """Test default parameter set creation"""
     
-    def test_default_sets_created(self, override_service):
+    def test_default_sets_created(self):
         """Test that default parameter sets are created"""
+        # Create a fresh service that should have defaults
+        service = BM25VectorOverrideService()
         # The service creates default sets on initialization
-        assert len(override_service.parameter_sets) >= 5
+        assert len(service.parameter_sets) >= 5
     
-    def test_high_precision_bm25_set(self, override_service):
+    def test_high_precision_bm25_set(self):
         """Test high precision BM25 set exists"""
-        sets = override_service.list_parameter_sets()
+        service = BM25VectorOverrideService()
+        sets = service.list_parameter_sets()
         set_names = [s["name"] for s in sets]
         
         assert "High Precision BM25" in set_names
     
-    def test_cosine_vector_search_set(self, override_service):
+    def test_cosine_vector_search_set(self):
         """Test cosine vector search set exists"""
-        sets = override_service.list_parameter_sets()
+        service = BM25VectorOverrideService()
+        sets = service.list_parameter_sets()
         set_names = [s["name"] for s in sets]
         
         assert "Cosine Vector Search" in set_names
     
-    def test_balanced_hybrid_search_set(self, override_service):
+    def test_balanced_hybrid_search_set(self):
         """Test balanced hybrid search set exists"""
-        sets = override_service.list_parameter_sets()
+        service = BM25VectorOverrideService()
+        sets = service.list_parameter_sets()
         set_names = [s["name"] for s in sets]
         
         assert "Balanced Hybrid Search" in set_names

@@ -262,7 +262,8 @@ class TestOllamaProvider:
             base_url="http://localhost:11434"
         )
         
-        mock_response = AsyncMock()
+        # Mock the response with proper async context manager
+        mock_response = Mock()
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value={
             'models': [
@@ -271,15 +272,18 @@ class TestOllamaProvider:
             ]
         })
         
-        with patch('aiohttp.ClientSession') as mock_session_class:
-            mock_session = AsyncMock()
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock()
-            mock_session.get = AsyncMock(return_value=mock_response)
-            mock_session.get.return_value.__aenter__ = AsyncMock(return_value=mock_response)
-            mock_session.get.return_value.__aexit__ = AsyncMock()
-            mock_session_class.return_value = mock_session
-            
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
+        
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_ctx)
+        
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
+        
+        with patch('aiohttp.ClientSession', return_value=mock_session_ctx):
             available = await provider._check_model_availability()
             assert available is True
     
@@ -653,12 +657,15 @@ class TestEdgeCases:
             base_url="http://localhost:11434"
         )
         
-        with patch('aiohttp.ClientSession') as mock_session_class:
-            mock_session = AsyncMock()
-            mock_session.get = AsyncMock(side_effect=Exception("Network error"))
-            mock_session_class.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session_class.return_value.__aexit__ = AsyncMock()
-            
+        # Mock session that raises exception
+        mock_session = AsyncMock()
+        mock_session.get = Mock(side_effect=Exception("Network error"))
+        
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
+        
+        with patch('aiohttp.ClientSession', return_value=mock_session_ctx):
             # Should return True (assume available) on error
             available = await provider._check_model_availability()
             assert available is True

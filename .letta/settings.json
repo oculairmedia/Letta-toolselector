@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /opt/stacks/lettatoolsselector && docker-compose ps)"
+    ]
+  }
+}

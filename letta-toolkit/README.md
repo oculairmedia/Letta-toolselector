@@ -1,6 +1,22 @@
 # Letta Toolkit
 
-Shared Python utilities for Letta agent tool management. This package provides a consistent interface for listing, attaching, and detaching tools from Letta agents.
+Shared Python SDK for Letta agent tool management. This package provides a consistent interface for listing, attaching, and detaching tools from Letta agents.
+
+## Features
+
+- **Unified Configuration** - Single `LettaConfig` reads from environment variables
+- **Automatic Retry** - Built-in retry logic for transient API failures (3 retries, exponential backoff)
+- **Protected Tools** - Ensure critical tools are never accidentally detached
+- **Batch Operations** - Efficient bulk attach/detach with detailed results
+- **Session Reuse** - Connection pooling via persistent HTTP sessions
+- **Type-Safe Results** - Dataclass results with success/failure details
+
+## Documentation
+
+- [Getting Started](docs/GETTING_STARTED.md) - Installation and quick start
+- [API Reference](docs/API_REFERENCE.md) - Complete function documentation
+- [Migration Guide](docs/MIGRATION_GUIDE.md) - Migrate existing code to SDK
+- [Examples](docs/EXAMPLES.md) - Common use cases and patterns
 
 ## Installation
 
@@ -130,6 +146,32 @@ ruff check src/
 # Run type checker
 mypy src/
 ```
+
+## Architecture
+
+```
+letta-toolkit/
+├── src/letta_toolkit/
+│   ├── __init__.py      # Public API exports
+│   ├── config.py        # LettaConfig dataclass, env var handling
+│   ├── client.py        # LettaClient HTTP wrapper with retry
+│   ├── tools.py         # Tool CRUD operations
+│   └── protected.py     # Protected tools enforcement
+├── tests/
+│   ├── test_config.py   # Configuration tests
+│   └── test_tools.py    # Tool operations tests
+├── docs/
+│   ├── GETTING_STARTED.md
+│   ├── API_REFERENCE.md
+│   ├── MIGRATION_GUIDE.md
+│   └── EXAMPLES.md
+└── pyproject.toml       # Package configuration
+```
+
+## Related Projects
+
+- **letta-webhook-receiver** (`/opt/stacks/letta-webhook-receiver-new`) - Webhook handler for Letta agents
+- **letta-toolselector** (`/opt/stacks/lettatoolsselector`) - Tool selection service
 
 ## License
 

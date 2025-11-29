@@ -38,6 +38,25 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Import audit logging for structured events
+from audit_logging import (
+    emit_tool_event, emit_batch_event, emit_pruning_event, emit_limit_enforcement_event,
+    AuditAction, AuditSource
+)
+
+# Import Letta SDK client wrapper for SDK-based API calls
+# Feature flag to enable SDK migration (set USE_LETTA_SDK=true to enable)
+USE_LETTA_SDK = os.getenv('USE_LETTA_SDK', 'false').lower() == 'true'
+_letta_sdk_client = None
+
+if USE_LETTA_SDK:
+    try:
+        from letta_sdk_client import LettaSDKClient, get_client as get_letta_sdk_client
+        logger.info("Letta SDK client imported successfully - SDK mode enabled")
+    except ImportError as e:
+        logger.warning(f"Failed to import Letta SDK client, falling back to aiohttp: {e}")
+        USE_LETTA_SDK = False
+
 app = Quart(__name__)
 # Load .env file - try container path first, then current directory
 if os.path.exists('/app/.env'):
@@ -67,7 +86,9 @@ EXCLUDE_OFFICIAL_TOOLS = os.getenv('EXCLUDE_OFFICIAL_TOOLS', 'false').lower() ==
 MANAGE_ONLY_MCP_TOOLS = os.getenv('MANAGE_ONLY_MCP_TOOLS', 'false').lower() == 'true'
 
 # Tools that should never be detached (comma-separated list of tool names)
-NEVER_DETACH_TOOLS = [name.strip() for name in os.getenv('NEVER_DETACH_TOOLS', 'find_tools').split(',') if name.strip()]
+# Support both NEVER_DETACH_TOOLS and PROTECTED_TOOLS for consistency with SDK
+_protected_tools_env = os.getenv('PROTECTED_TOOLS') or os.getenv('NEVER_DETACH_TOOLS', 'find_tools')
+NEVER_DETACH_TOOLS = [name.strip() for name in _protected_tools_env.split(',') if name.strip()]
 
 # Default minimum score threshold for tool attachment (0-100)
 DEFAULT_MIN_SCORE = float(os.getenv('DEFAULT_MIN_SCORE', '35.0'))
@@ -176,8 +197,18 @@ def cosine_similarity(vec1, vec2):
     
     return dot_product / (magnitude1 * magnitude2)
 
-async def detach_tool(agent_id: str, tool_id: str):
-    """Detach a single tool asynchronously using the global session"""
+async def detach_tool(agent_id: str, tool_id: str, tool_name: str = None):
+    """Detach a single tool asynchronously using SDK or aiohttp"""
+    # Use SDK if enabled
+    if USE_LETTA_SDK:
+        try:
+            sdk_client = get_letta_sdk_client()
+            return await sdk_client.detach_tool(agent_id, tool_id, tool_name)
+        except Exception as e:
+            logger.error(f"SDK detach_tool failed, error: {e}")
+            return {"success": False, "tool_id": tool_id, "error": str(e)}
+    
+    # Fall back to aiohttp
     global http_session
     if not http_session:
         logger.error(f"HTTP session not initialized for detach_tool (agent: {agent_id}, tool: {tool_id})")
@@ -215,18 +246,33 @@ async def detach_tool(agent_id: str, tool_id: str):
         return {"success": False, "tool_id": tool_id, "error": str(e)}
 
 async def attach_tool(agent_id: str, tool: dict):
-    """Attach a single tool asynchronously using the global session"""
+    """Attach a single tool asynchronously using SDK or aiohttp"""
+    tool_name = tool.get('name', 'Unknown')
+    tool_id = tool.get('tool_id') or tool.get('id')
+    
+    if not tool_id:
+        logger.error(f"No tool ID found for tool {tool_name}")
+        return {"success": False, "tool_id": None, "name": tool_name, "error": "No tool ID available"}
+    
+    # Use SDK if enabled
+    if USE_LETTA_SDK:
+        try:
+            sdk_client = get_letta_sdk_client()
+            result = await sdk_client.attach_tool(agent_id, tool_id, tool_name)
+            # Preserve distance-based score if available from search
+            if result.get('success') and 'distance' in tool:
+                result['match_score'] = 100 * (1 - tool.get('distance', 0))
+            return result
+        except Exception as e:
+            logger.error(f"SDK attach_tool failed, error: {e}")
+            return {"success": False, "tool_id": tool_id, "name": tool_name, "error": str(e)}
+    
+    # Fall back to aiohttp
     global http_session
     if not http_session:
         logger.error(f"HTTP session not initialized for attach_tool (agent: {agent_id})")
-        return {"success": False, "tool_id": tool.get('tool_id') or tool.get('id'), "name": tool.get('name', 'Unknown'), "error": "HTTP session not available"}
+        return {"success": False, "tool_id": tool_id, "name": tool_name, "error": "HTTP session not available"}
     try:
-        tool_name = tool.get('name', 'Unknown')
-        tool_id = tool.get('tool_id') or tool.get('id')
-        if not tool_id:
-            logger.error(f"No tool ID found for tool {tool_name}")
-            return {"success": False, "tool_id": None, "name": tool_name, "error": "No tool ID available"}
-
         # logger.info(f"Attempting to attach tool {tool_name} ({tool_id}) to agent {agent_id}")
         attach_url = f"{LETTA_URL}/agents/{agent_id}/tools/attach/{tool_id}"
         async with http_session.patch(attach_url, headers=HEADERS) as response:
@@ -671,18 +717,38 @@ async def get_tools():
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 async def fetch_agent_info(agent_id):
-    """Fetch agent information asynchronously using the global session"""
+    """Fetch agent information asynchronously using SDK or aiohttp"""
+    # Use SDK if enabled
+    if USE_LETTA_SDK:
+        try:
+            sdk_client = get_letta_sdk_client()
+            return await sdk_client.get_agent_name(agent_id)
+        except Exception as e:
+            logger.error(f"SDK fetch_agent_info failed: {e}")
+            raise
+    
+    # Fall back to aiohttp
     global http_session
     if not http_session:
         logger.error(f"HTTP session not initialized for fetch_agent_info (agent: {agent_id})")
-        raise ConnectionError("HTTP session not available") # Or return default?
+        raise ConnectionError("HTTP session not available")
     async with http_session.get(f"{LETTA_URL}/agents/{agent_id}", headers=HEADERS) as response:
         response.raise_for_status()
         agent_data = await response.json()
     return agent_data.get("name", "Unknown Agent")
 
 async def fetch_agent_tools(agent_id):
-    """Fetch agent's current tools asynchronously using the global session"""
+    """Fetch agent's current tools asynchronously using SDK or aiohttp"""
+    # Use SDK if enabled
+    if USE_LETTA_SDK:
+        try:
+            sdk_client = get_letta_sdk_client()
+            return await sdk_client.list_agent_tools(agent_id)
+        except Exception as e:
+            logger.error(f"SDK fetch_agent_tools failed: {e}")
+            raise
+    
+    # Fall back to aiohttp
     global http_session
     if not http_session:
         logger.error(f"HTTP session not initialized for fetch_agent_tools (agent: {agent_id})")
@@ -692,7 +758,17 @@ async def fetch_agent_tools(agent_id):
         return await response.json()
 
 async def register_tool(tool_name, server_name):
-    """Register a tool from an MCP server asynchronously using the global session"""
+    """Register a tool from an MCP server asynchronously using SDK or aiohttp"""
+    # Use SDK if enabled
+    if USE_LETTA_SDK:
+        try:
+            sdk_client = get_letta_sdk_client()
+            return await sdk_client.register_mcp_tool(tool_name, server_name)
+        except Exception as e:
+            logger.error(f"SDK register_tool failed: {e}")
+            raise
+    
+    # Fall back to aiohttp
     global http_session
     if not http_session:
         logger.error(f"HTTP session not initialized for register_tool (tool: {tool_name}, server: {server_name})")
@@ -872,10 +948,166 @@ async def attach_tools():
             
             logger.info(f"Successfully processed/registered {len(processed_tools)} tools for attachment consideration.")
 
-            # 5. Perform detachments and attachments
+            # 5. Pre-attach pruning: Check if we need to make room before attaching new tools
+            MAX_TOTAL_TOOLS = int(os.getenv('MAX_TOTAL_TOOLS', '30'))
+            MAX_MCP_TOOLS = int(os.getenv('MAX_MCP_TOOLS', '20'))
+            MIN_MCP_TOOLS = int(os.getenv('MIN_MCP_TOOLS', '7'))
+            
+            # Count current tools
+            total_current_tools = len(current_agent_tools)
+            mcp_current_count = len(mcp_tools)
+            core_current_count = total_current_tools - mcp_current_count
+            
+            # Count how many new tools we're trying to attach
+            new_tool_ids = set()
+            for tool in processed_tools:
+                tool_id = tool.get("id") or tool.get("tool_id")
+                if tool_id and tool_id not in seen_tool_ids:  # Not already on agent
+                    new_tool_ids.add(tool_id)
+            
+            new_tools_count = len(new_tool_ids)
+            logger.info(f"Pre-attach analysis: current_total={total_current_tools}, current_mcp={mcp_current_count}, core={core_current_count}, new_tools={new_tools_count}")
+            logger.info(f"Limits: MAX_TOTAL={MAX_TOTAL_TOOLS}, MAX_MCP={MAX_MCP_TOOLS}, MIN_MCP={MIN_MCP_TOOLS}")
+            
+            # Calculate what the totals would be AFTER attachment (before any pruning)
+            projected_total = total_current_tools + new_tools_count
+            projected_mcp = mcp_current_count + new_tools_count
+            
+            logger.info(f"Projected after attach: total={projected_total}, mcp={projected_mcp}")
+            
+            # Determine if we need pre-attach pruning
+            needs_preattach_pruning = False
+            if projected_total > MAX_TOTAL_TOOLS:
+                logger.warning(f"Pre-attach check: projected total ({projected_total}) exceeds MAX_TOTAL_TOOLS ({MAX_TOTAL_TOOLS})")
+                needs_preattach_pruning = True
+            elif projected_mcp > MAX_MCP_TOOLS:
+                logger.warning(f"Pre-attach check: projected MCP count ({projected_mcp}) exceeds MAX_MCP_TOOLS ({MAX_MCP_TOOLS})")
+                needs_preattach_pruning = True
+            
+            # Perform pre-attach pruning if needed
+            if needs_preattach_pruning and query:
+                logger.info("Executing pre-attach pruning to make room for new tools...")
+                
+                # Calculate how many tools we need to remove to make room
+                # We want: current_mcp - tools_to_remove + new_tools <= MAX_MCP_TOOLS
+                # AND: total_current - tools_to_remove + new_tools <= MAX_TOTAL_TOOLS
+                
+                # Calculate minimum removals needed for each constraint
+                min_removals_for_mcp = max(0, projected_mcp - MAX_MCP_TOOLS)
+                min_removals_for_total = max(0, projected_total - MAX_TOTAL_TOOLS)
+                min_removals_needed = max(min_removals_for_mcp, min_removals_for_total)
+                
+                # Also respect MIN_MCP_TOOLS constraint
+                max_removals_allowed = max(0, mcp_current_count - MIN_MCP_TOOLS)
+                
+                tools_to_remove = min(min_removals_needed, max_removals_allowed)
+                
+                logger.info(f"Pre-attach pruning: need to remove {min_removals_needed} tools (min_for_mcp={min_removals_for_mcp}, min_for_total={min_removals_for_total})")
+                logger.info(f"Pre-attach pruning: can remove up to {max_removals_allowed} tools (respecting MIN_MCP_TOOLS={MIN_MCP_TOOLS})")
+                logger.info(f"Pre-attach pruning: will remove {tools_to_remove} tools")
+                
+                if tools_to_remove > 0:
+                    # Use aggressive pruning with high drop rate to make room
+                    # Calculate effective drop rate: we want to remove tools_to_remove from mcp_current_count
+                    effective_drop_rate = min(0.9, tools_to_remove / max(1, mcp_current_count))
+                    
+                    logger.info(f"Pre-attach pruning: using drop_rate={effective_drop_rate:.2f} to remove ~{tools_to_remove} tools")
+                    
+                    preattach_prune_result = await _perform_tool_pruning(
+                        agent_id=agent_id,
+                        user_prompt=query,
+                        drop_rate=effective_drop_rate,
+                        keep_tool_ids=keep_tools,
+                        newly_matched_tool_ids=[]  # Don't protect anything during pre-attach pruning
+                    )
+                    
+                    if preattach_prune_result.get("success"):
+                        removed_count = preattach_prune_result.get("details", {}).get("mcp_tools_detached_count", 0)
+                        logger.info(f"Pre-attach pruning completed: removed {removed_count} tools to make room")
+                        
+                        # Re-fetch current agent tools after pre-attach pruning
+                        current_agent_tools = await fetch_agent_tools(agent_id)
+                        mcp_tools = []
+                        seen_tool_ids = set()
+                        
+                        for tool in current_agent_tools:
+                            is_mcp_tool = (tool.get("tool_type") == "external_mcp" or 
+                                         (not _is_letta_core_tool(tool) and tool.get("tool_type") == "custom"))
+                            
+                            if is_mcp_tool:
+                                tool_id = tool.get("id") or tool.get("tool_id")
+                                if tool_id and tool_id not in seen_tool_ids:
+                                    seen_tool_ids.add(tool_id)
+                                    tool_copy = tool.copy()
+                                    tool_copy["id"] = tool_id
+                                    tool_copy["tool_id"] = tool_id
+                                    mcp_tools.append(tool_copy)
+                        
+                        logger.info(f"After pre-attach pruning: total_tools={len(current_agent_tools)}, mcp_tools={len(mcp_tools)}")
+                    else:
+                        logger.warning(f"Pre-attach pruning failed: {preattach_prune_result.get('error', 'Unknown error')}")
+                else:
+                    logger.info("Pre-attach pruning: no tools can be removed (would violate MIN_MCP_TOOLS)")
+            elif needs_preattach_pruning and not query:
+                logger.warning("Pre-attach pruning needed but skipped (no query provided for relevance scoring)")
+
+            # 6. Perform detachments and attachments
             results = await process_tools(agent_id, mcp_tools, processed_tools, keep_tools)
             
-            # 6. Optionally, trigger pruning after successful attachments if a query was provided
+            # 6.5. Emit audit events for attachments and detachments
+            try:
+                # Generate correlation ID for this operation
+                import uuid
+                correlation_id = str(uuid.uuid4())
+                
+                # Emit batch event for successful attachments
+                if results.get("successful_attachments"):
+                    emit_batch_event(
+                        action=AuditAction.ATTACH,
+                        agent_id=agent_id,
+                        tools=results["successful_attachments"],
+                        source=AuditSource.API_ATTACH,
+                        reason=f"Query match: {query[:100] if query else 'no query'}" if query else "Requested tool attachment",
+                        correlation_id=correlation_id,
+                        success_count=len(results["successful_attachments"]),
+                        failure_count=0
+                    )
+                
+                # Emit batch event for failed attachments
+                if results.get("failed_attachments"):
+                    emit_batch_event(
+                        action=AuditAction.ATTACH,
+                        agent_id=agent_id,
+                        tools=[{"tool_id": t.get("tool_id") or t.get("id"), 
+                               "name": t.get("name", "unknown"), 
+                               "success": False} 
+                              for t in results["failed_attachments"]],
+                        source=AuditSource.API_ATTACH,
+                        reason="Attachment failed",
+                        correlation_id=correlation_id,
+                        success_count=0,
+                        failure_count=len(results["failed_attachments"])
+                    )
+                
+                # Emit batch event for detachments
+                if results.get("detached_tools"):
+                    emit_batch_event(
+                        action=AuditAction.DETACH,
+                        agent_id=agent_id,
+                        tools=[{"tool_id": tool_id, "name": "unknown", "success": True} 
+                              for tool_id in results["detached_tools"]],
+                        source=AuditSource.API_ATTACH,
+                        reason="Making room for new tools",
+                        correlation_id=correlation_id,
+                        success_count=len(results["detached_tools"]),
+                        failure_count=0
+                    )
+                
+            except Exception as audit_error:
+                logger.warning(f"Failed to emit audit events: {audit_error}")
+                # Don't fail the operation due to audit logging issues
+            
+            # 7. Optionally, trigger pruning after successful attachments if a query was provided
             if query and results.get("successful_attachments"):
                 successful_attachment_ids = [t['tool_id'] for t in results["successful_attachments"]]
                 
@@ -1205,14 +1437,16 @@ async def _perform_tool_pruning(agent_id: str, user_prompt: str, drop_rate: floa
         successful_detachments_info = []
         failed_detachments_info = []
         if mcp_tools_to_detach_ids:
-            detach_tasks = [detach_tool(agent_id, tool_id) for tool_id in mcp_tools_to_detach_ids]
+            # Convert set to list once to preserve order for result mapping
+            tools_to_detach_list = list(mcp_tools_to_detach_ids)
+            detach_tasks = [detach_tool(agent_id, tool_id) for tool_id in tools_to_detach_list]
             logger.info(f"Executing {len(detach_tasks)} detach operations for MCP tools in parallel...")
             detach_results = await asyncio.gather(*detach_tasks, return_exceptions=True)
 
             id_to_name_map = {tool['id']: tool.get('name', 'Unknown') for tool in mcp_tools_on_agent_list}
 
             for i, result in enumerate(detach_results):
-                tool_id_detached = list(mcp_tools_to_detach_ids)[i] 
+                tool_id_detached = tools_to_detach_list[i] 
                 tool_name_detached = id_to_name_map.get(tool_id_detached, "Unknown")
 
                 if isinstance(result, Exception):
@@ -1298,6 +1532,65 @@ async def prune_tools():
             keep_tool_ids=keep_tool_ids,
             newly_matched_tool_ids=newly_matched_tool_ids
         )
+
+        # Emit audit events for pruning operation
+        try:
+            import uuid
+            correlation_id = str(uuid.uuid4())
+            
+            if pruning_result.get("success"):
+                details = pruning_result.get("details", {})
+                
+                # Emit pruning event with structured data
+                emit_pruning_event(
+                    agent_id=agent_id,
+                    tools_before=details.get("tools_on_agent_before_total", 0),
+                    tools_after=details.get("actual_total_tools_on_agent_after_pruning", 0),
+                    tools_detached=[t.get("tool_id") for t in details.get("successful_detachments_mcp", [])],
+                    tools_protected=details.get("explicitly_kept_tool_ids_from_request", []) + 
+                                   details.get("newly_matched_tool_ids_from_request", []),
+                    drop_rate=drop_rate,
+                    correlation_id=correlation_id,
+                    metadata={
+                        "mcp_tools_before": details.get("mcp_tools_on_agent_before", 0),
+                        "target_mcp_tools": details.get("target_mcp_tools_to_keep_after_pruning", 0),
+                        "user_prompt_snippet": user_prompt[:100] if user_prompt else "no prompt",
+                        "failed_detachments": len(details.get("failed_detachments_mcp", []))
+                    }
+                )
+                
+                # Also emit batch event for successful detachments
+                if details.get("successful_detachments_mcp"):
+                    emit_batch_event(
+                        action=AuditAction.DETACH,
+                        agent_id=agent_id,
+                        tools=details.get("successful_detachments_mcp", []),
+                        source=AuditSource.API_PRUNE,
+                        reason=f"Pruning with drop_rate={drop_rate}",
+                        correlation_id=correlation_id,
+                        success_count=len(details.get("successful_detachments_mcp", [])),
+                        failure_count=len(details.get("failed_detachments_mcp", []))
+                    )
+                
+                # Emit batch event for failed detachments if any
+                if details.get("failed_detachments_mcp"):
+                    emit_batch_event(
+                        action=AuditAction.DETACH,
+                        agent_id=agent_id,
+                        tools=[{"tool_id": t.get("tool_id"), 
+                               "name": t.get("name", "unknown"), 
+                               "success": False} 
+                              for t in details.get("failed_detachments_mcp", [])],
+                        source=AuditSource.API_PRUNE,
+                        reason="Detachment failed during pruning",
+                        correlation_id=correlation_id,
+                        success_count=0,
+                        failure_count=len(details.get("failed_detachments_mcp", []))
+                    )
+        
+        except Exception as audit_error:
+            logger.warning(f"Failed to emit audit events for pruning: {audit_error}")
+            # Don't fail the operation due to audit logging issues
 
         if pruning_result.get("success"):
             return jsonify(pruning_result)
@@ -7140,6 +7433,17 @@ async def health_check():
 
     response_payload = {
         "status": overall_status_string,
+        "version": "1.0.0",  # TODO: Read from package.json or VERSION file
+        "config": {
+            "MAX_TOTAL_TOOLS": MAX_TOTAL_TOOLS,
+            "MAX_MCP_TOOLS": MAX_MCP_TOOLS,
+            "MIN_MCP_TOOLS": os.getenv('MIN_MCP_TOOLS', '7'),
+            "DEFAULT_DROP_RATE": DEFAULT_DROP_RATE,
+            "PROTECTED_TOOLS": NEVER_DETACH_TOOLS,
+            "MANAGE_ONLY_MCP_TOOLS": MANAGE_ONLY_MCP_TOOLS,
+            "EXCLUDE_LETTA_CORE_TOOLS": EXCLUDE_LETTA_CORE_TOOLS,
+            "EXCLUDE_OFFICIAL_TOOLS": EXCLUDE_OFFICIAL_TOOLS,
+        },
         "details": {
             "weaviate": {
                 "status": weaviate_status_report,

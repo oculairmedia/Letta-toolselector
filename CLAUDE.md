@@ -181,6 +181,24 @@ python3 upload_tools_to_weaviate.py
 
 ## Development Patterns
 
+### Letta SDK Migration
+
+The API server supports two modes for communicating with the Letta API:
+
+1. **aiohttp mode** (default): Direct HTTP calls using aiohttp
+2. **SDK mode**: Uses the official `letta-client` SDK (v1.3.1+)
+
+Enable SDK mode with `USE_LETTA_SDK=true`. The SDK client wrapper is in `lettaaugment-source/letta_sdk_client.py`.
+
+Migrated functions (support both modes):
+- `detach_tool()` - Detach tools from agents
+- `attach_tool()` - Attach tools to agents  
+- `fetch_agent_info()` - Get agent name
+- `fetch_agent_tools()` - List agent's tools
+- `register_tool()` - Register MCP tools
+
+The SDK wrapper uses a thread pool executor to run synchronous SDK calls in async context, maintaining compatibility with the Quart async architecture.
+
 ### Async Architecture
 The API server uses async/await throughout with Quart (async Flask) and aiohttp for high concurrency tool operations.
 

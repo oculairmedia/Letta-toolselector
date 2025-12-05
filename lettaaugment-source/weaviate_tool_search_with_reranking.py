@@ -1,6 +1,7 @@
 """
 Weaviate Tool Search with Reranking Support
 Enhanced version that supports two-stage retrieval with Ollama-based reranking
+and automatic query expansion for better multifunctional tool discovery.
 """
 import weaviate
 from weaviate.classes.query import MetadataQuery, HybridFusion, Rerank
@@ -16,6 +17,72 @@ from specialized_embedding import (
     format_query_for_qwen3,
 )
 from qwen3_reranker_utils import DEFAULT_RERANK_INSTRUCTION
+
+# Import query expansion modules for multifunctional tool discovery
+# We support two modes: universal (schema-based) and legacy (hardcoded)
+QUERY_EXPANSION_AVAILABLE = False
+UNIVERSAL_EXPANSION_AVAILABLE = False
+
+# Try universal expansion first (preferred)
+try:
+    from universal_query_expansion import (
+        expand_query_universally,
+        expand_query_with_analysis,
+        get_universal_expander,
+    )
+    UNIVERSAL_EXPANSION_AVAILABLE = True
+    QUERY_EXPANSION_AVAILABLE = True
+    print("Universal query expansion loaded (schema-based, dynamic)")
+except ImportError as e:
+    print(f"Universal query expansion not available: {e}")
+
+# Fall back to legacy expansion if universal not available
+if not UNIVERSAL_EXPANSION_AVAILABLE:
+    try:
+        from query_expansion import (
+            expand_search_query,
+            expand_search_query_with_metadata,
+        )
+        QUERY_EXPANSION_AVAILABLE = True
+        print("Legacy query expansion loaded (hardcoded mappings)")
+    except ImportError as e:
+        print(f"Warning: No query expansion available: {e}")
+
+# Provide fallback implementations if neither is available
+if not QUERY_EXPANSION_AVAILABLE:
+    def expand_search_query(query: str) -> str:
+        return query
+    
+    def expand_search_query_with_metadata(query: str):
+        return type('ExpandedQuery', (), {
+            'original_query': query,
+            'expanded_query': query,
+            'detected_operations': [],
+            'detected_domains': [],
+            'added_keywords': [],
+            'confidence': 0.0
+        })()
+    
+    def expand_query_universally(query: str, tool_cache_path=None) -> str:
+        return query
+    
+    def expand_query_with_analysis(query: str, tool_cache_path=None):
+        return type('ExpandedQuery', (), {
+            'original_query': query,
+            'expanded_query': query,
+            'detected_intents': [],
+            'matched_tool_capabilities': [],
+            'added_keywords': [],
+            'confidence': 0.0
+        })()
+
+
+# Environment variable to enable/disable query expansion
+ENABLE_QUERY_EXPANSION = os.getenv("ENABLE_QUERY_EXPANSION", "true").lower() == "true"
+# Environment variable to prefer universal expansion over legacy
+USE_UNIVERSAL_EXPANSION = os.getenv("USE_UNIVERSAL_EXPANSION", "true").lower() == "true"
+# Environment variable to enable reranking by default for all searches
+ENABLE_RERANKING_BY_DEFAULT = os.getenv("ENABLE_RERANKING_BY_DEFAULT", "true").lower() == "true"
 
 def init_client():
     """Initialize Weaviate client using v4 API."""
@@ -63,10 +130,19 @@ def search_tools_with_reranking(
     limit: int = 10,
     use_reranking: bool = True,
     rerank_initial_limit: int = 30,
-    rerank_property: str = "enhanced_description"
+    rerank_property: str = "enhanced_description",
+    enable_query_expansion: Optional[bool] = None
 ) -> list:
     """
-    Search tools with optional reranking support.
+    Search tools with optional reranking support and automatic query expansion.
+    
+    Query expansion improves discovery of multifunctional tools (like CRUD tools)
+    by detecting operation intent (create, read, update, delete) and domain 
+    (book, page, issue, agent) from the query, then injecting relevant keywords.
+    
+    Example: "create a book" becomes "create book crud content_crud make add new 
+             documentation wiki bookstack manage" to find both specific and 
+             unified tools.
     
     Args:
         query: Search query
@@ -74,6 +150,7 @@ def search_tools_with_reranking(
         use_reranking: Whether to use reranking (requires reranker module)
         rerank_initial_limit: Number of candidates to retrieve for reranking
         rerank_property: Property to use for reranking
+        enable_query_expansion: Override for query expansion (None = use env var)
     
     Returns:
         List of tools with scores
@@ -83,6 +160,32 @@ def search_tools_with_reranking(
     # Check if reranking is enabled globally
     enable_reranking = os.getenv("ENABLE_RERANKING", "false").lower() == "true"
     use_reranking = use_reranking and enable_reranking
+    
+    # Determine if query expansion should be used
+    use_expansion = enable_query_expansion if enable_query_expansion is not None else ENABLE_QUERY_EXPANSION
+    
+    # Apply query expansion for better multifunctional tool discovery
+    original_query = query
+    expansion_metadata = None
+    if use_expansion and QUERY_EXPANSION_AVAILABLE:
+        # Prefer universal expansion (schema-based, dynamic)
+        if UNIVERSAL_EXPANSION_AVAILABLE and USE_UNIVERSAL_EXPANSION:
+            expansion_metadata = expand_query_with_analysis(query)
+            query = expansion_metadata.expanded_query
+            if expansion_metadata.added_keywords:
+                print(f"Universal query expansion: '{original_query}' -> added {len(expansion_metadata.added_keywords)} keywords")
+                print(f"  Intents detected: {[i.value if hasattr(i, 'value') else str(i) for i in expansion_metadata.detected_intents]}")
+                print(f"  Matched tools: {expansion_metadata.matched_tool_capabilities[:5]}")
+        else:
+            # Fall back to legacy expansion (hardcoded)
+            expansion_metadata = expand_search_query_with_metadata(query)
+            query = expansion_metadata.expanded_query
+            if expansion_metadata.added_keywords:
+                print(f"Legacy query expansion: '{original_query}' -> added {len(expansion_metadata.added_keywords)} keywords")
+                detected_ops = getattr(expansion_metadata, 'detected_operations', [])
+                detected_doms = getattr(expansion_metadata, 'detected_domains', [])
+                print(f"  Operations detected: {[op.value if hasattr(op, 'value') else str(op) for op in detected_ops]}")
+                print(f"  Domains detected: {detected_doms}")
     
     # Get reranking parameters from environment
     if use_reranking:
@@ -119,19 +222,42 @@ def search_tools_with_reranking(
                 # Apply client-side reranking
                 if result and hasattr(result, 'objects') and result.objects:
                     try:
-                        # Prepare documents for reranking
+                        # Prepare documents for reranking with improved format
                         documents = []
                         for obj in result.objects:
-                            # Create structured document text for better reranking
                             name = obj.properties.get('name', '')
                             description = obj.properties.get('description', '')
                             tags = obj.properties.get('tags', [])
-                            tool_type = obj.properties.get('tool_type', '')
+                            mcp_server = obj.properties.get('mcp_server_name', '')
                             
-                            # Format with more context for the reranker
-                            doc_text = f"Tool: {name}\nType: {tool_type}\nDescription: {description}"
-                            if tags:
-                                doc_text += f"\nCategories: {', '.join(tags)}"
+                            # Extract service name from tags (e.g., "mcp:huly" -> "huly")
+                            service = mcp_server
+                            if not service and tags:
+                                for tag in tags:
+                                    if tag.startswith('mcp:'):
+                                        service = tag[4:]  # Remove "mcp:" prefix
+                                        break
+                            
+                            # Extract action keywords from tool name (e.g., "huly_create_issue" -> ["create", "issue"])
+                            name_parts = name.lower().replace('_', ' ').replace('-', ' ').split()
+                            action_keywords = [p for p in name_parts if p in [
+                                'create', 'read', 'update', 'delete', 'list', 'search', 'get', 'set',
+                                'add', 'remove', 'edit', 'manage', 'find', 'query', 'sync', 'upload',
+                                'download', 'export', 'import', 'send', 'receive', 'start', 'stop'
+                            ]]
+                            
+                            # Build improved document format for reranker
+                            doc_parts = [f"Tool Name: {name}"]
+                            if service:
+                                doc_parts.append(f"Service: {service}")
+                            if action_keywords:
+                                doc_parts.append(f"Actions: {', '.join(action_keywords)}")
+                            if description:
+                                # Truncate description to first 500 chars for reranker efficiency
+                                desc_truncated = description[:500] + ('...' if len(description) > 500 else '')
+                                doc_parts.append(f"Description: {desc_truncated}")
+                            
+                            doc_text = '\n'.join(doc_parts)
                             documents.append(doc_text.strip())
                         
                         if documents:
@@ -252,16 +378,22 @@ def search_tools(query: str, limit: int = 10, reranker_config: Optional[Dict[str
     """
     Backward-compatible wrapper that uses reranking if enabled.
     Maintains the original API signature while adding reranking capabilities.
+    
+    Reranking is enabled by default via ENABLE_RERANKING_BY_DEFAULT env var (default: true).
+    Can be overridden by passing reranker_config={'enabled': False}.
     """
     # Determine if reranking should be used
-    use_reranking = False  # Default to NO reranking if no config provided
+    # Default to ENABLE_RERANKING_BY_DEFAULT env var (true by default)
+    use_reranking = ENABLE_RERANKING_BY_DEFAULT
+    
+    # Allow explicit override via reranker_config
     if reranker_config is not None:
-        use_reranking = reranker_config.get('enabled', False)
+        use_reranking = reranker_config.get('enabled', use_reranking)
         
     return search_tools_with_reranking(
         query=query,
         limit=limit,
-        use_reranking=use_reranking  # Will check ENABLE_RERANKING env var internally
+        use_reranking=use_reranking
     )
 
 def test_reranking_capability() -> Dict[str, Any]:

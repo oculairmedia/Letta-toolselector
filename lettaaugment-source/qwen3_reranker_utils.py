@@ -6,7 +6,10 @@ import math
 from typing import Any, Optional
 
 DEFAULT_RERANK_INSTRUCTION = (
-    "Given a web search query, retrieve relevant passages that answer the query"
+    "Rank tools by relevance to the user's request. "
+    "CRITICAL: If the query mentions a specific service (huly, bookstack, photoprism, komodo, etc.), "
+    "tools from that service MUST be ranked higher than generic tools, even if generic tools mention the action. "
+    "A 'huly' tool for 'issues' is more relevant than a generic 'collection' tool for 'create huly issue'."
 )
 
 SYSTEM_PROMPT_PREFIX = (

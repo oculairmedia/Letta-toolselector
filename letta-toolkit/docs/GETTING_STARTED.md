@@ -42,7 +42,7 @@ Set these environment variables before using the toolkit:
 ```bash
 export LETTA_BASE_URL="https://letta.oculair.ca"
 export LETTA_PASSWORD="your-api-key"
-export PROTECTED_TOOLS="find_agents,find_tools"
+export PROTECTED_TOOLS="find_agents,find_tools,matrix_messaging"
 export MAX_TOTAL_TOOLS="20"
 ```
 
@@ -57,7 +57,7 @@ config = LettaConfig(
     api_key="my-secret-key",
     timeout=60,
     max_retries=5,
-    protected_tools=["find_agents", "find_tools", "search"],
+    protected_tools=["find_agents", "find_tools", "matrix_messaging"],
     max_total_tools=25,
 )
 
@@ -73,7 +73,7 @@ set_config(config)
 | `api_key` | `LETTA_PASSWORD` | (empty) | API authentication key |
 | `timeout` | `LETTA_TIMEOUT` | `30` | Request timeout in seconds |
 | `max_retries` | `LETTA_MAX_RETRIES` | `3` | Max retry attempts |
-| `protected_tools` | `PROTECTED_TOOLS` | `find_agents,find_tools` | Comma-separated protected tool names |
+| `protected_tools` | `PROTECTED_TOOLS` | `find_agents,find_tools,matrix_messaging` | Comma-separated protected tool names |
 | `max_total_tools` | `MAX_TOTAL_TOOLS` | `20` | Maximum tools per agent |
 
 ## Quick Start Examples

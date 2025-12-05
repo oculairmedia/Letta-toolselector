@@ -53,7 +53,7 @@ The toolkit reads configuration from environment variables:
 | `LETTA_PASSWORD` | (empty) | API key for authentication |
 | `LETTA_TIMEOUT` | `30` | Request timeout in seconds |
 | `LETTA_MAX_RETRIES` | `3` | Max retry attempts |
-| `PROTECTED_TOOLS` | `find_agents,find_tools` | Comma-separated protected tool names |
+| `PROTECTED_TOOLS` | `find_agents,find_tools,matrix_messaging` | Comma-separated protected tool names |
 | `MAX_TOTAL_TOOLS` | `20` | Maximum tools per agent |
 
 You can also configure programmatically:
@@ -64,7 +64,7 @@ from letta_toolkit.config import LettaConfig, set_config
 config = LettaConfig(
     base_url="https://my-letta.com",
     api_key="my-key",
-    protected_tools=["find_agents", "search"],
+    protected_tools=["find_agents", "find_tools", "matrix_messaging"],
 )
 set_config(config)
 ```

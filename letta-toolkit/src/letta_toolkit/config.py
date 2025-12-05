@@ -33,7 +33,7 @@ class LettaConfig:
     )))
     protected_tools: list[str] = field(default_factory=lambda: [
         t.strip() for t in os.environ.get(
-            "PROTECTED_TOOLS", "find_agents,find_tools"
+            "PROTECTED_TOOLS", "find_agents,find_tools,matrix_messaging"
         ).split(",") if t.strip()
     ])
     

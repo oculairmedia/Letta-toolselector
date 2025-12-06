@@ -140,6 +140,32 @@ DEFAULT_DROP_RATE=0.6                 # Pruning aggressiveness (0.0-1.0)
 NEVER_DETACH_TOOLS=find_tools         # Comma-separated protected tools
 ```
 
+### Query Expansion for Multifunctional Tools
+```bash
+ENABLE_QUERY_EXPANSION=true           # Enable automatic query expansion (default: true)
+USE_UNIVERSAL_EXPANSION=true          # Use schema-based universal expansion (default: true)
+```
+
+The query expansion system improves discovery of tools by dynamically analyzing tool schemas:
+
+**Universal Expansion (Recommended)**
+The universal expander (`universal_query_expansion.py`) works by:
+1. Analyzing tool JSON schemas to detect operation parameters
+2. Building a "tool family" index from tool names (e.g., `create_book`, `delete_book` -> "book" family)
+3. Mapping entities to their MCP servers (e.g., "book" -> "bookstack")
+4. Detecting operation intent from natural language queries
+5. Injecting relevant keywords based on detected patterns
+
+Example: Query "create a book" automatically:
+- Detects intent: CREATE
+- Detects entity: "book"  
+- Finds related tools: create_book, delete_book, list_books, etc.
+- Adds MCP server: "bookstack"
+- Expands to: "create a book bookstack books crud manage delete list..."
+
+**Legacy Expansion (Fallback)**
+If universal expansion is unavailable, falls back to hardcoded mappings in `query_expansion.py`.
+
 ## Weaviate Integration
 
 The system uses Weaviate as a vector database for semantic tool search:

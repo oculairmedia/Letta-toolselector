@@ -49,13 +49,22 @@ from audit_logging import (
 USE_LETTA_SDK = os.getenv('USE_LETTA_SDK', 'false').lower() == 'true'
 _letta_sdk_client = None
 
-if USE_LETTA_SDK:
+# Tool search provider configuration
+# Options: 'weaviate' (default), 'letta', 'hybrid' (try Letta first, fallback to Weaviate)
+TOOL_SEARCH_PROVIDER = os.getenv('TOOL_SEARCH_PROVIDER', 'weaviate').lower()
+
+if USE_LETTA_SDK or TOOL_SEARCH_PROVIDER in ('letta', 'hybrid'):
     try:
         from letta_sdk_client import LettaSDKClient, get_client as get_letta_sdk_client
         logger.info("Letta SDK client imported successfully - SDK mode enabled")
+        if not USE_LETTA_SDK:
+            USE_LETTA_SDK = True  # Enable SDK for tool search even if not for other operations
     except ImportError as e:
         logger.warning(f"Failed to import Letta SDK client, falling back to aiohttp: {e}")
         USE_LETTA_SDK = False
+        if TOOL_SEARCH_PROVIDER == 'letta':
+            TOOL_SEARCH_PROVIDER = 'weaviate'
+            logger.warning("TOOL_SEARCH_PROVIDER set to 'letta' but SDK import failed, falling back to 'weaviate'")
 
 app = Quart(__name__)
 # Load .env file - try container path first, then current directory
@@ -64,9 +73,40 @@ if os.path.exists('/app/.env'):
 else:
     load_dotenv()
 
-LETTA_URL = os.getenv('LETTA_API_URL', 'https://letta2.oculair.ca/v1').replace('http://', 'https://')
-if not LETTA_URL.endswith('/v1'):
-    LETTA_URL = LETTA_URL.rstrip('/') + '/v1'
+def _normalize_letta_base_url(url: str):
+    """Normalize Letta base URL to ensure it includes /v1 and no trailing slash."""
+    if not url:
+        return None
+    normalized = url.rstrip('/')
+    if not normalized.endswith('/v1'):
+        normalized = f"{normalized}/v1"
+    return normalized
+
+raw_letta_url = os.getenv('LETTA_API_URL', 'https://letta2.oculair.ca/v1')
+LETTA_URL = _normalize_letta_base_url(raw_letta_url)
+
+
+def _build_message_base_urls():
+    candidates = []
+    direct_raw = os.getenv('LETTA_DIRECT_MESSAGE_URL') or os.getenv('LETTA_DIRECT_URL')
+    if direct_raw:
+        direct_url = _normalize_letta_base_url(direct_raw)
+        if direct_url:
+            candidates.append(direct_url)
+    if LETTA_URL:
+        candidates.append(LETTA_URL)
+        if LETTA_URL.startswith('https://'):
+            http_candidate = 'http://' + LETTA_URL[len('https://'):]
+            candidates.append(http_candidate)
+    seen = set()
+    ordered = []
+    for url in candidates:
+        if url and url not in seen:
+            ordered.append(url)
+            seen.add(url)
+    return ordered
+
+LETTA_MESSAGE_BASE_URLS = _build_message_base_urls()
 
 # Load password from environment variable
 LETTA_API_KEY = os.getenv('LETTA_PASSWORD')
@@ -101,6 +141,7 @@ logger.info(f"  EXCLUDE_LETTA_CORE_TOOLS: {EXCLUDE_LETTA_CORE_TOOLS}")
 logger.info(f"  EXCLUDE_OFFICIAL_TOOLS: {EXCLUDE_OFFICIAL_TOOLS}")
 logger.info(f"  MANAGE_ONLY_MCP_TOOLS: {MANAGE_ONLY_MCP_TOOLS}")
 logger.info(f"  NEVER_DETACH_TOOLS: {NEVER_DETACH_TOOLS}")
+logger.info(f"  TOOL_SEARCH_PROVIDER: {TOOL_SEARCH_PROVIDER}")
 
 HEADERS = {
     "Content-Type": "application/json",
@@ -182,6 +223,70 @@ async def read_mcp_servers_cache():
         return []
 
 # Removed update_mcp_servers_cache function as this is now handled by sync_service.py
+
+async def unified_tool_search(query: str, limit: int = 10, min_score: float = 0.0):
+    """
+    Unified tool search that can use either Weaviate or Letta's native search.
+    
+    The search provider is determined by the TOOL_SEARCH_PROVIDER environment variable:
+    - 'weaviate': Use Weaviate vector database (default)
+    - 'letta': Use Letta's native client.tools.search() API
+    - 'hybrid': Try Letta first, fallback to Weaviate on error
+    
+    Args:
+        query: Search query describing the tool you're looking for
+        limit: Maximum number of results to return
+        min_score: Minimum relevance score (0-100) to include
+        
+    Returns:
+        List of tool dicts with search results
+    """
+    global weaviate_client
+    
+    async def search_via_letta():
+        """Search using Letta's native tools.search() API"""
+        if not USE_LETTA_SDK:
+            raise RuntimeError("Letta SDK not available for tool search")
+        
+        sdk_client = get_letta_sdk_client()
+        results = await sdk_client.search_tools_with_scores(
+            query=query,
+            limit=limit,
+            min_score=min_score
+        )
+        logger.info(f"Letta native search for '{query}' returned {len(results)} results")
+        return results
+    
+    async def search_via_weaviate():
+        """Search using Weaviate vector database"""
+        if not weaviate_client or not weaviate_client.is_ready():
+            weaviate_client_local = init_weaviate_client()
+            if not weaviate_client_local or not weaviate_client_local.is_ready():
+                raise RuntimeError("Weaviate client not available for tool search")
+        
+        results = await asyncio.to_thread(search_tools, query=query, limit=limit)
+        logger.info(f"Weaviate search for '{query}' returned {len(results)} results")
+        return results
+    
+    # Execute search based on configured provider
+    if TOOL_SEARCH_PROVIDER == 'letta':
+        try:
+            return await search_via_letta()
+        except Exception as e:
+            logger.error(f"Letta tool search failed: {e}")
+            raise
+    
+    elif TOOL_SEARCH_PROVIDER == 'hybrid':
+        # Try Letta first, fallback to Weaviate
+        try:
+            return await search_via_letta()
+        except Exception as e:
+            logger.warning(f"Letta tool search failed, falling back to Weaviate: {e}")
+            return await search_via_weaviate()
+    
+    else:  # 'weaviate' (default)
+        return await search_via_weaviate()
+
 
 def cosine_similarity(vec1, vec2):
     """Calculate cosine similarity between two vectors."""
@@ -786,6 +891,107 @@ async def register_tool(tool_name, server_name):
         return registered_tool
     return None
 
+async def _send_trigger_message(agent_id: str, tool_names: list, query: str = None):
+    """
+    Internal coroutine that actually sends the trigger message to the agent.
+    This is meant to be run as a background task (fire-and-forget).
+    """
+    global http_session
+    if not http_session:
+        logger.warning("HTTP session not available for trigger message")
+        return
+    
+    if not LETTA_MESSAGE_BASE_URLS:
+        logger.warning("No Letta message endpoints available for trigger")
+        return
+    
+    tool_list = ", ".join(tool_names[:5])
+    if len(tool_names) > 5:
+        tool_list += f" and {len(tool_names) - 5} more"
+    
+    trigger_message = (
+        f"New tools attached to your toolkit: {tool_list}. "
+        f"These tools are now available. Please proceed with the original request"
+    )
+    if query:
+        trigger_message += f" regarding: {query}"
+    trigger_message += "."
+    
+    payload = {
+        "messages": [
+            {
+                "role": "user",
+                "content": trigger_message
+            }
+        ]
+    }
+    
+    last_error = None
+    for base_url in LETTA_MESSAGE_BASE_URLS:
+        messages_url = f"{base_url}/agents/{agent_id}/messages"
+        logger.info(f"[BACKGROUND] Sending trigger message to {agent_id} via {messages_url} ...")
+        try:
+            async with http_session.post(messages_url, headers=HEADERS, json=payload) as response:
+                if response.status in (200, 201, 202):
+                    logger.info(f"[BACKGROUND] Trigger completed for {agent_id} via {messages_url}")
+                    return
+                text = await response.text()
+                last_error = f"HTTP {response.status} - {text[:200]}"
+                logger.warning(f"[BACKGROUND] Trigger failed for {agent_id} via {messages_url}: {last_error}")
+        except Exception as e:
+            last_error = str(e)
+            logger.warning(f"[BACKGROUND] Error in trigger message for {agent_id} via {messages_url}: {e}")
+    
+    if last_error:
+        logger.warning(f"[BACKGROUND] All trigger attempts failed for {agent_id}: {last_error}")
+
+
+def trigger_agent_loop(agent_id: str, attached_tools: list, query: str = None):
+    """
+    Fire-and-forget trigger to start a new agent loop with updated tools.
+    
+    In Letta V1 architecture, tools are passed to the LLM at the start of a request.
+    After attaching new tools, we need to trigger a new loop so the agent can use them.
+    
+    This function spawns a background task and returns immediately - it does NOT wait
+    for the agent to process the message. This is intentional to avoid blocking the
+    attach endpoint response.
+    
+    Returns True if the background task was successfully created.
+    """
+    if not agent_id or not attached_tools:
+        return False
+    
+    # Build list of attached tool names
+    tool_names = []
+    for tool in attached_tools:
+        if isinstance(tool, dict):
+            name = tool.get("name") or tool.get("tool_name", "unknown")
+        else:
+            name = str(tool)
+        tool_names.append(name)
+    
+    try:
+        # Get the current event loop
+        loop = asyncio.get_event_loop()
+        
+        # Create a background task - this is TRUE fire-and-forget
+        # The task will run to completion but we don't wait for it
+        task = loop.create_task(_send_trigger_message(agent_id, tool_names, query))
+        
+        # Optional: Add a callback to log when it completes
+        def on_complete(t):
+            if t.exception():
+                logger.warning(f"[BACKGROUND] Trigger task failed with exception: {t.exception()}")
+        task.add_done_callback(on_complete)
+        
+        logger.info(f"Spawned background trigger task for agent {agent_id} with {len(tool_names)} new tools")
+        return True
+        
+    except Exception as e:
+        logger.warning(f"Error creating trigger task: {e}")
+        return False
+
 async def process_matching_tool(tool, letta_tools_cache, mcp_servers):
     """
     Process a single matching tool asynchronously using the cache.
@@ -1141,6 +1347,24 @@ async def attach_tools():
             else:
                 logger.info("Skipping tool pruning - no successful attachments or no query provided")
 
+            # 8. Trigger a new agent loop so newly attached tools are available
+            # In Letta V1 architecture, tools are passed to LLM at request start,
+            # so we need to trigger a new loop for the agent to use newly attached tools
+            loop_triggered = False
+            successful_attachments = results.get("successful_attachments", [])
+            logger.info(f"Checking if loop trigger needed: {len(successful_attachments)} successful attachments")
+            if successful_attachments:
+                logger.info(f"Triggering agent loop for {agent_id} with query: {query}")
+                try:
+                    loop_triggered = trigger_agent_loop(
+                        agent_id,
+                        successful_attachments,
+                        query=query
+                    )
+                    logger.info(f"Loop trigger task spawned: {loop_triggered}")
+                except Exception as trigger_error:
+                    logger.error(f"Exception during trigger_agent_loop: {trigger_error}", exc_info=True)
+
             return jsonify({
                 "success": True,
                 "message": f"Successfully processed {len(matching_tools_from_search)} candidates ({len(filtered_tools)} passed min_score={min_score}%), attached {len(results['successful_attachments'])} tool(s) to agent {agent_id}",
@@ -1154,7 +1378,8 @@ async def attach_tools():
                     "successful_attachments": results["successful_attachments"],
                     "failed_attachments": results["failed_attachments"],
                     "preserved_tools": keep_tools,
-                    "target_agent": agent_id
+                    "target_agent": agent_id,
+                    "loop_triggered": loop_triggered
                 }
             })
 

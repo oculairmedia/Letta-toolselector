@@ -94,6 +94,7 @@ services:
       - RERANKER_PROVIDER=${RERANKER_PROVIDER:-ollama}
       - RERANKER_TEMPERATURE=${RERANKER_TEMPERATURE:-0.1}
       - OLLAMA_RERANKER_BASE_URL=${OLLAMA_RERANKER_BASE_URL:-http://ollama-reranker-adapter:8080}
+      - LETTA_DIRECT_MESSAGE_URL=${LETTA_DIRECT_MESSAGE_URL:-http://192.168.50.90:8283}
     restart: unless-stopped
     volumes:
       - ./.env:/app/.env:ro

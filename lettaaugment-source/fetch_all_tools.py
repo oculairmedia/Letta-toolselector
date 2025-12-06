@@ -185,6 +185,21 @@ async def fetch_all_tools_async():
             letta_tools = await fetch_tools_from_server_async(session, main_tools_url, headers)
             tools_by_name = {tool['name']: tool for tool in letta_tools if 'name' in tool}
             print(f"Fetched {len(tools_by_name)} main Letta tools.")
+            
+            # --- Extract mcp_server_name from metadata_.mcp.server_name for tools that have it ---
+            # This handles tools that were registered from MCP servers but aren't in the current MCP server tool lists
+            extracted_count = 0
+            for tool_name, tool_data in tools_by_name.items():
+                if 'mcp_server_name' not in tool_data or not tool_data.get('mcp_server_name'):
+                    # Try to extract from metadata_.mcp.server_name
+                    metadata = tool_data.get('metadata_', {})
+                    if isinstance(metadata, dict):
+                        mcp_info = metadata.get('mcp', {})
+                        if isinstance(mcp_info, dict) and mcp_info.get('server_name'):
+                            tool_data['mcp_server_name'] = mcp_info['server_name']
+                            extracted_count += 1
+            if extracted_count > 0:
+                print(f"Extracted mcp_server_name from metadata for {extracted_count} tools.")
         except Exception as e:
             print(f"Error fetching main Letta tools: {e}")
             # Decide if we should continue without main tools or stop

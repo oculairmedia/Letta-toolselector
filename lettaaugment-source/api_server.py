@@ -130,6 +130,10 @@ MANAGE_ONLY_MCP_TOOLS = os.getenv('MANAGE_ONLY_MCP_TOOLS', 'false').lower() == '
 _protected_tools_env = os.getenv('PROTECTED_TOOLS') or os.getenv('NEVER_DETACH_TOOLS', 'find_tools')
 NEVER_DETACH_TOOLS = [name.strip() for name in _protected_tools_env.split(',') if name.strip()]
 
+# Matrix bridge webhook for cross-run tracking
+# When a new run is triggered after tool attachment, notify Matrix bridge
+MATRIX_BRIDGE_WEBHOOK_URL = os.getenv('MATRIX_BRIDGE_WEBHOOK_URL')
+
 # Default minimum score threshold for tool attachment (0-100)
 DEFAULT_MIN_SCORE = float(os.getenv('DEFAULT_MIN_SCORE', '35.0'))
 
@@ -936,6 +940,27 @@ async def _send_trigger_message(agent_id: str, tool_names: list, query: str = No
             async with http_session.post(messages_url, headers=HEADERS, json=payload) as response:
                 if response.status in (200, 201, 202):
                     logger.info(f"[BACKGROUND] Trigger completed for {agent_id} via {messages_url}")
+                    
+                    # Extract run_id from response and emit webhook
+                    new_run_id = None
+                    try:
+                        response_data = await response.json()
+                        messages = response_data.get("messages", [])
+                        if messages and len(messages) > 0:
+                            new_run_id = messages[0].get("run_id")
+                            logger.info(f"[BACKGROUND] New run_id from trigger: {new_run_id}")
+                    except Exception as parse_err:
+                        logger.warning(f"[BACKGROUND] Could not parse run_id from response: {parse_err}")
+                    
+                    # Emit webhook to Matrix bridge for cross-run tracking
+                    if MATRIX_BRIDGE_WEBHOOK_URL:
+                        await _emit_matrix_bridge_webhook(
+                            agent_id=agent_id,
+                            new_run_id=new_run_id,
+                            tool_names=tool_names,
+                            query=query
+                        )
+                    
                     return
                 text = await response.text()
                 last_error = f"HTTP {response.status} - {text[:200]}"
@@ -946,6 +971,67 @@ async def _send_trigger_message(agent_id: str, tool_names: list, query: str = No
     
     if last_error:
         logger.warning(f"[BACKGROUND] All trigger attempts failed for {agent_id}: {last_error}")
+
+
+async def _emit_matrix_bridge_webhook(
+    agent_id: str, 
+    new_run_id: str = None, 
+    tool_names: list = None, 
+    query: str = None
+):
+    """
+    Emit webhook to Matrix bridge for cross-run tracking.
+    
+    This notifies the Matrix bridge that a new run was triggered after tool attachment,
+    allowing it to track the conversation across multiple Letta runs.
+    
+    Webhook payload:
+    {
+        "event": "run_triggered",
+        "agent_id": "agent-xxx",
+        "new_run_id": "run-xxx",
+        "trigger_type": "tool_attachment",
+        "tools_attached": ["tool1", "tool2"],
+        "query": "original user query",
+        "timestamp": "2025-12-06T22:15:00Z"
+    }
+    """
+    global http_session
+    
+    if not MATRIX_BRIDGE_WEBHOOK_URL:
+        return
+    
+    if not http_session:
+        logger.warning("[WEBHOOK] HTTP session not available for Matrix bridge webhook")
+        return
+    
+    from datetime import datetime
+    
+    webhook_payload = {
+        "event": "run_triggered",
+        "agent_id": agent_id,
+        "new_run_id": new_run_id,
+        "trigger_type": "tool_attachment",
+        "tools_attached": tool_names or [],
+        "query": query,
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    }
+    
+    try:
+        async with http_session.post(
+            MATRIX_BRIDGE_WEBHOOK_URL,
+            json=webhook_payload,
+            timeout=aiohttp.ClientTimeout(total=5)
+        ) as resp:
+            if resp.status == 200:
+                logger.info(f"[WEBHOOK] Notified Matrix bridge of run trigger for {agent_id}, run_id={new_run_id}")
+            else:
+                resp_text = await resp.text()
+                logger.warning(f"[WEBHOOK] Matrix bridge returned {resp.status}: {resp_text[:200]}")
+    except asyncio.TimeoutError:
+        logger.warning(f"[WEBHOOK] Timeout sending webhook to Matrix bridge for {agent_id}")
+    except Exception as e:
+        logger.warning(f"[WEBHOOK] Failed to notify Matrix bridge for {agent_id}: {e}")
 
 
 def trigger_agent_loop(agent_id: str, attached_tools: list, query: str = None):

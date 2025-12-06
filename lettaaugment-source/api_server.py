@@ -909,8 +909,10 @@ async def _send_trigger_message(agent_id: str, tool_names: list, query: str = No
     if len(tool_names) > 5:
         tool_list += f" and {len(tool_names) - 5} more"
     
+    # Use system role to minimize disruption to conversation flow
+    # The [SYSTEM] prefix helps the agent recognize this as an automated notification
     trigger_message = (
-        f"New tools attached to your toolkit: {tool_list}. "
+        f"[SYSTEM] New tools attached to your toolkit: {tool_list}. "
         f"These tools are now available. Please proceed with the original request"
     )
     if query:
@@ -920,7 +922,7 @@ async def _send_trigger_message(agent_id: str, tool_names: list, query: str = No
     payload = {
         "messages": [
             {
-                "role": "user",
+                "role": "system",
                 "content": trigger_message
             }
         ]

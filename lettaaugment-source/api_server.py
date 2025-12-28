@@ -1061,128 +1061,7 @@ async def validate_config_endpoint():
 # Search parameter routes moved to routes/search.py blueprint
 
 
-# Reranker Configuration Endpoints
-@app.route('/api/v1/config/reranker', methods=['GET'])
-async def get_reranker_config():
-    """Get current reranker configuration."""
-    try:
-        # For now, return default config based on environment variables
-        config = {
-            "enabled": os.getenv('RERANKER_ENABLED', 'true').lower() == 'true',
-            "model": os.getenv('RERANKER_MODEL', 'qwen3-reranker-4b'),
-            "provider": os.getenv('RERANKER_PROVIDER', 'vllm'),
-            "parameters": {
-                "temperature": float(os.getenv('RERANKER_TEMPERATURE', '0.1')),
-                "max_tokens": int(os.getenv('RERANKER_MAX_TOKENS', '512')),
-                "base_url": os.getenv('RERANKER_URL', 'http://100.81.139.20:11435/rerank')
-            }
-        }
-        return jsonify({"success": True, "data": config})
-    except Exception as e:
-        logger.error(f"Error getting reranker config: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route('/api/v1/config/reranker', methods=['PUT'])
-async def update_reranker_config():
-    """Update reranker configuration."""
-    try:
-        data = await request.get_json()
-        if not data:
-            return jsonify({"success": False, "error": "No configuration data provided"}), 400
-        
-        # Validate required fields
-        required_fields = ['enabled', 'model', 'provider', 'parameters']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"success": False, "error": f"Missing required field: {field}"}), 400
-        
-        # For now, just acknowledge the update (in a full implementation, 
-        # this would save to a config file or database)
-        logger.info(f"Reranker config update requested: {data}")
-        
-        return jsonify({"success": True, "message": "Reranker configuration updated successfully"})
-    except Exception as e:
-        logger.error(f"Error updating reranker config: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route('/api/v1/config/reranker/test', methods=['POST'])
-async def test_reranker_connection():
-    """Test reranker connection with provided configuration."""
-    try:
-        data = await request.get_json()
-        if not data:
-            return jsonify({"success": False, "error": "No configuration data provided"}), 400
-        
-        # Extract connection parameters
-        provider = data.get('provider', 'ollama')
-        base_url = data.get('parameters', {}).get('base_url', 'http://ollama-reranker-adapter:8080')
-        # model = data.get('model', 'mistral:7b')  # Currently unused
-        
-        # Test connection based on provider
-        connected = False
-        if provider == 'ollama':
-            try:
-                async with aiohttp.ClientSession() as session:
-                    # Test health endpoint
-                    async with session.get(f"{base_url}/health", timeout=5) as response:
-                        if response.status == 200:
-                            connected = True
-            except Exception as conn_error:
-                logger.warning(f"Reranker connection test failed: {str(conn_error)}")
-        
-        return jsonify({
-            "success": True, 
-            "data": {"connected": connected}
-        })
-    except Exception as e:
-        logger.error(f"Error testing reranker connection: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-# Embedding Configuration Endpoints
-@app.route('/api/v1/config/embedding', methods=['GET'])
-async def get_embedding_config():
-    """Get current embedding configuration."""
-    try:
-        # Return embedding config based on environment variables
-        config = {
-            "model": os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
-            "provider": os.getenv('EMBEDDING_PROVIDER', 'ollama'),
-            "parameters": {
-                "dimensions": int(os.getenv('EMBEDDING_DIMENSION', '2560')),
-                "host": os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80'),
-                "use_ollama": os.getenv('USE_OLLAMA_EMBEDDINGS', 'true').lower() == 'true'
-            }
-        }
-        return jsonify({"success": True, "data": config})
-    except Exception as e:
-        logger.error(f"Error getting embedding config: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route('/api/v1/config/embedding', methods=['PUT'])
-async def update_embedding_config():
-    """Update embedding configuration."""
-    try:
-        data = await request.get_json()
-        if not data:
-            return jsonify({"success": False, "error": "No configuration data provided"}), 400
-        
-        # Validate required fields
-        required_fields = ['model', 'provider']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"success": False, "error": f"Missing required field: {field}"}), 400
-        
-        # For now, just acknowledge the update
-        logger.info(f"Embedding config update requested: {data}")
-        
-        return jsonify({"success": True, "message": "Embedding configuration updated successfully"})
-    except Exception as e:
-        logger.error(f"Error updating embedding config: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
+# Reranker and Embedding config routes moved to routes/config.py blueprint
 
 
 @app.route('/api/v1/ollama/models', methods=['GET'])
@@ -6819,6 +6698,12 @@ async def startup():
     search_routes.configure(bm25_vector_override_service=bm25_vector_override_service)
     app.register_blueprint(search_bp)
     logger.info("Search routes blueprint registered.")
+    
+    # Configure and register config routes blueprint
+    from routes import config as config_routes, config_bp
+    config_routes.configure(http_session=http_session)
+    app.register_blueprint(config_bp)
+    logger.info("Config routes blueprint registered.")
 
     # Ensure cache directory exists
     os.makedirs(CACHE_DIR, exist_ok=True)

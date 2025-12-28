@@ -232,7 +232,7 @@ async def delete_configuration_preset(preset_id):
 # Ollama Configuration
 # =============================================================================
 
-async def _test_ollama_connection(config):
+async def test_ollama_connection(config):
     """Test connection to Ollama server."""
     host = config.get("host", "192.168.50.80")
     port = config.get("port", 11434)
@@ -320,7 +320,7 @@ async def get_ollama_config():
         }
 
         # Add connection status
-        connection_status = await _test_ollama_connection(config["connection"])
+        connection_status = await test_ollama_connection(config["connection"])
         config["status"] = connection_status
 
         return jsonify({"success": True, "data": config})
@@ -396,7 +396,7 @@ async def update_ollama_config():
 
         # Test connection if connection config provided
         if "connection" in data:
-            test_result = await _test_ollama_connection(data["connection"])
+            test_result = await test_ollama_connection(data["connection"])
             if not test_result["available"]:
                 warnings.append(f"Ollama connection test failed: {test_result.get('error', 'Unknown error')}")
 
@@ -442,8 +442,293 @@ async def test_ollama_connection_endpoint():
             "timeout": connection_config.get("timeout", int(os.getenv('OLLAMA_TIMEOUT', '30')))
         }
 
-        result = await _test_ollama_connection(config)
+        result = await test_ollama_connection(config)
         return jsonify({"success": True, "data": result})
     except Exception as e:
         logger.error(f"Error testing Ollama connection: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# =============================================================================
+# Weaviate Configuration
+# =============================================================================
+
+async def test_weaviate_connection(config):
+    """Test connection to Weaviate server."""
+    url = config.get("url", "http://weaviate:8080/")
+    timeout = config.get("timeout", 30)
+    api_key = config.get("api_key")
+    
+    try:
+        headers = {}
+        if api_key:
+            headers['Authorization'] = f"Bearer {api_key}"
+
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+            # Test basic connectivity
+            meta_url = f"{url.rstrip('/')}/v1/meta"
+            async with session.get(meta_url, headers=headers) as response:
+                if response.status == 200:
+                    meta_data = await response.json()
+
+                    # Test schema access
+                    schema_url = f"{url.rstrip('/')}/v1/schema"
+                    async with session.get(schema_url, headers=headers) as schema_response:
+                        if schema_response.status == 200:
+                            schema_data = await schema_response.json()
+                            class_count = len(schema_data.get("classes", []))
+
+                            return {
+                                "available": True,
+                                "version": meta_data.get("version", "unknown"),
+                                "hostname": meta_data.get("hostname", "unknown"),
+                                "class_count": class_count,
+                                "modules": meta_data.get("modules", {}),
+                                "url": url
+                            }
+                        else:
+                            return {
+                                "available": False,
+                                "error": f"Schema endpoint returned {schema_response.status}",
+                                "url": url
+                            }
+                else:
+                    return {
+                        "available": False,
+                        "error": f"Meta endpoint returned {response.status}",
+                        "url": url
+                    }
+    except asyncio.TimeoutError:
+        return {
+            "available": False,
+            "error": "Connection timeout",
+            "url": url
+        }
+    except Exception as e:
+        return {
+            "available": False,
+            "error": str(e),
+            "url": url
+        }
+
+
+@config_bp.route('/weaviate', methods=['GET'])
+async def get_weaviate_config():
+    """Get current Weaviate configuration."""
+    try:
+        config = {
+            "connection": {
+                "url": os.getenv('WEAVIATE_URL', 'http://weaviate:8080/'),
+                "timeout": int(os.getenv('WEAVIATE_TIMEOUT', '30')),
+                "retries": int(os.getenv('WEAVIATE_RETRIES', '3')),
+                "api_key": "***" if os.getenv('WEAVIATE_API_KEY') else None
+            },
+            "schema": {
+                "class_name": os.getenv('WEAVIATE_CLASS_NAME', 'Tool'),
+                "vector_index_type": os.getenv('WEAVIATE_VECTOR_INDEX', 'hnsw'),
+                "distance_metric": os.getenv('WEAVIATE_DISTANCE_METRIC', 'cosine')
+            },
+            "search": {
+                "alpha": float(os.getenv('WEAVIATE_ALPHA', '0.75')),
+                "limit": int(os.getenv('WEAVIATE_LIMIT', '50')),
+                "additional_properties": os.getenv('WEAVIATE_ADDITIONAL_PROPERTIES', 'id,distance,certainty').split(','),
+                "autocut": int(os.getenv('WEAVIATE_AUTOCUT', '1'))
+            },
+            "performance": {
+                "ef_construction": int(os.getenv('WEAVIATE_EF_CONSTRUCTION', '128')),
+                "ef": int(os.getenv('WEAVIATE_EF', '64')),
+                "max_connections": int(os.getenv('WEAVIATE_MAX_CONNECTIONS', '64')),
+                "vector_cache_max_objects": int(os.getenv('WEAVIATE_VECTOR_CACHE_MAX_OBJECTS', '1000000')),
+                "cleanup_interval_seconds": int(os.getenv('WEAVIATE_CLEANUP_INTERVAL', '60'))
+            }
+        }
+
+        # Add connection status
+        connection_status = await test_weaviate_connection(config["connection"])
+        config["status"] = connection_status
+
+        return jsonify({"success": True, "data": config})
+    except Exception as e:
+        logger.error(f"Error getting Weaviate config: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@config_bp.route('/weaviate', methods=['PUT'])
+async def update_weaviate_config():
+    """Update Weaviate configuration."""
+    try:
+        data = await request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "No configuration data provided"}), 400
+
+        # Validate configuration data
+        validation_errors = []
+        warnings = []
+
+        if "connection" in data:
+            conn = data["connection"]
+
+            # Validate URL
+            if "url" in conn:
+                url = conn["url"]
+                if not url or not isinstance(url, str):
+                    validation_errors.append("URL must be a valid string")
+                elif not (url.startswith('http://') or url.startswith('https://')):
+                    validation_errors.append("URL must start with http:// or https://")
+
+            # Validate timeout
+            if "timeout" in conn:
+                timeout = conn["timeout"]
+                if not isinstance(timeout, int) or timeout < 1:
+                    validation_errors.append("Timeout must be a positive integer")
+                elif timeout < 5:
+                    warnings.append("Very low timeout may cause connection issues")
+
+            # Validate retries
+            if "retries" in conn:
+                retries = conn["retries"]
+                if not isinstance(retries, int) or retries < 0:
+                    validation_errors.append("Retries must be a non-negative integer")
+                elif retries > 10:
+                    warnings.append("High retry count may cause delays")
+
+        if "search" in data:
+            search = data["search"]
+
+            # Validate alpha
+            if "alpha" in search:
+                alpha = search["alpha"]
+                if not isinstance(alpha, (int, float)) or not (0.0 <= alpha <= 1.0):
+                    validation_errors.append("Alpha must be between 0.0 and 1.0")
+
+            # Validate limit
+            if "limit" in search:
+                limit = search["limit"]
+                if not isinstance(limit, int) or limit < 1:
+                    validation_errors.append("Limit must be a positive integer")
+                elif limit > 1000:
+                    warnings.append("Very high limit may impact performance")
+
+        if "performance" in data:
+            perf = data["performance"]
+
+            # Validate HNSW parameters
+            hnsw_params = ["ef_construction", "ef", "max_connections"]
+            for param in hnsw_params:
+                if param in perf:
+                    value = perf[param]
+                    if not isinstance(value, int) or value < 1:
+                        validation_errors.append(f"{param} must be a positive integer")
+
+            # Validate cache size
+            if "vector_cache_max_objects" in perf:
+                cache_size = perf["vector_cache_max_objects"]
+                if not isinstance(cache_size, int) or cache_size < 1000:
+                    validation_errors.append("vector_cache_max_objects must be at least 1000")
+                elif cache_size > 10000000:
+                    warnings.append("Very large vector cache may use excessive memory")
+
+        if validation_errors:
+            return jsonify({
+                "success": False,
+                "error": "Validation failed",
+                "validation_errors": validation_errors,
+                "warnings": warnings
+            }), 400
+
+        # Test connection if connection config provided
+        if "connection" in data:
+            test_result = await test_weaviate_connection(data["connection"])
+            if not test_result["available"]:
+                warnings.append(f"Weaviate connection test failed: {test_result.get('error', 'Unknown error')}")
+
+        # Log the configuration update
+        logger.info(f"Weaviate configuration update requested: {data}")
+
+        response = {
+            "success": True,
+            "message": "Weaviate configuration updated successfully",
+            "applied_config": data
+        }
+
+        if warnings:
+            response["warnings"] = warnings
+
+        return jsonify(response)
+    except Exception as e:
+        logger.error(f"Error updating Weaviate config: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@config_bp.route('/weaviate/test', methods=['POST'])
+async def test_weaviate_connection_endpoint():
+    """Test Weaviate connection with provided configuration."""
+    try:
+        data = await request.get_json()
+        connection_config = data.get("connection", {}) if data else {}
+
+        # Use defaults if not provided
+        config = {
+            "url": connection_config.get("url", os.getenv('WEAVIATE_URL', 'http://weaviate:8080/')),
+            "timeout": connection_config.get("timeout", int(os.getenv('WEAVIATE_TIMEOUT', '30'))),
+            "api_key": connection_config.get("api_key", os.getenv('WEAVIATE_API_KEY'))
+        }
+
+        result = await test_weaviate_connection(config)
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        logger.error(f"Error testing Weaviate connection: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@config_bp.route('/weaviate/schema', methods=['GET'])
+async def get_weaviate_schema():
+    """Get Weaviate schema information."""
+    try:
+        url = os.getenv('WEAVIATE_URL', 'http://weaviate:8080/')
+        timeout = int(os.getenv('WEAVIATE_TIMEOUT', '30'))
+
+        headers = {}
+        if os.getenv('WEAVIATE_API_KEY'):
+            headers['Authorization'] = f"Bearer {os.getenv('WEAVIATE_API_KEY')}"
+
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+            # Get schema information
+            async with session.get(f"{url.rstrip('/')}/v1/schema", headers=headers) as response:
+                if response.status == 200:
+                    schema_data = await response.json()
+
+                    # Get object count for each class
+                    classes_with_counts = []
+                    for class_info in schema_data.get("classes", []):
+                        class_name = class_info["class"]
+
+                        # Get object count
+                        count_query = f"{url.rstrip('/')}/v1/objects?class={class_name}&limit=0"
+                        async with session.get(count_query, headers=headers) as count_response:
+                            if count_response.status == 200:
+                                count_data = await count_response.json()
+                                object_count = count_data.get("totalResults", 0)
+                            else:
+                                object_count = -1  # Unknown
+
+                        classes_with_counts.append({
+                            **class_info,
+                            "object_count": object_count
+                        })
+
+                    return jsonify({
+                        "success": True,
+                        "data": {
+                            "classes": classes_with_counts,
+                            "total_classes": len(classes_with_counts)
+                        }
+                    })
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": f"Schema endpoint returned {response.status}"
+                    }), response.status
+    except Exception as e:
+        logger.error(f"Error getting Weaviate schema: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500

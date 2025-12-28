@@ -2,6 +2,11 @@ from quart import Quart, request, jsonify
 # Restore search_tools import, remove get_all_tools as cache is used for listing
 from weaviate_tool_search_with_reranking import search_tools, search_tools_with_reranking, init_client as init_weaviate_client
 from weaviate_client_manager import get_client_manager, close_client_manager
+# Import models for type definitions and utilities
+from models import (
+    LETTA_CORE_TOOL_TYPES, LETTA_CORE_TOOL_NAMES,
+    is_letta_core_tool as models_is_letta_core_tool
+)
 import os
 import asyncio
 import aiohttp
@@ -704,12 +709,12 @@ async def search_with_reranking():
         if not reranker_config.get('model'):
             reranker_config = {
                 "enabled": os.getenv('RERANKER_ENABLED', 'true').lower() == 'true',
-                "model": os.getenv('RERANKER_MODEL', 'dengcao/Qwen3-Reranker-4B:Q5_K_M'),
-                "provider": os.getenv('RERANKER_PROVIDER', 'ollama'),
+                "model": os.getenv('RERANKER_MODEL', 'qwen3-reranker-4b'),
+                "provider": os.getenv('RERANKER_PROVIDER', 'vllm'),
                 "parameters": {
                     "temperature": float(os.getenv('RERANKER_TEMPERATURE', '0.1')),
                     "max_tokens": int(os.getenv('RERANKER_MAX_TOKENS', '512')),
-                    "base_url": os.getenv('OLLAMA_RERANKER_BASE_URL', 'http://ollama-reranker-adapter:8080')
+                    "base_url": os.getenv('RERANKER_URL', 'http://100.81.139.20:11435/rerank')
                 }
             }
         
@@ -1456,29 +1461,11 @@ async def attach_tools():
 def _is_letta_core_tool(tool: dict) -> bool:
     """
     Determine if a tool is a Letta core tool that should not be managed by auto selection.
+    
+    Delegates to models.is_letta_core_tool for the actual implementation.
+    This wrapper is kept for backward compatibility with existing code.
     """
-    # Check tool_type for obvious Letta tools
-    letta_tool_types = [
-        'letta_core', 'letta_voice_sleeptime_core', 'letta_sleeptime_core', 
-        'letta_memory_core', 'letta_files_core', 'letta_builtin', 'letta_multi_agent_core'
-    ]
-    
-    tool_type = tool.get('tool_type', '')
-    if tool_type in letta_tool_types:
-        return True
-    
-    # Check by tool name for additional core tools and important management tools
-    core_tool_names = [
-        'send_message', 'conversation_search', 'archival_memory_insert', 
-        'archival_memory_search', 'core_memory_append', 'core_memory_replace', 
-        'pause_heartbeats', 'find_attach_tools'  # Include tool management functions
-    ]
-    
-    tool_name = tool.get('name', '')
-    if tool_name in core_tool_names:
-        return True
-    
-    return False
+    return models_is_letta_core_tool(tool)
 
 async def _perform_tool_pruning(agent_id: str, user_prompt: str, drop_rate: float, keep_tool_ids: list = None, newly_matched_tool_ids: list = None) -> dict:
     """
@@ -2102,12 +2089,12 @@ async def get_reranker_config():
         # For now, return default config based on environment variables
         config = {
             "enabled": os.getenv('RERANKER_ENABLED', 'true').lower() == 'true',
-            "model": os.getenv('RERANKER_MODEL', 'mistral:7b'),
-            "provider": os.getenv('RERANKER_PROVIDER', 'ollama'),
+            "model": os.getenv('RERANKER_MODEL', 'qwen3-reranker-4b'),
+            "provider": os.getenv('RERANKER_PROVIDER', 'vllm'),
             "parameters": {
                 "temperature": float(os.getenv('RERANKER_TEMPERATURE', '0.1')),
                 "max_tokens": int(os.getenv('RERANKER_MAX_TOKENS', '512')),
-                "base_url": os.getenv('OLLAMA_RERANKER_BASE_URL', 'http://ollama-reranker-adapter:8080')
+                "base_url": os.getenv('RERANKER_URL', 'http://100.81.139.20:11435/rerank')
             }
         }
         return jsonify({"success": True, "data": config})

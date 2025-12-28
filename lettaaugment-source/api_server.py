@@ -1148,6 +1148,10 @@ async def attach_tools():
         agent_id = data.get('agent_id')
         keep_tools = data.get('keep_tools', [])
         min_score = data.get('min_score', DEFAULT_MIN_SCORE)  # Add min_score parameter with configurable default
+        skip_loop_trigger = data.get('skip_loop_trigger', False)  # Skip loop trigger when called from proxy pre-attach
+        
+        # Debug: log the full payload to understand what's being sent
+        logger.info(f"[DEBUG] Attach request payload: skip_loop_trigger={skip_loop_trigger}, keys={list(data.keys())}")
 
         if not agent_id:
             logger.warning("Attach request missing 'agent_id'.")
@@ -1401,47 +1405,14 @@ async def attach_tools():
                 logger.warning(f"Failed to emit audit events: {audit_error}")
                 # Don't fail the operation due to audit logging issues
             
-            # 7. Optionally, trigger pruning after successful attachments if a query was provided
-            if query and results.get("successful_attachments"):
-                successful_attachment_ids = [t['tool_id'] for t in results["successful_attachments"]]
-                
-                # Check if we have enough MCP tools to warrant pruning
-                MIN_MCP_TOOLS = int(os.getenv('MIN_MCP_TOOLS', '7'))
-                try:
-                    current_agent_tools = await fetch_agent_tools(agent_id)
-                    mcp_tools_count = sum(1 for tool in current_agent_tools 
-                                         if tool.get("tool_type") == "external_mcp" or 
-                                         (not _is_letta_core_tool(tool) and tool.get("tool_type") == "custom"))
-                    
-                    if mcp_tools_count <= MIN_MCP_TOOLS:
-                        logger.info(f"Skipping auto-pruning: Agent has {mcp_tools_count} MCP tools (minimum required: {MIN_MCP_TOOLS})")
-                    else:
-                        logger.info(f"Calling tool pruning after successful attachment of {len(successful_attachment_ids)} tools for agent {agent_id}")
-                        pruning_result = await _perform_tool_pruning(
-                            agent_id=agent_id,
-                            user_prompt=query, # Use the same query for pruning context
-                            drop_rate=DEFAULT_DROP_RATE, # Use configurable drop rate from environment
-                            keep_tool_ids=keep_tools, # Preserve tools explicitly asked to be kept
-                            newly_matched_tool_ids=successful_attachment_ids # Preserve newly attached tools
-                        )
-                        if pruning_result.get("success"):
-                            logger.info(f"Tool pruning completed successfully: {pruning_result.get('details', {}).get('mcp_tools_detached_count', 0)} tools pruned")
-                        else:
-                            logger.warning(f"Tool pruning failed: {pruning_result.get('error', 'Unknown error')}")
-                        
-                except Exception as prune_error:
-                    logger.error(f"Error during tool pruning after attachment: {prune_error}")
-                    # Continue execution - don't fail the whole attach operation due to pruning issues
-            else:
-                logger.info("Skipping tool pruning - no successful attachments or no query provided")
-
-            # 8. Trigger a new agent loop so newly attached tools are available
+            # 7. Trigger a new agent loop so newly attached tools are available
+            # IMPORTANT: Do this BEFORE post-attach pruning so the client gets a response faster
             # In Letta V1 architecture, tools are passed to LLM at request start,
             # so we need to trigger a new loop for the agent to use newly attached tools
             loop_triggered = False
             successful_attachments = results.get("successful_attachments", [])
-            logger.info(f"Checking if loop trigger needed: {len(successful_attachments)} successful attachments")
-            if successful_attachments:
+            logger.info(f"Checking if loop trigger needed: {len(successful_attachments)} successful attachments, skip_loop_trigger={skip_loop_trigger}")
+            if successful_attachments and not skip_loop_trigger:
                 logger.info(f"Triggering agent loop for {agent_id} with query: {query}")
                 try:
                     loop_triggered = trigger_agent_loop(

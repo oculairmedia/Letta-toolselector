@@ -32,6 +32,8 @@ from .ollama import ollama_bp, configure as configure_ollama
 from .backup import backup_bp, configure as configure_backup
 from .cost_control import cost_control_bp, configure as configure_cost_control
 from .operations import maintenance_bp, logs_bp, environment_bp, configure as configure_operations
+from .benchmark import benchmark_bp, configure as configure_benchmark
+from .reranker import reranker_bp, configure as configure_reranker
 
 # Also expose the modules for configure() calls
 from . import tools
@@ -42,6 +44,8 @@ from . import ollama
 from . import backup
 from . import cost_control
 from . import operations
+from . import benchmark
+from . import reranker
 
 __all__ = [
     'tools_bp',
@@ -54,6 +58,8 @@ __all__ = [
     'maintenance_bp',
     'logs_bp',
     'environment_bp',
+    'benchmark_bp',
+    'reranker_bp',
     'configure_tools',
     'configure_health',
     'configure_search',
@@ -62,6 +68,8 @@ __all__ = [
     'configure_backup',
     'configure_cost_control',
     'configure_operations',
+    'configure_benchmark',
+    'configure_reranker',
     'tools',
     'health',
     'search',
@@ -70,4 +78,6 @@ __all__ = [
     'backup',
     'cost_control',
     'operations',
+    'benchmark',
+    'reranker',
 ]

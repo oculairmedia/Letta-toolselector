@@ -9,6 +9,8 @@ from models import (
 )
 # Import tool manager for attach/detach operations
 import tool_manager
+# Import agent service for agent communication
+import agent_service
 import os
 import asyncio
 import aiohttp
@@ -589,25 +591,12 @@ async def get_tools():
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 async def fetch_agent_info(agent_id):
-    """Fetch agent information asynchronously using SDK or aiohttp"""
-    # Use SDK if enabled
-    if USE_LETTA_SDK:
-        try:
-            sdk_client = get_letta_sdk_client()
-            return await sdk_client.get_agent_name(agent_id)
-        except Exception as e:
-            logger.error(f"SDK fetch_agent_info failed: {e}")
-            raise
+    """
+    Fetch agent information asynchronously.
     
-    # Fall back to aiohttp
-    global http_session
-    if not http_session:
-        logger.error(f"HTTP session not initialized for fetch_agent_info (agent: {agent_id})")
-        raise ConnectionError("HTTP session not available")
-    async with http_session.get(f"{LETTA_URL}/agents/{agent_id}", headers=HEADERS) as response:
-        response.raise_for_status()
-        agent_data = await response.json()
-    return agent_data.get("name", "Unknown Agent")
+    Delegates to agent_service.fetch_agent_info for the actual implementation.
+    """
+    return await agent_service.fetch_agent_info(agent_id)
 
 async def fetch_agent_tools(agent_id):
     """
@@ -618,110 +607,21 @@ async def fetch_agent_tools(agent_id):
     return await tool_manager.fetch_agent_tools(agent_id)
 
 async def register_tool(tool_name, server_name):
-    """Register a tool from an MCP server asynchronously using SDK or aiohttp"""
-    # Use SDK if enabled
-    if USE_LETTA_SDK:
-        try:
-            sdk_client = get_letta_sdk_client()
-            return await sdk_client.register_mcp_tool(tool_name, server_name)
-        except Exception as e:
-            logger.error(f"SDK register_tool failed: {e}")
-            raise
+    """
+    Register a tool from an MCP server asynchronously.
     
-    # Fall back to aiohttp
-    global http_session
-    if not http_session:
-        logger.error(f"HTTP session not initialized for register_tool (tool: {tool_name}, server: {server_name})")
-        raise ConnectionError("HTTP session not available")
-    register_url = f"{LETTA_URL}/tools/mcp/servers/{server_name}/{tool_name}"
-    async with http_session.post(register_url, headers=HEADERS) as response:
-        response.raise_for_status()
-        registered_tool = await response.json()
-    if registered_tool.get('id') or registered_tool.get('tool_id'):
-        # Normalize ID fields
-        if registered_tool.get('id') and not registered_tool.get('tool_id'):
-            registered_tool['tool_id'] = registered_tool['id']
-        elif registered_tool.get('tool_id') and not registered_tool.get('id'):
-            registered_tool['id'] = registered_tool['tool_id']
-        return registered_tool
-    return None
+    Delegates to agent_service.register_tool for the actual implementation.
+    """
+    return await agent_service.register_tool(tool_name, server_name)
 
 async def _send_trigger_message(agent_id: str, tool_names: list, query: str = None):
     """
     Internal coroutine that actually sends the trigger message to the agent.
     This is meant to be run as a background task (fire-and-forget).
+    
+    Delegates to agent_service.send_trigger_message for the actual implementation.
     """
-    global http_session
-    if not http_session:
-        logger.warning("HTTP session not available for trigger message")
-        return
-    
-    if not LETTA_MESSAGE_BASE_URLS:
-        logger.warning("No Letta message endpoints available for trigger")
-        return
-    
-    tool_list = ", ".join(tool_names[:5])
-    if len(tool_names) > 5:
-        tool_list += f" and {len(tool_names) - 5} more"
-    
-    # Use system role to minimize disruption to conversation flow
-    # The [SYSTEM] prefix helps the agent recognize this as an automated notification
-    trigger_message = (
-        f"[SYSTEM] New tools attached to your toolkit: {tool_list}. "
-        f"These tools are now available. Please proceed with the original request"
-    )
-    if query:
-        trigger_message += f" regarding: {query}"
-    trigger_message += "."
-    
-    payload = {
-        "messages": [
-            {
-                "role": "system",
-                "content": trigger_message
-            }
-        ]
-    }
-    
-    last_error = None
-    for base_url in LETTA_MESSAGE_BASE_URLS:
-        messages_url = f"{base_url}/agents/{agent_id}/messages"
-        logger.info(f"[BACKGROUND] Sending trigger message to {agent_id} via {messages_url} ...")
-        try:
-            async with http_session.post(messages_url, headers=HEADERS, json=payload) as response:
-                if response.status in (200, 201, 202):
-                    logger.info(f"[BACKGROUND] Trigger completed for {agent_id} via {messages_url}")
-                    
-                    # Extract run_id from response and emit webhook
-                    new_run_id = None
-                    try:
-                        response_data = await response.json()
-                        messages = response_data.get("messages", [])
-                        if messages and len(messages) > 0:
-                            new_run_id = messages[0].get("run_id")
-                            logger.info(f"[BACKGROUND] New run_id from trigger: {new_run_id}")
-                    except Exception as parse_err:
-                        logger.warning(f"[BACKGROUND] Could not parse run_id from response: {parse_err}")
-                    
-                    # Emit webhook to Matrix bridge for cross-run tracking
-                    if MATRIX_BRIDGE_WEBHOOK_URL:
-                        await _emit_matrix_bridge_webhook(
-                            agent_id=agent_id,
-                            new_run_id=new_run_id,
-                            tool_names=tool_names,
-                            query=query
-                        )
-                    
-                    return
-                text = await response.text()
-                last_error = f"HTTP {response.status} - {text[:200]}"
-                logger.warning(f"[BACKGROUND] Trigger failed for {agent_id} via {messages_url}: {last_error}")
-        except Exception as e:
-            last_error = str(e)
-            logger.warning(f"[BACKGROUND] Error in trigger message for {agent_id} via {messages_url}: {e}")
-    
-    if last_error:
-        logger.warning(f"[BACKGROUND] All trigger attempts failed for {agent_id}: {last_error}")
+    return await agent_service.send_trigger_message(agent_id, tool_names, query)
 
 
 async def _emit_matrix_bridge_webhook(
@@ -733,103 +633,18 @@ async def _emit_matrix_bridge_webhook(
     """
     Emit webhook to Matrix bridge for cross-run tracking.
     
-    This notifies the Matrix bridge that a new run was triggered after tool attachment,
-    allowing it to track the conversation across multiple Letta runs.
-    
-    Webhook payload:
-    {
-        "event": "run_triggered",
-        "agent_id": "agent-xxx",
-        "new_run_id": "run-xxx",
-        "trigger_type": "tool_attachment",
-        "tools_attached": ["tool1", "tool2"],
-        "query": "original user query",
-        "timestamp": "2025-12-06T22:15:00Z"
-    }
+    Delegates to agent_service.emit_matrix_webhook for the actual implementation.
     """
-    global http_session
-    
-    if not MATRIX_BRIDGE_WEBHOOK_URL:
-        return
-    
-    if not http_session:
-        logger.warning("[WEBHOOK] HTTP session not available for Matrix bridge webhook")
-        return
-    
-    from datetime import datetime
-    
-    webhook_payload = {
-        "event": "run_triggered",
-        "agent_id": agent_id,
-        "new_run_id": new_run_id,
-        "trigger_type": "tool_attachment",
-        "tools_attached": tool_names or [],
-        "query": query,
-        "timestamp": datetime.utcnow().isoformat() + "Z"
-    }
-    
-    try:
-        async with http_session.post(
-            MATRIX_BRIDGE_WEBHOOK_URL,
-            json=webhook_payload,
-            timeout=aiohttp.ClientTimeout(total=5)
-        ) as resp:
-            if resp.status == 200:
-                logger.info(f"[WEBHOOK] Notified Matrix bridge of run trigger for {agent_id}, run_id={new_run_id}")
-            else:
-                resp_text = await resp.text()
-                logger.warning(f"[WEBHOOK] Matrix bridge returned {resp.status}: {resp_text[:200]}")
-    except asyncio.TimeoutError:
-        logger.warning(f"[WEBHOOK] Timeout sending webhook to Matrix bridge for {agent_id}")
-    except Exception as e:
-        logger.warning(f"[WEBHOOK] Failed to notify Matrix bridge for {agent_id}: {e}")
+    return await agent_service.emit_matrix_webhook(agent_id, new_run_id, tool_names, query)
 
 
 def trigger_agent_loop(agent_id: str, attached_tools: list, query: str = None):
     """
     Fire-and-forget trigger to start a new agent loop with updated tools.
     
-    In Letta V1 architecture, tools are passed to the LLM at the start of a request.
-    After attaching new tools, we need to trigger a new loop so the agent can use them.
-    
-    This function spawns a background task and returns immediately - it does NOT wait
-    for the agent to process the message. This is intentional to avoid blocking the
-    attach endpoint response.
-    
-    Returns True if the background task was successfully created.
+    Delegates to agent_service.trigger_agent_loop for the actual implementation.
     """
-    if not agent_id or not attached_tools:
-        return False
-    
-    # Build list of attached tool names
-    tool_names = []
-    for tool in attached_tools:
-        if isinstance(tool, dict):
-            name = tool.get("name") or tool.get("tool_name", "unknown")
-        else:
-            name = str(tool)
-        tool_names.append(name)
-    
-    try:
-        # Get the current event loop
-        loop = asyncio.get_event_loop()
-        
-        # Create a background task - this is TRUE fire-and-forget
-        # The task will run to completion but we don't wait for it
-        task = loop.create_task(_send_trigger_message(agent_id, tool_names, query))
-        
-        # Optional: Add a callback to log when it completes
-        def on_complete(t):
-            if t.exception():
-                logger.warning(f"[BACKGROUND] Trigger task failed with exception: {t.exception()}")
-        task.add_done_callback(on_complete)
-        
-        logger.info(f"Spawned background trigger task for agent {agent_id} with {len(tool_names)} new tools")
-        return True
-        
-    except Exception as e:
-        logger.warning(f"Error creating trigger task: {e}")
-        return False
+    return agent_service.trigger_agent_loop(agent_id, attached_tools, query)
 
 async def process_matching_tool(tool, letta_tools_cache, mcp_servers):
     """
@@ -7261,6 +7076,18 @@ async def startup():
         tool_config=tool_config
     )
     logger.info("Tool manager configured with search function and tool config.")
+    
+    # Configure agent service for agent communication
+    agent_service.configure(
+        http_session=http_session,
+        letta_url=LETTA_URL,
+        headers=HEADERS,
+        use_letta_sdk=USE_LETTA_SDK,
+        get_letta_sdk_client_func=sdk_client_func,
+        letta_message_base_urls=LETTA_MESSAGE_BASE_URLS,
+        matrix_bridge_webhook_url=MATRIX_BRIDGE_WEBHOOK_URL
+    )
+    logger.info("Agent service configured for agent communication.")
 
     # Ensure cache directory exists
     os.makedirs(CACHE_DIR, exist_ok=True)

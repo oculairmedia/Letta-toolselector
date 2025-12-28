@@ -7,6 +7,8 @@ from models import (
     LETTA_CORE_TOOL_TYPES, LETTA_CORE_TOOL_NAMES,
     is_letta_core_tool as models_is_letta_core_tool
 )
+# Import tool manager for attach/detach operations
+import tool_manager
 import os
 import asyncio
 import aiohttp
@@ -7774,6 +7776,17 @@ async def startup():
     # Initialize global aiohttp session
     http_session = aiohttp.ClientSession()
     logger.info("Global aiohttp client session created.")
+    
+    # Configure tool manager with dependencies
+    sdk_client_func = get_letta_sdk_client if USE_LETTA_SDK else None
+    tool_manager.configure(
+        http_session=http_session,
+        letta_url=LETTA_URL,
+        headers=HEADERS,
+        use_letta_sdk=USE_LETTA_SDK,
+        get_letta_sdk_client_func=sdk_client_func
+    )
+    logger.info("Tool manager configured.")
 
     # Ensure cache directory exists
     os.makedirs(CACHE_DIR, exist_ok=True)

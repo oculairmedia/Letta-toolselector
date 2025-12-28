@@ -23,6 +23,9 @@ from typing import Dict, Any, List
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lettaaugment-source"))
 
+# Import tool_manager for configuration
+import tool_manager
+
 
 # ============================================================================
 # Fixtures
@@ -205,13 +208,21 @@ class TestAttachTool:
         mock_session = MagicMock()
         mock_session.patch.return_value = async_cm
         
-        with patch('api_server.USE_LETTA_SDK', False):
-            with patch('api_server.http_session', mock_session):
-                with patch('api_server.LETTA_URL', 'http://test:8283'):
-                    result = await attach_tool(test_agent_id, sample_mcp_tool)
+        # Configure tool_manager with mock session (this is what api_server delegates to)
+        tool_manager.configure(
+            http_session=mock_session,
+            letta_url='http://test:8283',
+            headers={'Content-Type': 'application/json'},
+            use_letta_sdk=False
+        )
         
-        assert result["success"] is True
-        assert result["tool_id"] == sample_mcp_tool["id"]
+        try:
+            result = await attach_tool(test_agent_id, sample_mcp_tool)
+            assert result["success"] is True
+            assert result["tool_id"] == sample_mcp_tool["id"]
+        finally:
+            # Reset tool_manager state
+            tool_manager.configure()
     
     @pytest.mark.asyncio
     async def test_attach_tool_missing_id(self, test_agent_id):
@@ -244,25 +255,42 @@ class TestAttachTool:
         mock_session = MagicMock()
         mock_session.patch.return_value = async_cm
         
-        with patch('api_server.USE_LETTA_SDK', False):
-            with patch('api_server.http_session', mock_session):
-                with patch('api_server.LETTA_URL', 'http://test:8283'):
-                    result = await attach_tool(test_agent_id, sample_mcp_tool)
+        # Configure tool_manager with mock session
+        tool_manager.configure(
+            http_session=mock_session,
+            letta_url='http://test:8283',
+            headers={'Content-Type': 'application/json'},
+            use_letta_sdk=False
+        )
         
-        # Should not crash, should return failure
-        assert result["success"] is False
+        try:
+            result = await attach_tool(test_agent_id, sample_mcp_tool)
+            # Should not crash, should return failure
+            assert result["success"] is False
+        finally:
+            # Reset tool_manager state
+            tool_manager.configure()
     
     @pytest.mark.asyncio
     async def test_attach_tool_no_session(self, test_agent_id, sample_mcp_tool):
         """Should fail gracefully if http_session is None."""
         from api_server import attach_tool
         
-        with patch('api_server.USE_LETTA_SDK', False):
-            with patch('api_server.http_session', None):
-                result = await attach_tool(test_agent_id, sample_mcp_tool)
+        # Configure tool_manager with no session
+        tool_manager.configure(
+            http_session=None,
+            letta_url='http://test:8283',
+            headers={'Content-Type': 'application/json'},
+            use_letta_sdk=False
+        )
         
-        assert result["success"] is False
-        assert "HTTP session not available" in result["error"]
+        try:
+            result = await attach_tool(test_agent_id, sample_mcp_tool)
+            assert result["success"] is False
+            assert "HTTP session not available" in result["error"]
+        finally:
+            # Reset tool_manager state
+            tool_manager.configure()
 
 
 # ============================================================================
@@ -292,14 +320,22 @@ class TestDetachTool:
         mock_session = MagicMock()
         mock_session.patch.return_value = async_cm
         
-        with patch('api_server.USE_LETTA_SDK', False):
-            with patch('api_server.http_session', mock_session):
-                with patch('api_server.LETTA_URL', 'http://test:8283'):
-                    result = await detach_tool(test_agent_id, tool_id, "test_tool")
+        # Configure tool_manager with mock session (this is what api_server delegates to)
+        tool_manager.configure(
+            http_session=mock_session,
+            letta_url='http://test:8283',
+            headers={'Content-Type': 'application/json'},
+            use_letta_sdk=False
+        )
         
-        # detach_tool returns a dict with success key
-        assert result["success"] is True
-        assert result["tool_id"] == tool_id
+        try:
+            result = await detach_tool(test_agent_id, tool_id, "test_tool")
+            # detach_tool returns a dict with success key
+            assert result["success"] is True
+            assert result["tool_id"] == tool_id
+        finally:
+            # Reset tool_manager state
+            tool_manager.configure()
     
     @pytest.mark.asyncio
     async def test_detach_tool_not_found(self, test_agent_id):
@@ -320,14 +356,22 @@ class TestDetachTool:
         mock_session = MagicMock()
         mock_session.patch.return_value = async_cm
         
-        with patch('api_server.USE_LETTA_SDK', False):
-            with patch('api_server.http_session', mock_session):
-                with patch('api_server.LETTA_URL', 'http://test:8283'):
-                    result = await detach_tool(test_agent_id, tool_id)
+        # Configure tool_manager with mock session (this is what api_server delegates to)
+        tool_manager.configure(
+            http_session=mock_session,
+            letta_url='http://test:8283',
+            headers={'Content-Type': 'application/json'},
+            use_letta_sdk=False
+        )
         
-        # 404 is treated as success (tool already detached)
-        assert result["success"] is True
-        assert "warning" in result
+        try:
+            result = await detach_tool(test_agent_id, tool_id)
+            # 404 is treated as success (tool already detached)
+            assert result["success"] is True
+            assert "warning" in result
+        finally:
+            # Reset tool_manager state
+            tool_manager.configure()
     
     @pytest.mark.asyncio
     async def test_detach_tool_server_error(self, test_agent_id):
@@ -347,14 +391,22 @@ class TestDetachTool:
         mock_session = MagicMock()
         mock_session.patch.return_value = async_cm
         
-        with patch('api_server.USE_LETTA_SDK', False):
-            with patch('api_server.http_session', mock_session):
-                with patch('api_server.LETTA_URL', 'http://test:8283'):
-                    result = await detach_tool(test_agent_id, tool_id)
+        # Configure tool_manager with mock session
+        tool_manager.configure(
+            http_session=mock_session,
+            letta_url='http://test:8283',
+            headers={'Content-Type': 'application/json'},
+            use_letta_sdk=False
+        )
         
-        # Should return failure
-        assert result["success"] is False
-        assert "error" in result
+        try:
+            result = await detach_tool(test_agent_id, tool_id)
+            # Should return failure
+            assert result["success"] is False
+            assert "error" in result
+        finally:
+            # Reset tool_manager state
+            tool_manager.configure()
     
     @pytest.mark.asyncio
     async def test_detach_tool_no_session(self, test_agent_id):
@@ -363,12 +415,21 @@ class TestDetachTool:
         
         tool_id = "tool-test"
         
-        with patch('api_server.USE_LETTA_SDK', False):
-            with patch('api_server.http_session', None):
-                result = await detach_tool(test_agent_id, tool_id)
+        # Configure tool_manager with no session
+        tool_manager.configure(
+            http_session=None,
+            letta_url='http://test:8283',
+            headers={'Content-Type': 'application/json'},
+            use_letta_sdk=False
+        )
         
-        assert result["success"] is False
-        assert "HTTP session not available" in result["error"]
+        try:
+            result = await detach_tool(test_agent_id, tool_id)
+            assert result["success"] is False
+            assert "HTTP session not available" in result["error"]
+        finally:
+            # Reset tool_manager state
+            tool_manager.configure()
 
 
 # ============================================================================

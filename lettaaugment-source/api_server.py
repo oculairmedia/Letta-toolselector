@@ -314,272 +314,28 @@ def cosine_similarity(vec1, vec2):
     return dot_product / (magnitude1 * magnitude2)
 
 async def detach_tool(agent_id: str, tool_id: str, tool_name: str = None):
-    """Detach a single tool asynchronously using SDK or aiohttp"""
-    # Use SDK if enabled
-    if USE_LETTA_SDK:
-        try:
-            sdk_client = get_letta_sdk_client()
-            return await sdk_client.detach_tool(agent_id, tool_id, tool_name)
-        except Exception as e:
-            logger.error(f"SDK detach_tool failed, error: {e}")
-            return {"success": False, "tool_id": tool_id, "error": str(e)}
+    """
+    Detach a single tool asynchronously.
     
-    # Fall back to aiohttp
-    global http_session
-    if not http_session:
-        logger.error(f"HTTP session not initialized for detach_tool (agent: {agent_id}, tool: {tool_id})")
-        return {"success": False, "tool_id": tool_id, "error": "HTTP session not available"}
-    try:
-        detach_url = f"{LETTA_URL}/agents/{agent_id}/tools/detach/{tool_id}"
-
-        # Add timeout to prevent hanging requests
-        timeout = aiohttp.ClientTimeout(total=10)  # 10 second timeout
-
-        async with http_session.patch(detach_url, headers=HEADERS, timeout=timeout) as response:
-            try:
-                response_data = await response.json()
-            except aiohttp.ContentTypeError: # More specific exception
-                # Handle case where response is not JSON
-                response_text = await response.text()
-                logger.warning(f"Non-JSON response from detach endpoint: {response_text}")
-                response_data = {"text": response_text}
-
-            if response.status == 200:
-                # logger.info(f"Successfully detached tool {tool_id}")
-                return {"success": True, "tool_id": tool_id}
-            elif response.status == 404:
-                # Tool might already be detached or doesn't exist
-                logger.warning(f"Tool {tool_id} not found or already detached (404)")
-                return {"success": True, "tool_id": tool_id, "warning": "Tool not found or already detached"}
-            else:
-                logger.error(f"Failed to detach tool {tool_id}: HTTP {response.status}, Response: {response_data}")
-                return {"success": False, "tool_id": tool_id, "error": f"HTTP {response.status}: {str(response_data)}"}
-    except asyncio.TimeoutError:
-        logger.error(f"Timeout while detaching tool {tool_id}")
-        return {"success": False, "tool_id": tool_id, "error": "Request timed out"}
-    except Exception as e:
-        logger.error(f"Error detaching tool {tool_id}: {str(e)}")
-        return {"success": False, "tool_id": tool_id, "error": str(e)}
+    Delegates to tool_manager.detach_tool for the actual implementation.
+    """
+    return await tool_manager.detach_tool(agent_id, tool_id, tool_name)
 
 async def attach_tool(agent_id: str, tool: dict):
-    """Attach a single tool asynchronously using SDK or aiohttp"""
-    tool_name = tool.get('name', 'Unknown')
-    tool_id = tool.get('tool_id') or tool.get('id')
+    """
+    Attach a single tool asynchronously.
     
-    if not tool_id:
-        logger.error(f"No tool ID found for tool {tool_name}")
-        return {"success": False, "tool_id": None, "name": tool_name, "error": "No tool ID available"}
-    
-    # Use SDK if enabled
-    if USE_LETTA_SDK:
-        try:
-            sdk_client = get_letta_sdk_client()
-            result = await sdk_client.attach_tool(agent_id, tool_id, tool_name)
-            # Preserve distance-based score if available from search
-            if result.get('success') and 'distance' in tool:
-                result['match_score'] = 100 * (1 - tool.get('distance', 0))
-            return result
-        except Exception as e:
-            logger.error(f"SDK attach_tool failed, error: {e}")
-            return {"success": False, "tool_id": tool_id, "name": tool_name, "error": str(e)}
-    
-    # Fall back to aiohttp
-    global http_session
-    if not http_session:
-        logger.error(f"HTTP session not initialized for attach_tool (agent: {agent_id})")
-        return {"success": False, "tool_id": tool_id, "name": tool_name, "error": "HTTP session not available"}
-    try:
-        # logger.info(f"Attempting to attach tool {tool_name} ({tool_id}) to agent {agent_id}")
-        attach_url = f"{LETTA_URL}/agents/{agent_id}/tools/attach/{tool_id}"
-        async with http_session.patch(attach_url, headers=HEADERS) as response:
-            if response.status == 200:
-                return {
-                    "success": True,
-                    "tool_id": tool_id,
-                    "name": tool.get("name"),
-                    # Calculate score based on distance if available from search_tools result
-                    "match_score": 100 * (1 - tool.get("distance", 0)) if "distance" in tool else 100
-                }
-            else:
-                logger.error(f"Failed to attach tool {tool_id}: HTTP {response.status}")
-                return {"success": False, "tool_id": tool_id, "name": tool.get("name")}
-    except Exception as e:
-        logger.error(f"Error attaching tool {tool_id}: {str(e)}")
-        return {"success": False, "tool_id": tool_id, "name": tool.get("name")}
+    Delegates to tool_manager.attach_tool for the actual implementation.
+    """
+    return await tool_manager.attach_tool(agent_id, tool)
 
 async def process_tools(agent_id: str, mcp_tools: list, matching_tools: list, keep_tools: list = None):
-    """Process tool detachments and attachments in parallel using the global session"""
-    keep_tools = keep_tools or []
-    logger.info(f"Processing tools for agent {agent_id}")
-    logger.info(f"Current unique MCP tools: {len(mcp_tools)}")
-    logger.info(f"Tools to attach: {len(matching_tools)}")
-    logger.info(f"Tools to keep: {len(keep_tools)}")
-
-    # Get MIN_MCP_TOOLS from environment
-    MIN_MCP_TOOLS = int(os.getenv('MIN_MCP_TOOLS', '7'))
+    """
+    Process tool detachments and attachments in parallel.
     
-    # Create a set of tool IDs to keep (including the ones we're about to attach)
-    keep_tool_ids = set()
-    # Add explicitly kept tools
-    for tool_id in keep_tools:
-        if tool_id:
-            keep_tool_ids.add(tool_id)
-    # Add new tools being attached
-    for tool in matching_tools:
-        tool_id = tool.get("id") or tool.get("tool_id")
-        if tool_id:
-            keep_tool_ids.add(tool_id)
-
-    logger.info(f"Tool IDs to keep: {keep_tool_ids}")
-
-    # Use the global http_session, assuming it's initialized
-    if not http_session:
-        logger.error(f"HTTP session not initialized for process_tools (agent: {agent_id})")
-        # Decide how to handle this - raise error, return failure?
-        # For now, log and return an error structure
-        return {
-            "detached_tools": [],
-            "failed_detachments": [t.get("tool_id") or t.get("id") for t in mcp_tools],
-            "successful_attachments": [],
-            "failed_attachments": matching_tools, # Mark all as failed if session is down
-            "error": "HTTP session not available"
-        }
-
-    # First, detach all existing MCP tools that aren't in the keep list
-    tools_to_detach = []
-
-    # Get all current MCP tool IDs
-    current_mcp_tool_ids = set()
-    for tool in mcp_tools:
-        tool_id = tool.get("tool_id") or tool.get("id")
-        if tool_id:
-            current_mcp_tool_ids.add(tool_id)
-
-    # Calculate how many MCP tools we'll have after detachments and attachments
-    # Current MCP tools - tools to detach + new tools to attach
-    potential_detach_count = 0
-    for tool in mcp_tools:
-        tool_id = tool.get("tool_id") or tool.get("id")
-        if tool_id and tool_id not in keep_tool_ids:
-            potential_detach_count += 1
-    
-    # How many MCP tools will remain after all operations
-    new_tools_count = len([t for t in matching_tools if (t.get("id") or t.get("tool_id")) not in current_mcp_tool_ids])
-    remaining_mcp_tools = len(mcp_tools) - potential_detach_count + new_tools_count
-    
-    logger.info(f"MIN_MCP_TOOLS check: current={len(mcp_tools)}, potential_detach={potential_detach_count}, new_tools={new_tools_count}, remaining={remaining_mcp_tools}, min_required={MIN_MCP_TOOLS}")
-    
-    # If we would go below MIN_MCP_TOOLS, limit detachments
-    if remaining_mcp_tools < MIN_MCP_TOOLS:
-        # Calculate how many we can actually detach
-        max_detach_allowed = max(0, len(mcp_tools) + new_tools_count - MIN_MCP_TOOLS)
-        logger.warning(f"Limiting detachments to preserve MIN_MCP_TOOLS={MIN_MCP_TOOLS}. Max allowed detachments: {max_detach_allowed}")
-        
-        # Build list of tools to detach, but limit to max_detach_allowed
-        detach_count = 0
-        for tool in mcp_tools:
-            tool_id = tool.get("tool_id") or tool.get("id")
-            tool_name = tool.get("name", "Unknown")
-            
-            # If tool ID is valid and not in the keep list
-            if tool_id and tool_id not in keep_tool_ids:
-                if detach_count < max_detach_allowed:
-                    tools_to_detach.append({
-                        "id": tool_id,
-                        "tool_id": tool_id,
-                        "name": tool_name
-                    })
-                    detach_count += 1
-                else:
-                    logger.info(f"Preserving tool {tool_name} ({tool_id}) to maintain MIN_MCP_TOOLS")
-    else:
-        # Find tools to detach (current tools that aren't in keep_tool_ids)
-        for tool in mcp_tools:
-            tool_id = tool.get("tool_id") or tool.get("id")
-            tool_name = tool.get("name", "Unknown")
-
-            # If tool ID is valid and not in the keep list
-            if tool_id and tool_id not in keep_tool_ids:
-                # logger.info(f"Will detach tool: {tool_name} ({tool_id})")
-                tools_to_detach.append({
-                    "id": tool_id,
-                    "tool_id": tool_id,
-                    "name": tool_name
-                })
-
-    logger.info(f"Tools to detach: {len(tools_to_detach)}")
-    if tools_to_detach:
-        # logger.info(f"Will detach: {', '.join([t.get('name', 'Unknown') + ' (' + t.get('id', 'Unknown ID') + ')' for t in tools_to_detach])}")
-        pass  # Add pass to maintain block structure after commenting out log
-
-    # Run detachments in parallel
-    detach_tasks = []
-    for tool in tools_to_detach:
-        tool_id = tool.get("tool_id") or tool.get("id")
-        if tool_id:
-            # Note: The retry logic within detach_tool itself is removed for simplicity here.
-            # If retries are crucial, detach_tool should handle them internally,
-            # or a more complex parallel retry mechanism would be needed.
-            detach_tasks.append(detach_tool(agent_id, tool_id)) # Pass only necessary args
-
-    if detach_tasks:
-        logger.info(f"Executing {len(detach_tasks)} detach operations in parallel...")
-        detach_results = await asyncio.gather(*detach_tasks, return_exceptions=True)
-        # Handle potential exceptions returned by gather
-        processed_detach_results = []
-        for i, result in enumerate(detach_results):
-            tool_id_for_error = tools_to_detach[i].get("tool_id") or tools_to_detach[i].get("id")
-            if isinstance(result, Exception):
-                logger.error(f"Exception during parallel detach for tool ID {tool_id_for_error}: {result}")
-                processed_detach_results.append({"success": False, "tool_id": tool_id_for_error, "error": str(result)})
-            else:
-                processed_detach_results.append(result)
-        detach_results = processed_detach_results # Use the processed list
-    else:
-        detach_results = []
-        logger.info("No detach tasks to execute.")
-
-
-    # Process detachment results
-    detached = [r["tool_id"] for r in detach_results if r and r.get("success")] # Add check for None result
-    failed_detach = [r["tool_id"] for r in detach_results if r and not r.get("success")] # Add check for None result
-
-    # Run all attachments in parallel
-    attach_tasks = [attach_tool(agent_id, tool) # Pass only necessary args
-                   for tool in matching_tools]
-    attach_results = await asyncio.gather(*attach_tasks, return_exceptions=True) # Handle exceptions here too
-
-    # Process attachment results (including exceptions)
-    successful_attachments = []
-    failed_attachments = []
-    for i, result in enumerate(attach_results):
-        tool_info = matching_tools[i] # Get corresponding tool info
-        tool_id_for_error = tool_info.get("tool_id") or tool_info.get("id")
-        tool_name_for_error = tool_info.get("name", "Unknown")
-
-        if isinstance(result, Exception):
-            logger.error(f"Exception during parallel attach for tool {tool_name_for_error} ({tool_id_for_error}): {result}")
-            failed_attachments.append({"success": False, "tool_id": tool_id_for_error, "name": tool_name_for_error, "error": str(result)})
-        elif isinstance(result, dict) and result.get("success"):
-             successful_attachments.append(result)
-        else: # It's a dict but success is False or structure is unexpected
-            logger.warning(f"Failed attach result for tool {tool_name_for_error} ({tool_id_for_error}): {result}")
-            # Ensure it has a standard structure even if attach_tool failed internally
-            failed_attachments.append({
-                "success": False,
-                "tool_id": tool_id_for_error,
-                "name": tool_name_for_error,
-                "error": result.get("error", "Unknown attachment failure") if isinstance(result, dict) else "Unexpected result type"
-            })
-
-
-    # Return processed results (successful_attachments and failed_attachments populated by the loop above)
-    return {
-        "detached_tools": detached,
-        "failed_detachments": failed_detach,
-        "successful_attachments": successful_attachments, # Use lists populated in the loop
-        "failed_attachments": failed_attachments  # Use lists populated in the loop
-    }
+    Delegates to tool_manager.process_tools for the actual implementation.
+    """
+    return await tool_manager.process_tools(agent_id, mcp_tools, matching_tools, keep_tools)
 
 @app.route('/api/v1/tools/search', methods=['POST'])
 async def search():

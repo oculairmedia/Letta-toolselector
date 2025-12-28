@@ -1,12 +1,13 @@
 """
-Unit tests for tool management functions in api_server.py
+Unit tests for tool management functions.
 
 Tests cover:
-- attach_tool() - Attach single tool to agent
-- detach_tool() - Detach single tool from agent  
-- process_tools() - Batch attach/detach operations
-- _is_letta_core_tool() - Core tool detection
-- trigger_agent_loop() - Loop trigger mechanism
+- attach_tool() - Attach single tool to agent (tool_manager)
+- detach_tool() - Detach single tool from agent (tool_manager)
+- process_tools() - Batch attach/detach operations (tool_manager)
+- is_letta_core_tool() - Core tool detection (models)
+- agent_service.trigger_agent_loop() - Loop trigger mechanism (agent_service)
+- perform_tool_pruning() - Tool pruning logic (tool_manager)
 
 These tests use mocked HTTP clients to avoid requiring live services.
 """
@@ -23,8 +24,10 @@ from typing import Dict, Any, List
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lettaaugment-source"))
 
-# Import tool_manager for configuration
+# Import modules
 import tool_manager
+import agent_service
+from models import is_letta_core_tool, ToolLimitsConfig
 
 
 # ============================================================================
@@ -108,47 +111,35 @@ def test_agent_id():
 # ============================================================================
 
 class TestIsLettaCoreTool:
-    """Tests for _is_letta_core_tool function."""
+    """Tests for is_letta_core_tool function from models module."""
     
     def test_letta_core_tool_type(self):
         """Should identify letta_core tool_type as core tool."""
-        from api_server import _is_letta_core_tool
-        
         tool = {"tool_type": "letta_core", "name": "send_message"}
-        assert _is_letta_core_tool(tool) is True
+        assert is_letta_core_tool(tool) is True
     
     def test_letta_memory_core_tool_type(self):
         """Should identify letta_memory_core as core tool."""
-        from api_server import _is_letta_core_tool
-        
         tool = {"tool_type": "letta_memory_core", "name": "core_memory_replace"}
-        assert _is_letta_core_tool(tool) is True
+        assert is_letta_core_tool(tool) is True
     
     def test_letta_multi_agent_core_tool_type(self):
         """Should identify letta_multi_agent_core as core tool."""
-        from api_server import _is_letta_core_tool
-        
         tool = {"tool_type": "letta_multi_agent_core", "name": "send_message_to_agent"}
-        assert _is_letta_core_tool(tool) is True
+        assert is_letta_core_tool(tool) is True
     
     def test_external_mcp_not_core(self):
         """Should NOT identify external_mcp as core tool."""
-        from api_server import _is_letta_core_tool
-        
         tool = {"tool_type": "external_mcp", "name": "web_search"}
-        assert _is_letta_core_tool(tool) is False
+        assert is_letta_core_tool(tool) is False
     
     def test_custom_not_core(self):
         """Should NOT identify custom tools as core (by default)."""
-        from api_server import _is_letta_core_tool
-        
         tool = {"tool_type": "custom", "name": "my_custom_tool"}
-        assert _is_letta_core_tool(tool) is False
+        assert is_letta_core_tool(tool) is False
     
     def test_core_tool_by_name(self):
         """Should identify core tools by name pattern."""
-        from api_server import _is_letta_core_tool
-        
         # Core tools by name
         core_names = [
             "send_message",
@@ -163,24 +154,20 @@ class TestIsLettaCoreTool:
             tool = {"tool_type": "custom", "name": name}
             # Note: This may or may not be True depending on implementation
             # The function checks tool_type first, then may check name
-            result = _is_letta_core_tool(tool)
+            result = is_letta_core_tool(tool)
             # Just verify it doesn't crash
             assert isinstance(result, bool)
     
     def test_empty_tool(self):
         """Should handle empty tool dict gracefully."""
-        from api_server import _is_letta_core_tool
-        
         tool = {}
-        result = _is_letta_core_tool(tool)
+        result = is_letta_core_tool(tool)
         assert result is False
     
     def test_missing_tool_type(self):
         """Should handle missing tool_type gracefully."""
-        from api_server import _is_letta_core_tool
-        
         tool = {"name": "some_tool"}
-        result = _is_letta_core_tool(tool)
+        result = is_letta_core_tool(tool)
         assert isinstance(result, bool)
 
 
@@ -189,13 +176,11 @@ class TestIsLettaCoreTool:
 # ============================================================================
 
 class TestAttachTool:
-    """Tests for attach_tool function."""
+    """Tests for attach_tool function from tool_manager module."""
     
     @pytest.mark.asyncio
     async def test_attach_tool_success(self, test_agent_id, sample_mcp_tool):
         """Should successfully attach a tool."""
-        from api_server import attach_tool
-        
         # Create a proper async context manager mock
         mock_response = MagicMock()
         mock_response.status = 200
@@ -208,7 +193,7 @@ class TestAttachTool:
         mock_session = MagicMock()
         mock_session.patch.return_value = async_cm
         
-        # Configure tool_manager with mock session (this is what api_server delegates to)
+        # Configure tool_manager with mock session
         tool_manager.configure(
             http_session=mock_session,
             letta_url='http://test:8283',
@@ -217,7 +202,7 @@ class TestAttachTool:
         )
         
         try:
-            result = await attach_tool(test_agent_id, sample_mcp_tool)
+            result = await tool_manager.attach_tool(test_agent_id, sample_mcp_tool)
             assert result["success"] is True
             assert result["tool_id"] == sample_mcp_tool["id"]
         finally:
@@ -227,13 +212,10 @@ class TestAttachTool:
     @pytest.mark.asyncio
     async def test_attach_tool_missing_id(self, test_agent_id):
         """Should fail if tool has no ID."""
-        from api_server import attach_tool
-        
         tool_without_id = {"name": "no_id_tool", "description": "Missing ID"}
         
         # No need to mock session - should fail early due to missing ID
-        with patch('api_server.USE_LETTA_SDK', False):
-            result = await attach_tool(test_agent_id, tool_without_id)
+        result = await tool_manager.attach_tool(test_agent_id, tool_without_id)
         
         assert result["success"] is False
         assert "error" in result
@@ -242,8 +224,6 @@ class TestAttachTool:
     @pytest.mark.asyncio
     async def test_attach_tool_api_error(self, test_agent_id, sample_mcp_tool):
         """Should handle API errors gracefully."""
-        from api_server import attach_tool
-        
         # Create a proper async context manager mock for error case
         mock_response = MagicMock()
         mock_response.status = 500
@@ -264,7 +244,7 @@ class TestAttachTool:
         )
         
         try:
-            result = await attach_tool(test_agent_id, sample_mcp_tool)
+            result = await tool_manager.attach_tool(test_agent_id, sample_mcp_tool)
             # Should not crash, should return failure
             assert result["success"] is False
         finally:
@@ -274,7 +254,7 @@ class TestAttachTool:
     @pytest.mark.asyncio
     async def test_attach_tool_no_session(self, test_agent_id, sample_mcp_tool):
         """Should fail gracefully if http_session is None."""
-        from api_server import attach_tool
+        # Import from tool_manager instead of api_server
         
         # Configure tool_manager with no session
         tool_manager.configure(
@@ -285,7 +265,7 @@ class TestAttachTool:
         )
         
         try:
-            result = await attach_tool(test_agent_id, sample_mcp_tool)
+            result = await tool_manager.attach_tool(test_agent_id, sample_mcp_tool)
             assert result["success"] is False
             assert "HTTP session not available" in result["error"]
         finally:
@@ -303,7 +283,7 @@ class TestDetachTool:
     @pytest.mark.asyncio
     async def test_detach_tool_success(self, test_agent_id):
         """Should successfully detach a tool."""
-        from api_server import detach_tool
+        # Import from tool_manager instead of api_server
         
         tool_id = "tool-to-detach"
         
@@ -329,7 +309,7 @@ class TestDetachTool:
         )
         
         try:
-            result = await detach_tool(test_agent_id, tool_id, "test_tool")
+            result = await tool_manager.detach_tool(test_agent_id, tool_id, "test_tool")
             # detach_tool returns a dict with success key
             assert result["success"] is True
             assert result["tool_id"] == tool_id
@@ -340,7 +320,7 @@ class TestDetachTool:
     @pytest.mark.asyncio
     async def test_detach_tool_not_found(self, test_agent_id):
         """Should handle tool not found (404) - treated as success."""
-        from api_server import detach_tool
+        # Import from tool_manager instead of api_server
         
         tool_id = "nonexistent-tool"
         
@@ -365,7 +345,7 @@ class TestDetachTool:
         )
         
         try:
-            result = await detach_tool(test_agent_id, tool_id)
+            result = await tool_manager.detach_tool(test_agent_id, tool_id)
             # 404 is treated as success (tool already detached)
             assert result["success"] is True
             assert "warning" in result
@@ -376,7 +356,7 @@ class TestDetachTool:
     @pytest.mark.asyncio
     async def test_detach_tool_server_error(self, test_agent_id):
         """Should handle server errors (500)."""
-        from api_server import detach_tool
+        # Import from tool_manager instead of api_server
         
         tool_id = "tool-error"
         
@@ -400,7 +380,7 @@ class TestDetachTool:
         )
         
         try:
-            result = await detach_tool(test_agent_id, tool_id)
+            result = await tool_manager.detach_tool(test_agent_id, tool_id)
             # Should return failure
             assert result["success"] is False
             assert "error" in result
@@ -411,7 +391,7 @@ class TestDetachTool:
     @pytest.mark.asyncio
     async def test_detach_tool_no_session(self, test_agent_id):
         """Should fail gracefully if http_session is None."""
-        from api_server import detach_tool
+        # Import from tool_manager instead of api_server
         
         tool_id = "tool-test"
         
@@ -424,7 +404,7 @@ class TestDetachTool:
         )
         
         try:
-            result = await detach_tool(test_agent_id, tool_id)
+            result = await tool_manager.detach_tool(test_agent_id, tool_id)
             assert result["success"] is False
             assert "HTTP session not available" in result["error"]
         finally:
@@ -442,7 +422,7 @@ class TestProcessTools:
     @pytest.mark.asyncio
     async def test_process_tools_attach_new(self, test_agent_id, sample_agent_tools, sample_mcp_tool):
         """Should attach new tools not already on agent."""
-        from api_server import process_tools
+        # Import from tool_manager instead of api_server
         
         # Current MCP tools on agent
         current_mcp_tools = [t for t in sample_agent_tools if t.get("tool_type") == "external_mcp"]
@@ -457,13 +437,13 @@ class TestProcessTools:
         }
         
         # Mock attach_tool
-        with patch('api_server.attach_tool', new_callable=AsyncMock) as mock_attach:
+        with patch('tool_manager.attach_tool', new_callable=AsyncMock) as mock_attach:
             mock_attach.return_value = {"success": True, "tool_id": new_tool["id"], "name": new_tool["name"]}
             
-            with patch('api_server.detach_tool', new_callable=AsyncMock) as mock_detach:
+            with patch('tool_manager.detach_tool', new_callable=AsyncMock) as mock_detach:
                 mock_detach.return_value = True
                 
-                result = await process_tools(
+                result = await tool_manager.process_tools(
                     test_agent_id,
                     current_mcp_tools,
                     [new_tool],
@@ -477,7 +457,7 @@ class TestProcessTools:
     @pytest.mark.asyncio
     async def test_process_tools_respects_keep_tools(self, test_agent_id):
         """Should not detach tools in keep_tools list."""
-        from api_server import process_tools
+        # Import from tool_manager instead of api_server
         
         # Current tools
         current_tools = [
@@ -496,11 +476,11 @@ class TestProcessTools:
             detached_ids.append(tool_id)
             return True
         
-        with patch('api_server.attach_tool', new_callable=AsyncMock) as mock_attach:
+        with patch('tool_manager.attach_tool', new_callable=AsyncMock) as mock_attach:
             mock_attach.return_value = {"success": True, "tool_id": "tool-new", "name": "new_tool"}
             
-            with patch('api_server.detach_tool', side_effect=mock_detach):
-                result = await process_tools(
+            with patch('tool_manager.detach_tool', side_effect=mock_detach):
+                result = await tool_manager.process_tools(
                     test_agent_id,
                     current_tools,
                     new_tools,
@@ -513,17 +493,17 @@ class TestProcessTools:
     @pytest.mark.asyncio
     async def test_process_tools_handles_attach_failure(self, test_agent_id):
         """Should handle attachment failures gracefully."""
-        from api_server import process_tools
+        # Import from tool_manager instead of api_server
         
         current_tools = []
         new_tools = [
             {"id": "tool-fail", "tool_id": "tool-fail", "name": "will_fail", "tool_type": "external_mcp"}
         ]
         
-        with patch('api_server.attach_tool', new_callable=AsyncMock) as mock_attach:
+        with patch('tool_manager.attach_tool', new_callable=AsyncMock) as mock_attach:
             mock_attach.return_value = {"success": False, "error": "API Error"}
             
-            result = await process_tools(test_agent_id, current_tools, new_tools, [])
+            result = await tool_manager.process_tools(test_agent_id, current_tools, new_tools, [])
         
         assert len(result["failed_attachments"]) > 0 or len(result["successful_attachments"]) == 0
 
@@ -537,39 +517,39 @@ class TestTriggerAgentLoop:
     
     def test_trigger_agent_loop_spawns_background_task(self, test_agent_id):
         """Should spawn a background task for trigger."""
-        from api_server import trigger_agent_loop
+        # Import from agent_service instead of api_server
         
         attached_tools = [
             {"tool_id": "tool-1", "name": "tool_one"},
             {"tool_id": "tool-2", "name": "tool_two"}
         ]
         
-        with patch('api_server.asyncio.create_task') as mock_create_task:
-            with patch('api_server._send_trigger_message', new_callable=AsyncMock):
-                result = trigger_agent_loop(test_agent_id, attached_tools, query="test query")
+        with patch('agent_service.asyncio.create_task') as mock_create_task:
+            with patch('agent_service.send_trigger_message', new_callable=AsyncMock):
+                result = agent_service.trigger_agent_loop(test_agent_id, attached_tools, query="test query")
         
         # Should have attempted to create a task
         assert result is True or mock_create_task.called
     
     def test_trigger_agent_loop_with_empty_tools(self, test_agent_id):
         """Should handle empty tools list."""
-        from api_server import trigger_agent_loop
+        # Import from agent_service instead of api_server
         
-        result = trigger_agent_loop(test_agent_id, [], query="test")
+        result = agent_service.trigger_agent_loop(test_agent_id, [], query="test")
         
         # Should not crash, may return False for empty list
         assert isinstance(result, bool)
     
     def test_trigger_agent_loop_includes_query(self, test_agent_id):
         """Should include query in trigger message."""
-        from api_server import trigger_agent_loop
+        # Import from agent_service instead of api_server
         
         attached_tools = [{"tool_id": "tool-1", "name": "test_tool"}]
         query = "find database tools"
         
-        with patch('api_server._send_trigger_message', new_callable=AsyncMock) as mock_send:
-            with patch('api_server.asyncio.create_task'):
-                trigger_agent_loop(test_agent_id, attached_tools, query=query)
+        with patch('agent_service.send_trigger_message', new_callable=AsyncMock) as mock_send:
+            with patch('agent_service.asyncio.create_task'):
+                agent_service.trigger_agent_loop(test_agent_id, attached_tools, query=query)
         
         # The function should pass the query to _send_trigger_message
         # (implementation dependent)
@@ -607,8 +587,8 @@ class TestPerformToolPruning:
     @pytest.mark.asyncio
     async def test_pruning_no_mcp_tools(self, test_agent_id):
         """Should handle agent with no MCP tools."""
-        from api_server import _perform_tool_pruning
-        from models import ToolLimitsConfig
+        # Import from tool_manager instead of api_server
+        # ToolLimitsConfig already imported at module level
         
         # Only core tools
         agent_tools = [
@@ -636,7 +616,7 @@ class TestPerformToolPruning:
         
         # Patch the fetch_agent_tools function in tool_manager
         with patch.object(tool_manager, 'fetch_agent_tools', mock_fetch):
-            result = await _perform_tool_pruning(
+            result = await tool_manager.perform_tool_pruning(
                 test_agent_id,
                 user_prompt="test",
                 drop_rate=0.5
@@ -651,8 +631,8 @@ class TestPerformToolPruning:
     @pytest.mark.asyncio
     async def test_pruning_respects_minimum(self, test_agent_id, mock_agent_tools):
         """Should not prune below MIN_MCP_TOOLS."""
-        from api_server import _perform_tool_pruning
-        from models import ToolLimitsConfig
+        # Import from tool_manager instead of api_server
+        # ToolLimitsConfig already imported at module level
         
         # Only 5 MCP tools (below default min of 7)
         agent_tools = mock_agent_tools[:5] + mock_agent_tools[10:12]  # 5 MCP + 2 core
@@ -678,7 +658,7 @@ class TestPerformToolPruning:
         
         # Patch the fetch_agent_tools function in tool_manager
         with patch.object(tool_manager, 'fetch_agent_tools', mock_fetch):
-            result = await _perform_tool_pruning(
+            result = await tool_manager.perform_tool_pruning(
                 test_agent_id,
                 user_prompt="test",
                 drop_rate=0.8
@@ -693,12 +673,12 @@ class TestPerformToolPruning:
     @pytest.mark.asyncio
     async def test_pruning_preserves_core_tools(self, test_agent_id, mock_agent_tools):
         """Should always preserve Letta core tools."""
-        from api_server import _perform_tool_pruning
+        # Import from tool_manager instead of api_server
         
-        with patch('api_server.fetch_agent_tools', new_callable=AsyncMock) as mock_fetch:
+        with patch('tool_manager.fetch_agent_tools', new_callable=AsyncMock) as mock_fetch:
             mock_fetch.return_value = mock_agent_tools
             
-            with patch('api_server.detach_tool', new_callable=AsyncMock) as mock_detach:
+            with patch('tool_manager.detach_tool', new_callable=AsyncMock) as mock_detach:
                 mock_detach.return_value = {"success": True}
                 
                 with patch('api_server.search_tools') as mock_search:
@@ -713,7 +693,7 @@ class TestPerformToolPruning:
                         
                         with patch('api_server.MANAGE_ONLY_MCP_TOOLS', True):
                             with patch.dict('os.environ', {'MIN_MCP_TOOLS': '3', 'MAX_MCP_TOOLS': '20'}):
-                                result = await _perform_tool_pruning(
+                                result = await tool_manager.perform_tool_pruning(
                                     test_agent_id,
                                     user_prompt="test",
                                     drop_rate=0.5
@@ -728,12 +708,12 @@ class TestPerformToolPruning:
     @pytest.mark.asyncio
     async def test_pruning_protects_never_detach_tools(self, test_agent_id, mock_agent_tools):
         """Should never detach tools in NEVER_DETACH_TOOLS list."""
-        from api_server import _perform_tool_pruning
+        # Import from tool_manager instead of api_server
         
-        with patch('api_server.fetch_agent_tools', new_callable=AsyncMock) as mock_fetch:
+        with patch('tool_manager.fetch_agent_tools', new_callable=AsyncMock) as mock_fetch:
             mock_fetch.return_value = mock_agent_tools
             
-            with patch('api_server.detach_tool', new_callable=AsyncMock) as mock_detach:
+            with patch('tool_manager.detach_tool', new_callable=AsyncMock) as mock_detach:
                 mock_detach.return_value = {"success": True}
                 
                 with patch('api_server.search_tools') as mock_search:
@@ -745,7 +725,7 @@ class TestPerformToolPruning:
                         with patch('api_server.MANAGE_ONLY_MCP_TOOLS', True):
                             with patch('api_server.NEVER_DETACH_TOOLS', ['find_tools']):
                                 with patch.dict('os.environ', {'MIN_MCP_TOOLS': '3', 'MAX_MCP_TOOLS': '20'}):
-                                    result = await _perform_tool_pruning(
+                                    result = await tool_manager.perform_tool_pruning(
                                         test_agent_id,
                                         user_prompt="test",
                                         drop_rate=0.8
@@ -759,14 +739,14 @@ class TestPerformToolPruning:
     @pytest.mark.asyncio
     async def test_pruning_keeps_specified_tool_ids(self, test_agent_id, mock_agent_tools):
         """Should keep tools specified in keep_tool_ids."""
-        from api_server import _perform_tool_pruning
+        # Import from tool_manager instead of api_server
         
         keep_ids = ["tool-mcp-1", "tool-mcp-2"]
         
-        with patch('api_server.fetch_agent_tools', new_callable=AsyncMock) as mock_fetch:
+        with patch('tool_manager.fetch_agent_tools', new_callable=AsyncMock) as mock_fetch:
             mock_fetch.return_value = mock_agent_tools
             
-            with patch('api_server.detach_tool', new_callable=AsyncMock) as mock_detach:
+            with patch('tool_manager.detach_tool', new_callable=AsyncMock) as mock_detach:
                 mock_detach.return_value = {"success": True}
                 
                 with patch('api_server.search_tools') as mock_search:
@@ -777,7 +757,7 @@ class TestPerformToolPruning:
                         
                         with patch('api_server.MANAGE_ONLY_MCP_TOOLS', True):
                             with patch.dict('os.environ', {'MIN_MCP_TOOLS': '2', 'MAX_MCP_TOOLS': '20'}):
-                                result = await _perform_tool_pruning(
+                                result = await tool_manager.perform_tool_pruning(
                                     test_agent_id,
                                     user_prompt="test",
                                     drop_rate=0.9,

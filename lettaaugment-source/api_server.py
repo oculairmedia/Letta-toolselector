@@ -270,30 +270,6 @@ def cosine_similarity(vec1, vec2):
     
     return dot_product / (magnitude1 * magnitude2)
 
-async def detach_tool(agent_id: str, tool_id: str, tool_name: str = None):
-    """
-    Detach a single tool asynchronously.
-    
-    Delegates to tool_manager.detach_tool for the actual implementation.
-    """
-    return await tool_manager.detach_tool(agent_id, tool_id, tool_name)
-
-async def attach_tool(agent_id: str, tool: dict):
-    """
-    Attach a single tool asynchronously.
-    
-    Delegates to tool_manager.attach_tool for the actual implementation.
-    """
-    return await tool_manager.attach_tool(agent_id, tool)
-
-async def process_tools(agent_id: str, mcp_tools: list, matching_tools: list, keep_tools: list = None):
-    """
-    Process tool detachments and attachments in parallel.
-    
-    Delegates to tool_manager.process_tools for the actual implementation.
-    """
-    return await tool_manager.process_tools(agent_id, mcp_tools, matching_tools, keep_tools)
-
 @app.route('/api/v1/tools/search', methods=['POST'])
 async def search():
     """Search endpoint - Note: This still calls the original synchronous search_tools"""
@@ -545,62 +521,6 @@ async def get_tools():
         logger.error(f"Error during get_tools: {str(e)}", exc_info=True)
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
-async def fetch_agent_info(agent_id):
-    """
-    Fetch agent information asynchronously.
-    
-    Delegates to agent_service.fetch_agent_info for the actual implementation.
-    """
-    return await agent_service.fetch_agent_info(agent_id)
-
-async def fetch_agent_tools(agent_id):
-    """
-    Fetch agent's current tools asynchronously.
-    
-    Delegates to tool_manager.fetch_agent_tools for the actual implementation.
-    """
-    return await tool_manager.fetch_agent_tools(agent_id)
-
-async def register_tool(tool_name, server_name):
-    """
-    Register a tool from an MCP server asynchronously.
-    
-    Delegates to agent_service.register_tool for the actual implementation.
-    """
-    return await agent_service.register_tool(tool_name, server_name)
-
-async def _send_trigger_message(agent_id: str, tool_names: list, query: str = None):
-    """
-    Internal coroutine that actually sends the trigger message to the agent.
-    This is meant to be run as a background task (fire-and-forget).
-    
-    Delegates to agent_service.send_trigger_message for the actual implementation.
-    """
-    return await agent_service.send_trigger_message(agent_id, tool_names, query)
-
-
-async def _emit_matrix_bridge_webhook(
-    agent_id: str, 
-    new_run_id: str = None, 
-    tool_names: list = None, 
-    query: str = None
-):
-    """
-    Emit webhook to Matrix bridge for cross-run tracking.
-    
-    Delegates to agent_service.emit_matrix_webhook for the actual implementation.
-    """
-    return await agent_service.emit_matrix_webhook(agent_id, new_run_id, tool_names, query)
-
-
-def trigger_agent_loop(agent_id: str, attached_tools: list, query: str = None):
-    """
-    Fire-and-forget trigger to start a new agent loop with updated tools.
-    
-    Delegates to agent_service.trigger_agent_loop for the actual implementation.
-    """
-    return agent_service.trigger_agent_loop(agent_id, attached_tools, query)
-
 async def process_matching_tool(tool, letta_tools_cache, mcp_servers):
     """
     Process a single matching tool asynchronously using the cache.
@@ -638,7 +558,7 @@ async def process_matching_tool(tool, letta_tools_cache, mcp_servers):
         if originating_server:
             logger.info(f"Tool '{tool_name}' needs registration. Attempting via originating server '{originating_server}'...")
             try:
-                registered_tool = await register_tool(tool_name, originating_server)
+                registered_tool = await agent_service.register_tool(tool_name, originating_server)
                 if registered_tool:
                     logger.info(f"Successfully registered '{tool_name}' via server '{originating_server}'.")
                     return registered_tool
@@ -681,8 +601,8 @@ async def attach_tools():
         try:
             # 1. Fetch agent-specific info (name and current tools) directly from Letta
             agent_name, current_agent_tools = await asyncio.gather(
-                fetch_agent_info(agent_id),
-                fetch_agent_tools(agent_id)
+                agent_service.fetch_agent_info(agent_id),
+                tool_manager.fetch_agent_tools(agent_id)
             )
 
             # 2. Identify unique MCP tools currently on the agent
@@ -832,7 +752,7 @@ async def attach_tools():
                     
                     logger.info(f"Pre-attach pruning: using drop_rate={effective_drop_rate:.2f} to remove ~{tools_to_remove} tools")
                     
-                    preattach_prune_result = await _perform_tool_pruning(
+                    preattach_prune_result = await tool_manager.perform_tool_pruning(
                         agent_id=agent_id,
                         user_prompt=query,
                         drop_rate=effective_drop_rate,
@@ -845,7 +765,7 @@ async def attach_tools():
                         logger.info(f"Pre-attach pruning completed: removed {removed_count} tools to make room")
                         
                         # Re-fetch current agent tools after pre-attach pruning
-                        current_agent_tools = await fetch_agent_tools(agent_id)
+                        current_agent_tools = await tool_manager.fetch_agent_tools(agent_id)
                         mcp_tools = []
                         seen_tool_ids = set()
                         
@@ -871,7 +791,7 @@ async def attach_tools():
                 logger.warning("Pre-attach pruning needed but skipped (no query provided for relevance scoring)")
 
             # 6. Perform detachments and attachments
-            results = await process_tools(agent_id, mcp_tools, processed_tools, keep_tools)
+            results = await tool_manager.process_tools(agent_id, mcp_tools, processed_tools, keep_tools)
             
             # 6.5. Emit audit events for attachments and detachments
             try:
@@ -936,14 +856,14 @@ async def attach_tools():
             if successful_attachments and not skip_loop_trigger:
                 logger.info(f"Triggering agent loop for {agent_id} with query: {query}")
                 try:
-                    loop_triggered = trigger_agent_loop(
+                    loop_triggered = agent_service.trigger_agent_loop(
                         agent_id,
                         successful_attachments,
                         query=query
                     )
                     logger.info(f"Loop trigger task spawned: {loop_triggered}")
                 except Exception as trigger_error:
-                    logger.error(f"Exception during trigger_agent_loop: {trigger_error}", exc_info=True)
+                    logger.error(f"Exception during agent_service.trigger_agent_loop: {trigger_error}", exc_info=True)
 
             return jsonify({
                 "success": True,
@@ -983,22 +903,6 @@ def _is_letta_core_tool(tool: dict) -> bool:
     """
     return models_is_letta_core_tool(tool)
 
-async def _perform_tool_pruning(agent_id: str, user_prompt: str, drop_rate: float, keep_tool_ids: list = None, newly_matched_tool_ids: list = None) -> dict:
-    """
-    Core logic for pruning tools.
-    
-    Delegates to tool_manager.perform_tool_pruning for the actual implementation.
-    Only prunes MCP tools ('external_mcp'). Core Letta tools are always preserved.
-    """
-    return await tool_manager.perform_tool_pruning(
-        agent_id=agent_id,
-        user_prompt=user_prompt,
-        drop_rate=drop_rate,
-        keep_tool_ids=keep_tool_ids,
-        newly_matched_tool_ids=newly_matched_tool_ids
-    )
-
-
 @app.route('/api/v1/tools/prune', methods=['POST'])
 async def prune_tools():
     """Prune tools attached to an agent based on their relevance to a user's prompt."""
@@ -1032,7 +936,7 @@ async def prune_tools():
             return jsonify({"error": "drop_rate must be a number between 0 and 1"}), 400
 
         # Call the core pruning logic
-        pruning_result = await _perform_tool_pruning(
+        pruning_result = await tool_manager.perform_tool_pruning(
             agent_id=agent_id,
             user_prompt=user_prompt,
             drop_rate=drop_rate,

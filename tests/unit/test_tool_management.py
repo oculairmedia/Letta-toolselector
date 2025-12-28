@@ -193,19 +193,22 @@ class TestAttachTool:
         """Should successfully attach a tool."""
         from api_server import attach_tool
         
-        # Mock the global aiohttp session
-        mock_response = AsyncMock()
+        # Create a proper async context manager mock
+        mock_response = MagicMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={"id": sample_mcp_tool["id"]})
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock(return_value=None)
         
-        mock_session = AsyncMock()
-        mock_session.post = Mock(return_value=mock_response)
+        # Create async context manager
+        async_cm = AsyncMock()
+        async_cm.__aenter__.return_value = mock_response
+        async_cm.__aexit__.return_value = None
         
-        with patch('api_server.http_session', mock_session):
-            with patch('api_server.LETTA_MESSAGE_BASE_URLS', ['http://test:8283']):
-                result = await attach_tool(test_agent_id, sample_mcp_tool)
+        mock_session = MagicMock()
+        mock_session.patch.return_value = async_cm
+        
+        with patch('api_server.USE_LETTA_SDK', False):
+            with patch('api_server.http_session', mock_session):
+                with patch('api_server.LETTA_URL', 'http://test:8283'):
+                    result = await attach_tool(test_agent_id, sample_mcp_tool)
         
         assert result["success"] is True
         assert result["tool_id"] == sample_mcp_tool["id"]
@@ -217,34 +220,49 @@ class TestAttachTool:
         
         tool_without_id = {"name": "no_id_tool", "description": "Missing ID"}
         
-        mock_session = AsyncMock()
-        
-        with patch('api_server.http_session', mock_session):
+        # No need to mock session - should fail early due to missing ID
+        with patch('api_server.USE_LETTA_SDK', False):
             result = await attach_tool(test_agent_id, tool_without_id)
         
         assert result["success"] is False
         assert "error" in result
+        assert "No tool ID" in result["error"]
     
     @pytest.mark.asyncio
     async def test_attach_tool_api_error(self, test_agent_id, sample_mcp_tool):
         """Should handle API errors gracefully."""
         from api_server import attach_tool
         
-        mock_response = AsyncMock()
+        # Create a proper async context manager mock for error case
+        mock_response = MagicMock()
         mock_response.status = 500
-        mock_response.text = AsyncMock(return_value="Internal Server Error")
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock(return_value=None)
         
-        mock_session = AsyncMock()
-        mock_session.post = Mock(return_value=mock_response)
+        async_cm = AsyncMock()
+        async_cm.__aenter__.return_value = mock_response
+        async_cm.__aexit__.return_value = None
         
-        with patch('api_server.http_session', mock_session):
-            with patch('api_server.LETTA_MESSAGE_BASE_URLS', ['http://test:8283']):
-                result = await attach_tool(test_agent_id, sample_mcp_tool)
+        mock_session = MagicMock()
+        mock_session.patch.return_value = async_cm
+        
+        with patch('api_server.USE_LETTA_SDK', False):
+            with patch('api_server.http_session', mock_session):
+                with patch('api_server.LETTA_URL', 'http://test:8283'):
+                    result = await attach_tool(test_agent_id, sample_mcp_tool)
         
         # Should not crash, should return failure
         assert result["success"] is False
+    
+    @pytest.mark.asyncio
+    async def test_attach_tool_no_session(self, test_agent_id, sample_mcp_tool):
+        """Should fail gracefully if http_session is None."""
+        from api_server import attach_tool
+        
+        with patch('api_server.USE_LETTA_SDK', False):
+            with patch('api_server.http_session', None):
+                result = await attach_tool(test_agent_id, sample_mcp_tool)
+        
+        assert result["success"] is False
+        assert "HTTP session not available" in result["error"]
 
 
 # ============================================================================
@@ -261,61 +279,96 @@ class TestDetachTool:
         
         tool_id = "tool-to-detach"
         
-        mock_response = AsyncMock()
+        # Create a proper async context manager mock (detach uses patch, not delete)
+        mock_response = MagicMock()
         mock_response.status = 200
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock(return_value=None)
+        mock_response.json = AsyncMock(return_value={"status": "detached"})
         
-        mock_session = AsyncMock()
-        mock_session.delete = Mock(return_value=mock_response)
+        # Create async context manager
+        async_cm = AsyncMock()
+        async_cm.__aenter__.return_value = mock_response
+        async_cm.__aexit__.return_value = None
         
-        with patch('api_server.http_session', mock_session):
-            with patch('api_server.LETTA_MESSAGE_BASE_URLS', ['http://test:8283']):
-                result = await detach_tool(test_agent_id, tool_id, "test_tool")
+        mock_session = MagicMock()
+        mock_session.patch.return_value = async_cm
         
-        assert result is True
+        with patch('api_server.USE_LETTA_SDK', False):
+            with patch('api_server.http_session', mock_session):
+                with patch('api_server.LETTA_URL', 'http://test:8283'):
+                    result = await detach_tool(test_agent_id, tool_id, "test_tool")
+        
+        # detach_tool returns a dict with success key
+        assert result["success"] is True
+        assert result["tool_id"] == tool_id
     
     @pytest.mark.asyncio
     async def test_detach_tool_not_found(self, test_agent_id):
-        """Should handle tool not found (404)."""
+        """Should handle tool not found (404) - treated as success."""
         from api_server import detach_tool
         
         tool_id = "nonexistent-tool"
         
-        mock_response = AsyncMock()
+        # Create a proper async context manager mock for 404 case
+        mock_response = MagicMock()
         mock_response.status = 404
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock(return_value=None)
+        mock_response.json = AsyncMock(return_value={"error": "not found"})
         
-        mock_session = AsyncMock()
-        mock_session.delete = Mock(return_value=mock_response)
+        async_cm = AsyncMock()
+        async_cm.__aenter__.return_value = mock_response
+        async_cm.__aexit__.return_value = None
         
-        with patch('api_server.http_session', mock_session):
-            with patch('api_server.LETTA_MESSAGE_BASE_URLS', ['http://test:8283']):
-                result = await detach_tool(test_agent_id, tool_id)
+        mock_session = MagicMock()
+        mock_session.patch.return_value = async_cm
         
-        # 404 might be treated as success (tool already gone) or failure
-        assert isinstance(result, bool)
+        with patch('api_server.USE_LETTA_SDK', False):
+            with patch('api_server.http_session', mock_session):
+                with patch('api_server.LETTA_URL', 'http://test:8283'):
+                    result = await detach_tool(test_agent_id, tool_id)
+        
+        # 404 is treated as success (tool already detached)
+        assert result["success"] is True
+        assert "warning" in result
     
     @pytest.mark.asyncio
-    async def test_detach_protected_tool_blocked(self, test_agent_id):
-        """Should not detach protected tools (find_tools, etc.)."""
+    async def test_detach_tool_server_error(self, test_agent_id):
+        """Should handle server errors (500)."""
         from api_server import detach_tool
         
-        # Protected tool
-        tool_id = "tool-find-tools"
-        tool_name = "find_tools"
+        tool_id = "tool-error"
         
-        mock_session = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.status = 500
+        mock_response.json = AsyncMock(return_value={"error": "internal error"})
         
-        with patch('api_server.http_session', mock_session):
-            with patch('api_server.NEVER_DETACH_TOOLS', ['find_tools']):
-                # The function might check tool name and skip
-                # This depends on implementation
-                result = await detach_tool(test_agent_id, tool_id, tool_name)
+        async_cm = AsyncMock()
+        async_cm.__aenter__.return_value = mock_response
+        async_cm.__aexit__.return_value = None
         
-        # Just verify it doesn't crash
-        assert isinstance(result, bool)
+        mock_session = MagicMock()
+        mock_session.patch.return_value = async_cm
+        
+        with patch('api_server.USE_LETTA_SDK', False):
+            with patch('api_server.http_session', mock_session):
+                with patch('api_server.LETTA_URL', 'http://test:8283'):
+                    result = await detach_tool(test_agent_id, tool_id)
+        
+        # Should return failure
+        assert result["success"] is False
+        assert "error" in result
+    
+    @pytest.mark.asyncio
+    async def test_detach_tool_no_session(self, test_agent_id):
+        """Should fail gracefully if http_session is None."""
+        from api_server import detach_tool
+        
+        tool_id = "tool-test"
+        
+        with patch('api_server.USE_LETTA_SDK', False):
+            with patch('api_server.http_session', None):
+                result = await detach_tool(test_agent_id, tool_id)
+        
+        assert result["success"] is False
+        assert "HTTP session not available" in result["error"]
 
 
 # ============================================================================

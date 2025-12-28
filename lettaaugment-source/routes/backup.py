@@ -872,3 +872,191 @@ async def validate_bulk_configuration():
     except Exception as e:
         logger.error(f"Error validating bulk configuration: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# =============================================================================
+# Configuration Audit Endpoints
+# =============================================================================
+
+@backup_bp.route('/audit', methods=['GET'])
+async def get_config_audit_logs():
+    """Get configuration change audit logs."""
+    try:
+        # Query parameters
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+        config_type = request.args.get('config_type')
+        action = request.args.get('action')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        audit_file = os.path.join(_cache_dir, 'config_audit.json')
+
+        if not os.path.exists(audit_file):
+            return jsonify({
+                "success": True,
+                "data": {
+                    "logs": [],
+                    "total": 0,
+                    "filtered": 0,
+                    "offset": offset,
+                    "limit": limit
+                }
+            })
+
+        with open(audit_file, 'r') as f:
+            all_logs = []
+            for line in f:
+                try:
+                    all_logs.append(json.loads(line.strip()))
+                except json.JSONDecodeError:
+                    continue
+
+        # Apply filters
+        filtered_logs = all_logs
+
+        if config_type:
+            filtered_logs = [log for log in filtered_logs if log.get('config_type') == config_type]
+
+        if action:
+            filtered_logs = [log for log in filtered_logs if log.get('action') == action]
+
+        if start_date:
+            try:
+                start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                filtered_logs = [log for log in filtered_logs
+                               if datetime.fromisoformat(log.get('timestamp', '').replace('Z', '+00:00')) >= start_dt]
+            except ValueError:
+                pass
+
+        if end_date:
+            try:
+                end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                filtered_logs = [log for log in filtered_logs
+                               if datetime.fromisoformat(log.get('timestamp', '').replace('Z', '+00:00')) <= end_dt]
+            except ValueError:
+                pass
+
+        # Sort by timestamp, newest first
+        filtered_logs.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+
+        # Apply pagination
+        total_filtered = len(filtered_logs)
+        paginated_logs = filtered_logs[offset:offset + limit]
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "logs": paginated_logs,
+                "total": len(all_logs),
+                "filtered": total_filtered,
+                "offset": offset,
+                "limit": limit
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting config audit logs: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@backup_bp.route('/audit/stats', methods=['GET'])
+async def get_config_audit_stats():
+    """Get audit log statistics."""
+    try:
+        audit_file = os.path.join(_cache_dir, 'config_audit.json')
+
+        if not os.path.exists(audit_file):
+            return jsonify({
+                "success": True,
+                "data": {
+                    "total_entries": 0,
+                    "config_types": {},
+                    "actions": {},
+                    "recent_activity": [],
+                    "last_change": None
+                }
+            })
+
+        with open(audit_file, 'r') as f:
+            all_logs = []
+            for line in f:
+                try:
+                    all_logs.append(json.loads(line.strip()))
+                except json.JSONDecodeError:
+                    continue
+
+        # Calculate statistics
+        config_types = {}
+        actions = {}
+
+        for log in all_logs:
+            ct = log.get('config_type', 'unknown')
+            act = log.get('action', 'unknown')
+
+            config_types[ct] = config_types.get(ct, 0) + 1
+            actions[act] = actions.get(act, 0) + 1
+
+        # Get recent activity (last 10 entries)
+        recent_logs = sorted(all_logs, key=lambda x: x.get('timestamp', ''), reverse=True)[:10]
+
+        last_change = recent_logs[0] if recent_logs else None
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "total_entries": len(all_logs),
+                "config_types": config_types,
+                "actions": actions,
+                "recent_activity": recent_logs,
+                "last_change": last_change
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting config audit stats: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@backup_bp.route('/audit/clear', methods=['POST'])
+async def clear_config_audit_logs():
+    """Clear all audit logs (admin operation)."""
+    try:
+        data = await request.get_json() if await request.get_data() else {}
+        confirm = data.get('confirm', False)
+
+        if not confirm:
+            return jsonify({
+                "success": False,
+                "error": "Confirmation required. Set 'confirm': true in request body."
+            }), 400
+
+        audit_file = os.path.join(_cache_dir, 'config_audit.json')
+        backup_file = None
+
+        # Create backup before clearing
+        if os.path.exists(audit_file):
+            backup_file = f"{audit_file}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            os.rename(audit_file, backup_file)
+
+            # Log the clearing action
+            if _log_config_change:
+                await _log_config_change(
+                    action="clear_audit_logs",
+                    config_type="audit_system",
+                    changes={"backup_file": backup_file},
+                    user_info={"action": "admin_clear", "timestamp": datetime.now().isoformat()}
+                )
+
+        return jsonify({
+            "success": True,
+            "message": "Audit logs cleared successfully",
+            "data": {
+                "cleared_at": datetime.now().isoformat(),
+                "backup_created": backup_file
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error clearing config audit logs: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500

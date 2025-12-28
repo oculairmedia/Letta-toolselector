@@ -8,6 +8,8 @@ Key Functions:
 - attach_tool: Attach a single tool to an agent
 - detach_tool: Detach a single tool from an agent
 - process_tools: Batch attach/detach operations with MIN_MCP_TOOLS enforcement
+- fetch_agent_tools: Get current tools for an agent
+- perform_tool_pruning: Prune tools based on relevance
 """
 
 from __future__ import annotations
@@ -15,11 +17,11 @@ from __future__ import annotations
 import os
 import asyncio
 import logging
-from typing import Dict, Any, List, Optional, Set
+from typing import Dict, Any, List, Optional, Set, Callable, Awaitable
 
 import aiohttp
 
-from models import is_letta_core_tool
+from models import is_letta_core_tool, ToolLimitsConfig
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -35,6 +37,8 @@ _letta_url: Optional[str] = None
 _headers: Optional[Dict[str, str]] = None
 _use_letta_sdk: bool = False
 _get_letta_sdk_client = None  # Callable to get SDK client
+_search_tools_func: Optional[Callable[..., List[Dict[str, Any]]]] = None  # Search callback
+_tool_config: Optional[ToolLimitsConfig] = None  # Tool limits configuration
 
 
 def configure(
@@ -42,7 +46,9 @@ def configure(
     letta_url: Optional[str] = None,
     headers: Optional[Dict[str, str]] = None,
     use_letta_sdk: bool = False,
-    get_letta_sdk_client_func=None
+    get_letta_sdk_client_func=None,
+    search_tools_func: Optional[Callable[..., List[Dict[str, Any]]]] = None,
+    tool_config: Optional[ToolLimitsConfig] = None
 ):
     """
     Configure the tool manager with required dependencies.
@@ -53,18 +59,73 @@ def configure(
         headers: HTTP headers for API calls
         use_letta_sdk: Whether to use SDK mode
         get_letta_sdk_client_func: Function to get SDK client
+        search_tools_func: Function to search tools (query, limit) -> List[Dict]
+        tool_config: Tool limits configuration (ToolLimitsConfig)
     """
     global _http_session, _letta_url, _headers, _use_letta_sdk, _get_letta_sdk_client
+    global _search_tools_func, _tool_config
+    
     _http_session = http_session
     _letta_url = letta_url
     _headers = headers
     _use_letta_sdk = use_letta_sdk
     _get_letta_sdk_client = get_letta_sdk_client_func
+    _search_tools_func = search_tools_func
+    _tool_config = tool_config
+
+
+def get_tool_config() -> ToolLimitsConfig:
+    """Get current tool limits configuration, falling back to env vars if not set."""
+    if _tool_config is not None:
+        return _tool_config
+    return ToolLimitsConfig.from_env()
 
 
 def get_min_mcp_tools() -> int:
-    """Get MIN_MCP_TOOLS from environment."""
-    return int(os.getenv('MIN_MCP_TOOLS', '7'))
+    """Get MIN_MCP_TOOLS from configuration or environment."""
+    return get_tool_config().min_mcp_tools
+
+
+# ============================================================================
+# Agent Tool Queries
+# ============================================================================
+
+async def fetch_agent_tools(agent_id: str) -> List[Dict[str, Any]]:
+    """
+    Fetch an agent's current tools.
+    
+    Args:
+        agent_id: The agent ID
+        
+    Returns:
+        List of tool dictionaries with id, name, tool_type, etc.
+        
+    Raises:
+        ConnectionError: If HTTP session not available
+        Exception: If API call fails
+    """
+    # Use SDK if enabled
+    if _use_letta_sdk and _get_letta_sdk_client:
+        try:
+            sdk_client = _get_letta_sdk_client()
+            return await sdk_client.list_agent_tools(agent_id)
+        except Exception as e:
+            logger.error(f"SDK fetch_agent_tools failed: {e}")
+            raise
+    
+    # Fall back to aiohttp
+    if not _http_session:
+        logger.error(f"HTTP session not initialized for fetch_agent_tools (agent: {agent_id})")
+        raise ConnectionError("HTTP session not available")
+    
+    try:
+        url = f"{_letta_url}/agents/{agent_id}/tools"
+        async with _http_session.get(url, headers=_headers) as response:
+            response.raise_for_status()
+            return await response.json()
+    except Exception as e:
+        logger.error(f"Error fetching agent tools for {agent_id}: {e}")
+        raise
 
 
 # ============================================================================
@@ -345,3 +406,312 @@ async def process_tools(
         "successful_attachments": successful_attachments,
         "failed_attachments": failed_attachments
     }
+
+
+# ============================================================================
+# Tool Pruning
+# ============================================================================
+
+import math
+
+
+async def perform_tool_pruning(
+    agent_id: str,
+    user_prompt: str,
+    drop_rate: float,
+    keep_tool_ids: Optional[List[str]] = None,
+    newly_matched_tool_ids: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Prune tools from an agent based on relevance to the user's prompt.
+    
+    Only prunes MCP tools ('external_mcp'). Core Letta tools are always preserved.
+    Keeps a percentage of the most relevant MCP tools from the entire library,
+    plus any explicitly kept or newly matched MCP tools.
+    
+    Args:
+        agent_id: The agent ID
+        user_prompt: Query to determine tool relevance
+        drop_rate: Fraction of tools to drop (0.0 to 1.0)
+        keep_tool_ids: Tool IDs that must be kept
+        newly_matched_tool_ids: Recently matched tool IDs to prioritize
+        
+    Returns:
+        Dict with success status, message, and details of the pruning operation
+    """
+    if _search_tools_func is None:
+        return {
+            "success": False,
+            "error": "Search function not configured. Call configure() with search_tools_func."
+        }
+    
+    config = get_tool_config()
+    
+    requested_keep_tool_ids = set(keep_tool_ids or [])
+    requested_newly_matched_tool_ids = set(newly_matched_tool_ids or [])
+    
+    logger.info(f"Pruning request for agent {agent_id} with prompt: '{user_prompt}', drop_rate: {drop_rate}")
+    logger.info(f"Requested to keep (all types): {requested_keep_tool_ids}, Requested newly matched (all types): {requested_newly_matched_tool_ids}")
+
+    try:
+        # 1. Retrieve Current Agent Tools and categorize them
+        logger.info(f"Fetching current tools for agent {agent_id}...")
+        current_agent_tools_list = await fetch_agent_tools(agent_id)
+        
+        core_tools_on_agent = []
+        mcp_tools_on_agent_list = []
+        
+        for tool in current_agent_tools_list:
+            tool_id = tool.get('id') or tool.get('tool_id')
+            if not tool_id:
+                logger.warning(f"Tool found on agent without an ID: {tool.get('name', 'Unknown')}. Skipping.")
+                continue
+            
+            # Ensure basic structure for ID consistency
+            tool['id'] = tool_id 
+            tool['tool_id'] = tool_id
+
+            # Enhanced tool categorization based on configuration
+            is_core = is_letta_core_tool(tool)
+            tool_name = tool.get('name', '').lower()
+            
+            # Check if this tool should never be detached
+            is_never_detach = (
+                tool_id in requested_keep_tool_ids or 
+                tool_id in requested_newly_matched_tool_ids or
+                config.should_protect_tool(tool.get('name', ''))
+            )
+            
+            if is_never_detach or (config.manage_only_mcp_tools and is_core):
+                core_tools_on_agent.append(tool)
+            elif tool.get("tool_type") == "external_mcp" or (not is_core and tool.get("tool_type") == "custom"):
+                mcp_tools_on_agent_list.append(tool)
+            else:
+                core_tools_on_agent.append(tool)
+
+        current_mcp_tool_ids = {tool['id'] for tool in mcp_tools_on_agent_list}
+        current_core_tool_ids = {tool['id'] for tool in core_tools_on_agent}
+        
+        # Track protected tools for logging
+        protected_tool_names = [
+            tool.get('name', 'Unknown') for tool in core_tools_on_agent 
+            if config.should_protect_tool(tool.get('name', ''))
+            or tool.get('id') in requested_keep_tool_ids
+            or tool.get('id') in requested_newly_matched_tool_ids
+        ]
+        
+        num_currently_attached_mcp = len(current_mcp_tool_ids)
+        num_currently_attached_core = len(current_core_tool_ids)
+        num_total_attached = num_currently_attached_mcp + num_currently_attached_core
+
+        logger.info(f"Agent {agent_id} has {num_total_attached} total tools: "
+                    f"{num_currently_attached_mcp} MCP tools, {num_currently_attached_core} Core tools.")
+        if protected_tool_names:
+            logger.info(f"Protected tools (moved to core): {protected_tool_names}")
+        logger.debug(f"MCP tools on agent: {current_mcp_tool_ids}")
+        logger.debug(f"Core tools on agent: {current_core_tool_ids}")
+
+        # Check minimum MCP tool count requirement
+        MIN_MCP_TOOLS = config.min_mcp_tools
+        
+        if num_currently_attached_mcp == 0:
+            logger.info("No MCP tools currently attached to the agent. Nothing to prune among MCP tools.")
+            return {
+                "success": True, 
+                "message": "No MCP tools to prune. Core tools preserved.",
+                "details": {
+                    "tools_on_agent_before_total": num_total_attached,
+                    "mcp_tools_on_agent_before": 0,
+                    "core_tools_preserved_count": num_currently_attached_core,
+                    "target_mcp_tools_to_keep": 0,
+                    "mcp_tools_detached_count": 0,
+                    "final_tool_ids_on_agent": list(current_core_tool_ids),
+                }
+            }
+
+        if num_currently_attached_mcp <= MIN_MCP_TOOLS:
+            logger.info(f"Agent {agent_id} has {num_currently_attached_mcp} MCP tools, which is at or below the minimum required ({MIN_MCP_TOOLS}). Skipping pruning.")
+            return {
+                "success": True, 
+                "message": f"Pruning skipped: Agent has {num_currently_attached_mcp} MCP tools (minimum required: {MIN_MCP_TOOLS})",
+                "details": {
+                    "tools_on_agent_before_total": num_total_attached,
+                    "mcp_tools_on_agent_before": num_currently_attached_mcp,
+                    "core_tools_preserved_count": num_currently_attached_core,
+                    "target_mcp_tools_to_keep": num_currently_attached_mcp,
+                    "mcp_tools_detached_count": 0,
+                    "final_tool_ids_on_agent": list(current_core_tool_ids | current_mcp_tool_ids),
+                    "minimum_mcp_tools_enforced": MIN_MCP_TOOLS
+                }
+            }
+
+        # 2. Determine Target Number of MCP Tools to Keep on Agent
+        max_mcp_allowed = config.max_mcp_tools
+        max_total_allowed = config.max_total_tools - num_currently_attached_core
+        
+        target_from_drop_rate = math.floor(num_currently_attached_mcp * (1.0 - drop_rate))
+        num_mcp_tools_to_keep = min(target_from_drop_rate, max_mcp_allowed, max_total_allowed)
+        num_mcp_tools_to_keep = max(num_mcp_tools_to_keep, MIN_MCP_TOOLS)
+        
+        if num_mcp_tools_to_keep < 0: 
+            num_mcp_tools_to_keep = 0
+            
+        logger.info("Target MCP tools calculation:")
+        logger.info(f"  From drop_rate {drop_rate}: {target_from_drop_rate}")
+        logger.info(f"  MAX_MCP_TOOLS limit: {max_mcp_allowed}")
+        logger.info(f"  Available space (MAX_TOTAL_TOOLS - core tools): {max_total_allowed}")
+        logger.info(f"  MIN_MCP_TOOLS requirement: {MIN_MCP_TOOLS}")
+        logger.info(f"  Final target MCP tools to keep: {num_mcp_tools_to_keep}")
+
+        # 3. Find Top Relevant Tools from Entire Library using search_tools
+        search_limit = max(num_mcp_tools_to_keep + 50, 100) 
+        logger.info(f"Searching for top {search_limit} relevant tools from library for prompt: '{user_prompt}'")
+        
+        # Use search callback (may be sync or async)
+        top_library_tools_data = await asyncio.to_thread(_search_tools_func, query=user_prompt, limit=search_limit)
+        
+        ordered_top_library_tool_info = []
+        seen_top_ids: Set[str] = set()
+        for tool_data in top_library_tools_data:
+            tool_id = tool_data.get('id') or tool_data.get('tool_id')
+            if tool_id and tool_id not in seen_top_ids:
+                ordered_top_library_tool_info.append(
+                    (tool_id, tool_data.get('name', 'Unknown'), tool_data.get('tool_type'))
+                )
+                seen_top_ids.add(tool_id)
+        logger.info(f"Found {len(ordered_top_library_tool_info)} unique, potentially relevant tools from library search.")
+
+        # 4. Determine Final Set of MCP Tools to Keep on Agent
+        final_mcp_tool_ids_to_keep: Set[str] = set()
+        
+        for tool_id in requested_newly_matched_tool_ids:
+            if tool_id in current_mcp_tool_ids:
+                final_mcp_tool_ids_to_keep.add(tool_id)
+        logger.info(f"Initially keeping newly matched MCP tools (if on agent): {len(final_mcp_tool_ids_to_keep)}. Set: {final_mcp_tool_ids_to_keep}")
+
+        for tool_id in requested_keep_tool_ids:
+            if tool_id in current_mcp_tool_ids:
+                final_mcp_tool_ids_to_keep.add(tool_id)
+        
+        # Additional safeguard: protect any never-detach tools
+        for tool in mcp_tools_on_agent_list:
+            tool_name = tool.get('name', '')
+            if config.should_protect_tool(tool_name):
+                final_mcp_tool_ids_to_keep.add(tool.get('id'))
+                logger.warning(f"Never-detach tool '{tool_name}' found in MCP list - protecting from pruning")
+        
+        logger.info(f"After adding explicitly requested-to-keep MCP tools (if on agent): {len(final_mcp_tool_ids_to_keep)}. Set: {final_mcp_tool_ids_to_keep}")
+
+        # Handle aggressive pruning when must-keep tools exceed target
+        if len(final_mcp_tool_ids_to_keep) >= num_mcp_tools_to_keep:
+            logger.info(f"Number of must-keep MCP tools ({len(final_mcp_tool_ids_to_keep)}) meets or exceeds target ({num_mcp_tools_to_keep}). Being more aggressive with detachment.")
+            aggressive_target = max(1, math.floor(num_currently_attached_mcp * 0.8))
+            
+            if len(final_mcp_tool_ids_to_keep) > aggressive_target:
+                prioritized_keeps: Set[str] = set()
+                
+                # HIGHEST PRIORITY: Never-detach tools
+                for tool in mcp_tools_on_agent_list:
+                    tool_name = tool.get('name', '')
+                    if config.should_protect_tool(tool_name):
+                        prioritized_keeps.add(tool.get('id'))
+                        logger.info(f"Aggressive pruning: PROTECTING never-detach tool '{tool_name}' (ID: {tool.get('id')})")
+                
+                # SECOND PRIORITY: Explicitly requested to keep
+                for tool_id in requested_keep_tool_ids:
+                    if tool_id in current_mcp_tool_ids and len(prioritized_keeps) < aggressive_target:
+                        prioritized_keeps.add(tool_id)
+                        logger.debug(f"Aggressive pruning: keeping explicitly requested tool {tool_id}")
+                
+                # Third priority: newly matched tools
+                for tool_id in requested_newly_matched_tool_ids:
+                    if tool_id in current_mcp_tool_ids and tool_id not in prioritized_keeps and len(prioritized_keeps) < aggressive_target:
+                        prioritized_keeps.add(tool_id)
+                        logger.debug(f"Aggressive pruning: keeping newly matched tool {tool_id}")
+                
+                # Fourth priority: most relevant tools from library search
+                for tool_id, _, tool_type in ordered_top_library_tool_info:
+                    if (tool_type == "external_mcp" and tool_id in final_mcp_tool_ids_to_keep
+                        and tool_id not in prioritized_keeps and len(prioritized_keeps) < aggressive_target):
+                        prioritized_keeps.add(tool_id)
+                        logger.debug(f"Aggressive pruning: keeping library-relevant tool {tool_id}")
+                
+                final_mcp_tool_ids_to_keep = prioritized_keeps
+                logger.info(f"Applied aggressive pruning: reduced to {len(final_mcp_tool_ids_to_keep)} tools (target was {aggressive_target})")
+        else:
+            # Fill remaining slots with most relevant attached MCP tools
+            potential_additional_keeps = []
+            for tool_id, _, tool_type in ordered_top_library_tool_info:
+                if tool_type == "external_mcp" and tool_id in current_mcp_tool_ids and tool_id not in final_mcp_tool_ids_to_keep:
+                    potential_additional_keeps.append(tool_id)
+            
+            num_slots_to_fill = num_mcp_tools_to_keep - len(final_mcp_tool_ids_to_keep)
+            
+            for tool_id in potential_additional_keeps[:num_slots_to_fill]:
+                final_mcp_tool_ids_to_keep.add(tool_id)
+            
+            logger.info(f"After filling remaining slots with other relevant attached MCP tools: {len(final_mcp_tool_ids_to_keep)}. Set: {final_mcp_tool_ids_to_keep}")
+
+        logger.info(f"Final set of {len(final_mcp_tool_ids_to_keep)} MCP tool IDs decided to be kept on agent: {final_mcp_tool_ids_to_keep}")
+
+        # 5. Identify MCP Tools to Detach
+        mcp_tools_to_detach_ids = current_mcp_tool_ids - final_mcp_tool_ids_to_keep
+        logger.info(f"Identified {len(mcp_tools_to_detach_ids)} MCP tools to detach: {mcp_tools_to_detach_ids}")
+
+        # 6. Detach Identified MCP Tools
+        successful_detachments_info = []
+        failed_detachments_info = []
+        
+        if mcp_tools_to_detach_ids:
+            tools_to_detach_list = list(mcp_tools_to_detach_ids)
+            detach_tasks = [detach_tool(agent_id, tool_id) for tool_id in tools_to_detach_list]
+            logger.info(f"Executing {len(detach_tasks)} detach operations for MCP tools in parallel...")
+            detach_results = await asyncio.gather(*detach_tasks, return_exceptions=True)
+
+            id_to_name_map = {tool['id']: tool.get('name', 'Unknown') for tool in mcp_tools_on_agent_list}
+
+            for i, result in enumerate(detach_results):
+                tool_id_detached = tools_to_detach_list[i] 
+                tool_name_detached = id_to_name_map.get(tool_id_detached, "Unknown")
+
+                if isinstance(result, Exception):
+                    logger.error(f"Exception during detach for MCP tool {tool_name_detached} ({tool_id_detached}): {result}")
+                    failed_detachments_info.append({"tool_id": tool_id_detached, "name": tool_name_detached, "error": str(result)})
+                elif isinstance(result, dict) and result.get("success"):
+                    successful_detachments_info.append({"tool_id": tool_id_detached, "name": tool_name_detached})
+                else:
+                    error_msg = result.get("error", "Unknown detachment failure") if isinstance(result, dict) else "Unexpected result type"
+                    logger.warning(f"Failed detach result for MCP tool {tool_name_detached} ({tool_id_detached}): {error_msg}")
+                    failed_detachments_info.append({"tool_id": tool_id_detached, "name": tool_name_detached, "error": error_msg})
+            logger.info(f"Successfully detached {len(successful_detachments_info)} MCP tools, {len(failed_detachments_info)} failed.")
+        else:
+            logger.info("No MCP tools to detach based on the strategy.")
+            
+        # 7. Final list of tools on agent
+        final_tool_ids_on_agent = current_core_tool_ids.union(final_mcp_tool_ids_to_keep)
+        
+        return {
+            "success": True,
+            "message": f"Pruning completed for agent {agent_id}. Only MCP tools were considered for pruning.",
+            "details": {
+                "tools_on_agent_before_total": num_total_attached,
+                "mcp_tools_on_agent_before": num_currently_attached_mcp,
+                "core_tools_preserved_count": num_currently_attached_core,
+                "target_mcp_tools_to_keep_after_pruning": num_mcp_tools_to_keep,
+                "relevant_library_tools_found_count": len(ordered_top_library_tool_info),
+                "final_mcp_tool_ids_kept_on_agent": list(final_mcp_tool_ids_to_keep),
+                "final_core_tool_ids_on_agent": list(current_core_tool_ids),
+                "actual_total_tools_on_agent_after_pruning": len(final_tool_ids_on_agent),
+                "mcp_tools_detached_count": len(successful_detachments_info),
+                "mcp_tools_failed_detachment_count": len(failed_detachments_info),
+                "drop_rate_applied_to_mcp_tools": drop_rate,
+                "explicitly_kept_tool_ids_from_request": list(requested_keep_tool_ids),
+                "newly_matched_tool_ids_from_request": list(requested_newly_matched_tool_ids),
+                "successful_detachments_mcp": successful_detachments_info,
+                "failed_detachments_mcp": failed_detachments_info
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error during tool pruning for agent {agent_id}: {str(e)}", exc_info=True)
+        return {"success": False, "error": str(e)}

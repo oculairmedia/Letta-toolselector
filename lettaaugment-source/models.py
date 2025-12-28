@@ -323,3 +323,55 @@ def is_letta_core_tool(tool: Union[Dict[str, Any], Tool]) -> bool:
         return True
     
     return False
+
+
+# ============================================================================
+# Configuration Models
+# ============================================================================
+
+import os
+from dataclasses import dataclass, field
+
+
+@dataclass
+class ToolLimitsConfig:
+    """
+    Configuration for tool management limits.
+    
+    This centralizes all tool limit settings that were previously
+    scattered across api_server.py global variables.
+    """
+    max_total_tools: int = 30
+    max_mcp_tools: int = 20
+    min_mcp_tools: int = 7
+    manage_only_mcp_tools: bool = False
+    never_detach_tools: List[str] = field(default_factory=lambda: ['find_tools'])
+    
+    @classmethod
+    def from_env(cls) -> 'ToolLimitsConfig':
+        """
+        Create configuration from environment variables.
+        
+        Environment variables:
+        - MAX_TOTAL_TOOLS: Maximum total tools on agent (default: 30)
+        - MAX_MCP_TOOLS: Maximum MCP tools on agent (default: 20)
+        - MIN_MCP_TOOLS: Minimum MCP tools to maintain (default: 7)
+        - MANAGE_ONLY_MCP_TOOLS: Only manage MCP tools (default: false)
+        - NEVER_DETACH_TOOLS / PROTECTED_TOOLS: Comma-separated tool names (default: find_tools)
+        """
+        # Support both PROTECTED_TOOLS and NEVER_DETACH_TOOLS for compatibility
+        protected_tools_env = os.getenv('PROTECTED_TOOLS') or os.getenv('NEVER_DETACH_TOOLS', 'find_tools')
+        never_detach = [name.strip() for name in protected_tools_env.split(',') if name.strip()]
+        
+        return cls(
+            max_total_tools=int(os.getenv('MAX_TOTAL_TOOLS', '30')),
+            max_mcp_tools=int(os.getenv('MAX_MCP_TOOLS', '20')),
+            min_mcp_tools=int(os.getenv('MIN_MCP_TOOLS', '7')),
+            manage_only_mcp_tools=os.getenv('MANAGE_ONLY_MCP_TOOLS', 'false').lower() == 'true',
+            never_detach_tools=never_detach
+        )
+    
+    def should_protect_tool(self, tool_name: str) -> bool:
+        """Check if a tool should be protected from detachment."""
+        tool_name_lower = tool_name.lower()
+        return any(protected.lower() in tool_name_lower for protected in self.never_detach_tools)

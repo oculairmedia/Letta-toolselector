@@ -12,6 +12,7 @@ import pytest
 import sys
 from pathlib import Path
 from typing import Dict, Any
+from unittest.mock import patch
 
 # Add project root to Python path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -312,6 +313,66 @@ class TestConfigModels:
         assert config.min_mcp_tools == 7
         assert config.default_drop_rate == 0.6
         assert "find_tools" in config.never_detach_tools
+
+
+class TestToolLimitsConfig:
+    """Tests for ToolLimitsConfig dataclass."""
+    
+    def test_tool_limits_config_defaults(self):
+        """Should have sensible defaults."""
+        from models import ToolLimitsConfig
+        
+        config = ToolLimitsConfig()
+        assert config.max_total_tools == 30
+        assert config.max_mcp_tools == 20
+        assert config.min_mcp_tools == 7
+        assert config.manage_only_mcp_tools is False
+        assert "find_tools" in config.never_detach_tools
+    
+    def test_tool_limits_config_from_env(self):
+        """Should load from environment variables."""
+        from models import ToolLimitsConfig
+        
+        with patch.dict('os.environ', {
+            'MAX_TOTAL_TOOLS': '40',
+            'MAX_MCP_TOOLS': '25',
+            'MIN_MCP_TOOLS': '5',
+            'MANAGE_ONLY_MCP_TOOLS': 'true',
+            'NEVER_DETACH_TOOLS': 'find_tools,custom_tool'
+        }):
+            config = ToolLimitsConfig.from_env()
+            assert config.max_total_tools == 40
+            assert config.max_mcp_tools == 25
+            assert config.min_mcp_tools == 5
+            assert config.manage_only_mcp_tools is True
+            assert 'find_tools' in config.never_detach_tools
+            assert 'custom_tool' in config.never_detach_tools
+    
+    def test_tool_limits_config_protected_tools_alias(self):
+        """Should support PROTECTED_TOOLS as alias for NEVER_DETACH_TOOLS."""
+        from models import ToolLimitsConfig
+        
+        with patch.dict('os.environ', {
+            'PROTECTED_TOOLS': 'my_protected_tool'
+        }, clear=False):
+            # Remove NEVER_DETACH_TOOLS if present to test fallback
+            import os
+            os.environ.pop('NEVER_DETACH_TOOLS', None)
+            
+            config = ToolLimitsConfig.from_env()
+            assert 'my_protected_tool' in config.never_detach_tools
+    
+    def test_should_protect_tool(self):
+        """Should correctly identify protected tools."""
+        from models import ToolLimitsConfig
+        
+        config = ToolLimitsConfig(never_detach_tools=['find_tools', 'important_tool'])
+        
+        assert config.should_protect_tool('find_tools') is True
+        assert config.should_protect_tool('FIND_TOOLS') is True  # Case insensitive
+        assert config.should_protect_tool('my_find_tools_helper') is True  # Contains pattern
+        assert config.should_protect_tool('important_tool') is True
+        assert config.should_protect_tool('random_tool') is False
 
 
 # ============================================================================

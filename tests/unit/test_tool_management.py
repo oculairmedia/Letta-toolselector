@@ -608,21 +608,42 @@ class TestPerformToolPruning:
     async def test_pruning_no_mcp_tools(self, test_agent_id):
         """Should handle agent with no MCP tools."""
         from api_server import _perform_tool_pruning
+        from models import ToolLimitsConfig
         
         # Only core tools
         agent_tools = [
             {"id": "tool-core-1", "name": "send_message", "tool_type": "letta_core"},
         ]
         
-        with patch('api_server.fetch_agent_tools', new_callable=AsyncMock) as mock_fetch:
-            mock_fetch.return_value = agent_tools
-            
-            with patch('api_server.MANAGE_ONLY_MCP_TOOLS', True):
-                result = await _perform_tool_pruning(
-                    test_agent_id,
-                    user_prompt="test",
-                    drop_rate=0.5
-                )
+        # Mock fetch_agent_tools at the tool_manager level
+        async def mock_fetch(agent_id):
+            return agent_tools
+        
+        # Mock search_tools
+        def mock_search(query, limit):
+            return []
+        
+        # Configure tool_manager with mocks
+        tool_config = ToolLimitsConfig(manage_only_mcp_tools=True)
+        tool_manager.configure(
+            http_session=MagicMock(),
+            letta_url='http://test:8283',
+            headers={},
+            use_letta_sdk=False,
+            search_tools_func=mock_search,
+            tool_config=tool_config
+        )
+        
+        # Patch the fetch_agent_tools function in tool_manager
+        with patch.object(tool_manager, 'fetch_agent_tools', mock_fetch):
+            result = await _perform_tool_pruning(
+                test_agent_id,
+                user_prompt="test",
+                drop_rate=0.5
+            )
+        
+        # Reset tool_manager
+        tool_manager.configure()
         
         assert result["success"] is True
         assert "No MCP tools" in result["message"]
@@ -631,20 +652,40 @@ class TestPerformToolPruning:
     async def test_pruning_respects_minimum(self, test_agent_id, mock_agent_tools):
         """Should not prune below MIN_MCP_TOOLS."""
         from api_server import _perform_tool_pruning
+        from models import ToolLimitsConfig
         
         # Only 5 MCP tools (below default min of 7)
         agent_tools = mock_agent_tools[:5] + mock_agent_tools[10:12]  # 5 MCP + 2 core
         
-        with patch('api_server.fetch_agent_tools', new_callable=AsyncMock) as mock_fetch:
-            mock_fetch.return_value = agent_tools
-            
-            with patch('api_server.MANAGE_ONLY_MCP_TOOLS', True):
-                with patch.dict('os.environ', {'MIN_MCP_TOOLS': '7'}):
-                    result = await _perform_tool_pruning(
-                        test_agent_id,
-                        user_prompt="test",
-                        drop_rate=0.8
-                    )
+        # Mock fetch_agent_tools at the tool_manager level
+        async def mock_fetch(agent_id):
+            return agent_tools
+        
+        # Mock search_tools
+        def mock_search(query, limit):
+            return []
+        
+        # Configure tool_manager with mocks (min_mcp_tools=7)
+        tool_config = ToolLimitsConfig(manage_only_mcp_tools=True, min_mcp_tools=7)
+        tool_manager.configure(
+            http_session=MagicMock(),
+            letta_url='http://test:8283',
+            headers={},
+            use_letta_sdk=False,
+            search_tools_func=mock_search,
+            tool_config=tool_config
+        )
+        
+        # Patch the fetch_agent_tools function in tool_manager
+        with patch.object(tool_manager, 'fetch_agent_tools', mock_fetch):
+            result = await _perform_tool_pruning(
+                test_agent_id,
+                user_prompt="test",
+                drop_rate=0.8
+            )
+        
+        # Reset tool_manager
+        tool_manager.configure()
         
         assert result["success"] is True
         assert "Pruning skipped" in result["message"]

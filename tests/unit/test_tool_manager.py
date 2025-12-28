@@ -377,6 +377,127 @@ class TestProcessToolsDirect:
 
 
 # ============================================================================
+# Fetch Agent Tools Tests
+# ============================================================================
+
+class TestFetchAgentToolsDirect:
+    """Tests for tool_manager.fetch_agent_tools function directly."""
+    
+    @pytest.mark.asyncio
+    async def test_fetch_agent_tools_success(self, test_agent_id):
+        """Should successfully fetch agent tools."""
+        import tool_manager
+        
+        expected_tools = [
+            {"id": "tool-1", "name": "tool_one", "tool_type": "external_mcp"},
+            {"id": "tool-2", "name": "tool_two", "tool_type": "letta_core"},
+        ]
+        
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=expected_tools)
+        mock_response.raise_for_status = MagicMock()
+        
+        async_cm = AsyncMock()
+        async_cm.__aenter__.return_value = mock_response
+        async_cm.__aexit__.return_value = None
+        
+        mock_session = MagicMock()
+        mock_session.get.return_value = async_cm
+        
+        tool_manager.configure(
+            http_session=mock_session,
+            letta_url="http://test:8283",
+            headers={"Authorization": "Bearer test"},
+            use_letta_sdk=False
+        )
+        
+        result = await tool_manager.fetch_agent_tools(test_agent_id)
+        
+        assert result == expected_tools
+        assert len(result) == 2
+        mock_session.get.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_fetch_agent_tools_no_session(self, test_agent_id):
+        """Should raise ConnectionError when no session configured."""
+        import tool_manager
+        
+        tool_manager.configure(
+            http_session=None,
+            letta_url="http://test:8283",
+            headers={},
+            use_letta_sdk=False
+        )
+        
+        with pytest.raises(ConnectionError) as exc_info:
+            await tool_manager.fetch_agent_tools(test_agent_id)
+        
+        assert "HTTP session not available" in str(exc_info.value)
+    
+    @pytest.mark.asyncio
+    async def test_fetch_agent_tools_api_error(self, test_agent_id):
+        """Should propagate exceptions from API errors."""
+        import tool_manager
+        from aiohttp import ClientResponseError
+        
+        mock_response = MagicMock()
+        mock_response.status = 500
+        mock_response.raise_for_status = MagicMock(side_effect=Exception("Server Error"))
+        
+        async_cm = AsyncMock()
+        async_cm.__aenter__.return_value = mock_response
+        async_cm.__aexit__.return_value = None
+        
+        mock_session = MagicMock()
+        mock_session.get.return_value = async_cm
+        
+        tool_manager.configure(
+            http_session=mock_session,
+            letta_url="http://test:8283",
+            headers={},
+            use_letta_sdk=False
+        )
+        
+        with pytest.raises(Exception) as exc_info:
+            await tool_manager.fetch_agent_tools(test_agent_id)
+        
+        assert "Server Error" in str(exc_info.value)
+    
+    @pytest.mark.asyncio
+    async def test_fetch_agent_tools_correct_url(self, test_agent_id):
+        """Should call correct URL endpoint."""
+        import tool_manager
+        
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=[])
+        mock_response.raise_for_status = MagicMock()
+        
+        async_cm = AsyncMock()
+        async_cm.__aenter__.return_value = mock_response
+        async_cm.__aexit__.return_value = None
+        
+        mock_session = MagicMock()
+        mock_session.get.return_value = async_cm
+        
+        tool_manager.configure(
+            http_session=mock_session,
+            letta_url="http://test:8283",
+            headers={"X-Custom": "header"},
+            use_letta_sdk=False
+        )
+        
+        await tool_manager.fetch_agent_tools(test_agent_id)
+        
+        # Verify the URL called
+        call_args = mock_session.get.call_args
+        expected_url = f"http://test:8283/agents/{test_agent_id}/tools"
+        assert call_args[0][0] == expected_url
+        assert call_args[1]["headers"]["X-Custom"] == "header"
+
+
+# ============================================================================
 # Helper Function Tests
 # ============================================================================
 

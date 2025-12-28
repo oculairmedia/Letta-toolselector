@@ -84,6 +84,15 @@ USE_UNIVERSAL_EXPANSION = os.getenv("USE_UNIVERSAL_EXPANSION", "true").lower() =
 # Environment variable to enable reranking by default for all searches
 ENABLE_RERANKING_BY_DEFAULT = os.getenv("ENABLE_RERANKING_BY_DEFAULT", "true").lower() == "true"
 
+# Reranker configuration - supports both Ollama adapter and vLLM
+# RERANKER_PROVIDER: "ollama" (default) or "vllm"
+RERANKER_PROVIDER = os.getenv("RERANKER_PROVIDER", "ollama").lower()
+# For vLLM: http://100.81.139.20:11435/v1/rerank
+# For Ollama adapter: http://ollama-reranker-adapter:8080/rerank
+RERANKER_URL = os.getenv("RERANKER_URL", "http://ollama-reranker-adapter:8080/rerank")
+RERANKER_MODEL = os.getenv("RERANKER_MODEL", "qwen3-reranker-4b")
+RERANKER_TIMEOUT = float(os.getenv("RERANKER_TIMEOUT", "30.0"))
+
 def init_client():
     """Initialize Weaviate client using v4 API."""
     load_dotenv()
@@ -261,18 +270,28 @@ def search_tools_with_reranking(
                             documents.append(doc_text.strip())
                         
                         if documents:
-                            # Call our reranker adapter with task-specific instruction
+                            # Call reranker - supports both Ollama adapter and vLLM
                             import httpx
-                            reranker_url = "http://ollama-reranker-adapter:8080/rerank"
-
-                            payload = {
-                                "query": cleaned_query,
-                                "documents": documents,
-                                "k": min(limit, len(documents)),
-                                "instruction": DEFAULT_RERANK_INSTRUCTION,
-                            }
                             
-                            response = httpx.post(reranker_url, json=payload, timeout=30.0)
+                            # Build payload based on provider
+                            if RERANKER_PROVIDER == "vllm":
+                                # vLLM format: /v1/rerank endpoint
+                                payload = {
+                                    "model": RERANKER_MODEL,
+                                    "query": cleaned_query,
+                                    "documents": documents,
+                                    "top_k": min(limit, len(documents)),
+                                }
+                            else:
+                                # Ollama adapter format (default)
+                                payload = {
+                                    "query": cleaned_query,
+                                    "documents": documents,
+                                    "k": min(limit, len(documents)),
+                                    "instruction": DEFAULT_RERANK_INSTRUCTION,
+                                }
+                            
+                            response = httpx.post(RERANKER_URL, json=payload, timeout=RERANKER_TIMEOUT)
                             if response.status_code == 200:
                                 rerank_data = response.json()
                                 rerank_results = rerank_data.get('results', [])

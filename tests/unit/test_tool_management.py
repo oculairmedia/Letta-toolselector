@@ -515,6 +515,180 @@ class TestTriggerAgentLoop:
 
 
 # ============================================================================
+# _perform_tool_pruning Tests
+# ============================================================================
+
+class TestPerformToolPruning:
+    """Tests for _perform_tool_pruning function."""
+    
+    @pytest.fixture
+    def mock_agent_tools(self):
+        """Return a list of agent tools for testing."""
+        return [
+            # MCP tools
+            {"id": "tool-mcp-1", "tool_id": "tool-mcp-1", "name": "mcp_tool_1", "tool_type": "external_mcp"},
+            {"id": "tool-mcp-2", "tool_id": "tool-mcp-2", "name": "mcp_tool_2", "tool_type": "external_mcp"},
+            {"id": "tool-mcp-3", "tool_id": "tool-mcp-3", "name": "mcp_tool_3", "tool_type": "external_mcp"},
+            {"id": "tool-mcp-4", "tool_id": "tool-mcp-4", "name": "mcp_tool_4", "tool_type": "external_mcp"},
+            {"id": "tool-mcp-5", "tool_id": "tool-mcp-5", "name": "mcp_tool_5", "tool_type": "external_mcp"},
+            {"id": "tool-mcp-6", "tool_id": "tool-mcp-6", "name": "mcp_tool_6", "tool_type": "external_mcp"},
+            {"id": "tool-mcp-7", "tool_id": "tool-mcp-7", "name": "mcp_tool_7", "tool_type": "external_mcp"},
+            {"id": "tool-mcp-8", "tool_id": "tool-mcp-8", "name": "mcp_tool_8", "tool_type": "external_mcp"},
+            {"id": "tool-mcp-9", "tool_id": "tool-mcp-9", "name": "mcp_tool_9", "tool_type": "external_mcp"},
+            {"id": "tool-mcp-10", "tool_id": "tool-mcp-10", "name": "mcp_tool_10", "tool_type": "external_mcp"},
+            # Core tools
+            {"id": "tool-core-1", "tool_id": "tool-core-1", "name": "send_message", "tool_type": "letta_core"},
+            {"id": "tool-core-2", "tool_id": "tool-core-2", "name": "archival_memory_search", "tool_type": "letta_core"},
+            # Protected tool
+            {"id": "tool-find", "tool_id": "tool-find", "name": "find_tools", "tool_type": "external_mcp"},
+        ]
+    
+    @pytest.mark.asyncio
+    async def test_pruning_no_mcp_tools(self, test_agent_id):
+        """Should handle agent with no MCP tools."""
+        from api_server import _perform_tool_pruning
+        
+        # Only core tools
+        agent_tools = [
+            {"id": "tool-core-1", "name": "send_message", "tool_type": "letta_core"},
+        ]
+        
+        with patch('api_server.fetch_agent_tools', new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = agent_tools
+            
+            with patch('api_server.MANAGE_ONLY_MCP_TOOLS', True):
+                result = await _perform_tool_pruning(
+                    test_agent_id,
+                    user_prompt="test",
+                    drop_rate=0.5
+                )
+        
+        assert result["success"] is True
+        assert "No MCP tools" in result["message"]
+    
+    @pytest.mark.asyncio
+    async def test_pruning_respects_minimum(self, test_agent_id, mock_agent_tools):
+        """Should not prune below MIN_MCP_TOOLS."""
+        from api_server import _perform_tool_pruning
+        
+        # Only 5 MCP tools (below default min of 7)
+        agent_tools = mock_agent_tools[:5] + mock_agent_tools[10:12]  # 5 MCP + 2 core
+        
+        with patch('api_server.fetch_agent_tools', new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = agent_tools
+            
+            with patch('api_server.MANAGE_ONLY_MCP_TOOLS', True):
+                with patch.dict('os.environ', {'MIN_MCP_TOOLS': '7'}):
+                    result = await _perform_tool_pruning(
+                        test_agent_id,
+                        user_prompt="test",
+                        drop_rate=0.8
+                    )
+        
+        assert result["success"] is True
+        assert "Pruning skipped" in result["message"]
+    
+    @pytest.mark.asyncio
+    async def test_pruning_preserves_core_tools(self, test_agent_id, mock_agent_tools):
+        """Should always preserve Letta core tools."""
+        from api_server import _perform_tool_pruning
+        
+        with patch('api_server.fetch_agent_tools', new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = mock_agent_tools
+            
+            with patch('api_server.detach_tool', new_callable=AsyncMock) as mock_detach:
+                mock_detach.return_value = {"success": True}
+                
+                with patch('api_server.search_tools') as mock_search:
+                    # Return some tools for relevance ranking
+                    mock_search.return_value = [
+                        {"name": "mcp_tool_1", "score": 0.9},
+                        {"name": "mcp_tool_2", "score": 0.8},
+                    ]
+                    
+                    with patch('api_server.read_tool_cache', new_callable=AsyncMock) as mock_cache:
+                        mock_cache.return_value = mock_agent_tools
+                        
+                        with patch('api_server.MANAGE_ONLY_MCP_TOOLS', True):
+                            with patch.dict('os.environ', {'MIN_MCP_TOOLS': '3', 'MAX_MCP_TOOLS': '20'}):
+                                result = await _perform_tool_pruning(
+                                    test_agent_id,
+                                    user_prompt="test",
+                                    drop_rate=0.5
+                                )
+        
+        # Verify no core tools were detached
+        for call in mock_detach.call_args_list:
+            tool_id = call[0][1]  # Second positional arg is tool_id
+            # Core tool IDs shouldn't be in detach calls
+            assert not tool_id.startswith("tool-core-")
+    
+    @pytest.mark.asyncio
+    async def test_pruning_protects_never_detach_tools(self, test_agent_id, mock_agent_tools):
+        """Should never detach tools in NEVER_DETACH_TOOLS list."""
+        from api_server import _perform_tool_pruning
+        
+        with patch('api_server.fetch_agent_tools', new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = mock_agent_tools
+            
+            with patch('api_server.detach_tool', new_callable=AsyncMock) as mock_detach:
+                mock_detach.return_value = {"success": True}
+                
+                with patch('api_server.search_tools') as mock_search:
+                    mock_search.return_value = []
+                    
+                    with patch('api_server.read_tool_cache', new_callable=AsyncMock) as mock_cache:
+                        mock_cache.return_value = mock_agent_tools
+                        
+                        with patch('api_server.MANAGE_ONLY_MCP_TOOLS', True):
+                            with patch('api_server.NEVER_DETACH_TOOLS', ['find_tools']):
+                                with patch.dict('os.environ', {'MIN_MCP_TOOLS': '3', 'MAX_MCP_TOOLS': '20'}):
+                                    result = await _perform_tool_pruning(
+                                        test_agent_id,
+                                        user_prompt="test",
+                                        drop_rate=0.8
+                                    )
+        
+        # Verify find_tools was NOT detached
+        for call in mock_detach.call_args_list:
+            tool_id = call[0][1]
+            assert tool_id != "tool-find"
+    
+    @pytest.mark.asyncio
+    async def test_pruning_keeps_specified_tool_ids(self, test_agent_id, mock_agent_tools):
+        """Should keep tools specified in keep_tool_ids."""
+        from api_server import _perform_tool_pruning
+        
+        keep_ids = ["tool-mcp-1", "tool-mcp-2"]
+        
+        with patch('api_server.fetch_agent_tools', new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = mock_agent_tools
+            
+            with patch('api_server.detach_tool', new_callable=AsyncMock) as mock_detach:
+                mock_detach.return_value = {"success": True}
+                
+                with patch('api_server.search_tools') as mock_search:
+                    mock_search.return_value = []
+                    
+                    with patch('api_server.read_tool_cache', new_callable=AsyncMock) as mock_cache:
+                        mock_cache.return_value = mock_agent_tools
+                        
+                        with patch('api_server.MANAGE_ONLY_MCP_TOOLS', True):
+                            with patch.dict('os.environ', {'MIN_MCP_TOOLS': '2', 'MAX_MCP_TOOLS': '20'}):
+                                result = await _perform_tool_pruning(
+                                    test_agent_id,
+                                    user_prompt="test",
+                                    drop_rate=0.9,
+                                    keep_tool_ids=keep_ids
+                                )
+        
+        # Verify kept tools were NOT detached
+        detached_ids = [call[0][1] for call in mock_detach.call_args_list]
+        for keep_id in keep_ids:
+            assert keep_id not in detached_ids
+
+
+# ============================================================================
 # Integration-style Unit Tests (with more realistic mocking)
 # ============================================================================
 

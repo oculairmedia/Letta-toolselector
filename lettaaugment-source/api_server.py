@@ -1063,147 +1063,9 @@ async def validate_config_endpoint():
 
 # Reranker and Embedding config routes moved to routes/config.py blueprint
 
+# Ollama routes moved to routes/ollama.py blueprint
 
-@app.route('/api/v1/ollama/models', methods=['GET'])
-async def get_ollama_models():
-    """Get available models from Ollama instance."""
-    
-    def get_fallback_models():
-        """Get fallback models including configured embedding model"""
-        configured_model = os.getenv('OLLAMA_EMBEDDING_MODEL', 'llama2:7b')
-        fallback_models = [configured_model, "mistral:7b", "llama2:7b", "codellama:7b"]
-        # Remove duplicates while preserving order
-        return list(dict.fromkeys(fallback_models))
-    
-    try:
-        # Get base URL from environment configuration
-        ollama_host = os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80')
-        base_url = f"http://{ollama_host}:11434"
-        
-        # Try to query Ollama API for models
-        logger.info(f"Fetching Ollama models from: {base_url}")
-        
-        async with aiohttp.ClientSession() as session:
-            # Query the Ollama API tags endpoint
-            ollama_url = f"{base_url}/api/tags"
-            async with session.get(ollama_url, timeout=10) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    models = data.get('models', [])
-                    
-                    # Format models for frontend
-                    formatted_models = []
-                    for model in models:
-                        formatted_model = {
-                            "name": model.get('name', ''),
-                            "size": model.get('size', 0),
-                            "modified_at": model.get('modified_at', ''),
-                            "digest": model.get('digest', ''),
-                            "details": model.get('details', {})
-                        }
-                        formatted_models.append(formatted_model)
-                    
-                    logger.info(f"Successfully fetched {len(formatted_models)} models from Ollama")
-                    return jsonify({
-                        "success": True, 
-                        "data": {
-                            "models": formatted_models,
-                            "base_url": base_url,
-                            "total": len(formatted_models)
-                        }
-                    })
-                else:
-                    logger.warning(f"Ollama API returned status {response.status}")
-                    return jsonify({
-                        "success": False, 
-                        "error": f"Ollama API returned status {response.status}",
-                        "fallback_models": get_fallback_models()
-                    }), 503
-                    
-    except asyncio.TimeoutError:
-        logger.error("Timeout connecting to Ollama API")
-        return jsonify({
-            "success": False, 
-            "error": "Timeout connecting to Ollama instance",
-            "fallback_models": ["mistral:7b", "llama2:7b", "codellama:7b"]
-        }), 503
-    except Exception as e:
-        logger.error(f"Error fetching Ollama models: {str(e)}")
-        return jsonify({
-            "success": False, 
-            "error": f"Failed to fetch models: {str(e)}",
-            "fallback_models": get_fallback_models()
-        }), 503
-
-
-# Configuration presets endpoints
-@app.route('/api/v1/config/presets', methods=['GET'])
-async def get_configuration_presets():
-    """Get all configuration presets."""
-    try:
-        # For now, return empty array since we don't have persistent storage yet
-        # This can be extended to use a database or file storage
-        return jsonify({
-            "success": True,
-            "data": []
-        })
-    except Exception as e:
-        logger.error(f"Error getting configuration presets: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route('/api/v1/config/presets', methods=['POST'])
-async def create_configuration_preset():
-    """Create a new configuration preset."""
-    try:
-        data = await request.get_json()
-        # For now, return success but don't actually store
-        # This can be extended to use a database or file storage
-        return jsonify({
-            "success": True,
-            "data": {
-                "id": "preset_" + str(int(time.time())),
-                "name": data.get("name", "Untitled Preset"),
-                "description": data.get("description", ""),
-                "config": data.get("config", {}),
-                "created_at": time.time()
-            }
-        })
-    except Exception as e:
-        logger.error(f"Error creating configuration preset: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route('/api/v1/config/presets/<preset_id>', methods=['PUT'])
-async def update_configuration_preset(preset_id):
-    """Update a configuration preset."""
-    try:
-        data = await request.get_json()
-        # For now, return success but don't actually store
-        return jsonify({
-            "success": True,
-            "data": {
-                "id": preset_id,
-                "name": data.get("name", "Updated Preset"),
-                "description": data.get("description", ""),
-                "config": data.get("config", {}),
-                "updated_at": time.time()
-            }
-        })
-    except Exception as e:
-        logger.error(f"Error updating configuration preset: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route('/api/v1/config/presets/<preset_id>', methods=['DELETE'])
-async def delete_configuration_preset(preset_id):
-    """Delete a configuration preset."""
-    try:
-        # For now, just return success
-        return jsonify({"success": True})
-    except Exception as e:
-        logger.error(f"Error deleting configuration preset: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
+# Configuration presets routes moved to routes/config.py blueprint
 
 
 # Tool Selector Configuration endpoints
@@ -6704,6 +6566,12 @@ async def startup():
     config_routes.configure(http_session=http_session)
     app.register_blueprint(config_bp)
     logger.info("Config routes blueprint registered.")
+    
+    # Configure and register ollama routes blueprint
+    from routes import ollama as ollama_routes, ollama_bp
+    ollama_routes.configure()
+    app.register_blueprint(ollama_bp)
+    logger.info("Ollama routes blueprint registered.")
 
     # Ensure cache directory exists
     os.makedirs(CACHE_DIR, exist_ok=True)

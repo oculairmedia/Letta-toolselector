@@ -28,24 +28,29 @@ from .tools import tools_bp, configure as configure_tools
 from .health import health_bp, configure as configure_health
 from .search import search_bp, configure as configure_search
 from .config import config_bp, configure as configure_config
+from .ollama import ollama_bp, configure as configure_ollama
 
 # Also expose the modules for configure() calls
 from . import tools
 from . import health
 from . import search
 from . import config
+from . import ollama
 
 __all__ = [
     'tools_bp',
     'health_bp',
     'search_bp',
     'config_bp',
+    'ollama_bp',
     'configure_tools',
     'configure_health',
     'configure_search',
     'configure_config',
+    'configure_ollama',
     'tools',
     'health',
     'search',
     'config',
+    'ollama',
 ]

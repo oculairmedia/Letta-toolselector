@@ -154,3 +154,70 @@ async def update_embedding_config():
     except Exception as e:
         logger.error(f"Error updating embedding config: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# =============================================================================
+# Configuration Presets
+# =============================================================================
+
+@config_bp.route('/presets', methods=['GET'])
+async def get_configuration_presets():
+    """Get all configuration presets."""
+    try:
+        return jsonify({
+            "success": True,
+            "data": []
+        })
+    except Exception as e:
+        logger.error(f"Error getting configuration presets: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@config_bp.route('/presets', methods=['POST'])
+async def create_configuration_preset():
+    """Create a new configuration preset."""
+    try:
+        data = await request.get_json()
+        return jsonify({
+            "success": True,
+            "data": {
+                "id": "preset_" + str(int(time.time())),
+                "name": data.get("name", "Untitled Preset"),
+                "description": data.get("description", ""),
+                "config": data.get("config", {}),
+                "created_at": time.time()
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error creating configuration preset: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@config_bp.route('/presets/<preset_id>', methods=['PUT'])
+async def update_configuration_preset(preset_id):
+    """Update a configuration preset."""
+    try:
+        data = await request.get_json()
+        return jsonify({
+            "success": True,
+            "data": {
+                "id": preset_id,
+                "name": data.get("name", "Updated Preset"),
+                "description": data.get("description", ""),
+                "config": data.get("config", {}),
+                "updated_at": time.time()
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error updating configuration preset: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@config_bp.route('/presets/<preset_id>', methods=['DELETE'])
+async def delete_configuration_preset(preset_id):
+    """Delete a configuration preset."""
+    try:
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.error(f"Error deleting configuration preset: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500

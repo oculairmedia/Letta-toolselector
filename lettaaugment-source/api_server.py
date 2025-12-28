@@ -11,6 +11,8 @@ from models import (
 import tool_manager
 # Import agent service for agent communication
 import agent_service
+# Import search service for unified search operations
+import search_service
 import os
 import asyncio
 import aiohttp
@@ -241,10 +243,7 @@ async def unified_tool_search(query: str, limit: int = 10, min_score: float = 0.
     """
     Unified tool search that can use either Weaviate or Letta's native search.
     
-    The search provider is determined by the TOOL_SEARCH_PROVIDER environment variable:
-    - 'weaviate': Use Weaviate vector database (default)
-    - 'letta': Use Letta's native client.tools.search() API
-    - 'hybrid': Try Letta first, fallback to Weaviate on error
+    Delegates to search_service.search for the actual implementation.
     
     Args:
         query: Search query describing the tool you're looking for
@@ -254,51 +253,7 @@ async def unified_tool_search(query: str, limit: int = 10, min_score: float = 0.
     Returns:
         List of tool dicts with search results
     """
-    global weaviate_client
-    
-    async def search_via_letta():
-        """Search using Letta's native tools.search() API"""
-        if not USE_LETTA_SDK:
-            raise RuntimeError("Letta SDK not available for tool search")
-        
-        sdk_client = get_letta_sdk_client()
-        results = await sdk_client.search_tools_with_scores(
-            query=query,
-            limit=limit,
-            min_score=min_score
-        )
-        logger.info(f"Letta native search for '{query}' returned {len(results)} results")
-        return results
-    
-    async def search_via_weaviate():
-        """Search using Weaviate vector database"""
-        if not weaviate_client or not weaviate_client.is_ready():
-            weaviate_client_local = init_weaviate_client()
-            if not weaviate_client_local or not weaviate_client_local.is_ready():
-                raise RuntimeError("Weaviate client not available for tool search")
-        
-        results = await asyncio.to_thread(search_tools, query=query, limit=limit)
-        logger.info(f"Weaviate search for '{query}' returned {len(results)} results")
-        return results
-    
-    # Execute search based on configured provider
-    if TOOL_SEARCH_PROVIDER == 'letta':
-        try:
-            return await search_via_letta()
-        except Exception as e:
-            logger.error(f"Letta tool search failed: {e}")
-            raise
-    
-    elif TOOL_SEARCH_PROVIDER == 'hybrid':
-        # Try Letta first, fallback to Weaviate
-        try:
-            return await search_via_letta()
-        except Exception as e:
-            logger.warning(f"Letta tool search failed, falling back to Weaviate: {e}")
-            return await search_via_weaviate()
-    
-    else:  # 'weaviate' (default)
-        return await search_via_weaviate()
+    return await search_service.search(query=query, limit=limit, min_score=min_score)
 
 
 def cosine_similarity(vec1, vec2):
@@ -7088,6 +7043,32 @@ async def startup():
         matrix_bridge_webhook_url=MATRIX_BRIDGE_WEBHOOK_URL
     )
     logger.info("Agent service configured for agent communication.")
+    
+    # Configure search service with reranker and expansion settings
+    from search_service import SearchConfig, RerankerConfig, QueryExpansionConfig
+    search_config = SearchConfig(
+        provider=TOOL_SEARCH_PROVIDER,
+        reranker=RerankerConfig(
+            enabled=os.getenv('ENABLE_RERANKING', 'true').lower() == 'true',
+            provider=os.getenv('RERANKER_PROVIDER', 'vllm'),
+            url=os.getenv('RERANKER_URL', 'http://100.81.139.20:11435/rerank'),
+            model=os.getenv('RERANKER_MODEL', 'qwen3-reranker-4b'),
+            timeout=float(os.getenv('RERANKER_TIMEOUT', '30.0')),
+            initial_limit=int(os.getenv('RERANK_INITIAL_LIMIT', '30')),
+            top_k=int(os.getenv('RERANK_TOP_K', '10'))
+        ),
+        expansion=QueryExpansionConfig(
+            enabled=os.getenv('ENABLE_QUERY_EXPANSION', 'true').lower() == 'true',
+            use_universal=os.getenv('USE_UNIVERSAL_EXPANSION', 'true').lower() == 'true'
+        )
+    )
+    search_service.configure(
+        weaviate_client=weaviate_client,
+        letta_sdk_client_func=sdk_client_func,
+        config=search_config
+    )
+    logger.info(f"Search service configured: provider={search_config.provider}, "
+                f"reranking={'enabled' if search_config.reranker.enabled else 'disabled'}")
 
     # Ensure cache directory exists
     os.makedirs(CACHE_DIR, exist_ok=True)

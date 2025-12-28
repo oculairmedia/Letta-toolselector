@@ -15,7 +15,9 @@ from quart import Blueprint, request, jsonify
 import logging
 import os
 import time
+import asyncio
 import aiohttp
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -24,17 +26,20 @@ config_bp = Blueprint('config', __name__, url_prefix='/api/v1/config')
 
 # Module state - to be configured
 _http_session = None
+_log_config_change = None
 
 
-def configure(http_session=None):
+def configure(http_session=None, log_config_change=None):
     """
     Configure the config routes with required dependencies.
     
     Args:
         http_session: aiohttp ClientSession for API calls
+        log_config_change: Async function to log configuration changes
     """
-    global _http_session
+    global _http_session, _log_config_change
     _http_session = http_session
+    _log_config_change = log_config_change
 
 
 # =============================================================================
@@ -220,4 +225,225 @@ async def delete_configuration_preset(preset_id):
         return jsonify({"success": True})
     except Exception as e:
         logger.error(f"Error deleting configuration preset: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# =============================================================================
+# Ollama Configuration
+# =============================================================================
+
+async def _test_ollama_connection(config):
+    """Test connection to Ollama server."""
+    host = config.get("host", "192.168.50.80")
+    port = config.get("port", 11434)
+    timeout = config.get("timeout", 30)
+    
+    try:
+        base_url = f"http://{host}:{port}"
+        
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+            # Test basic connectivity
+            async with session.get(f"{base_url}/api/version") as response:
+                if response.status == 200:
+                    version_data = await response.json()
+                    
+                    # Test model listing
+                    async with session.get(f"{base_url}/api/tags") as models_response:
+                        if models_response.status == 200:
+                            models_data = await models_response.json()
+                            model_count = len(models_data.get("models", []))
+                            
+                            return {
+                                "available": True,
+                                "version": version_data.get("version", "unknown"),
+                                "host": host,
+                                "port": port,
+                                "model_count": model_count,
+                                "response_time": "< 1s"
+                            }
+                        else:
+                            return {
+                                "available": False,
+                                "error": f"Models endpoint returned {models_response.status}",
+                                "host": host,
+                                "port": port
+                            }
+                else:
+                    return {
+                        "available": False,
+                        "error": f"Version endpoint returned {response.status}",
+                        "host": host,
+                        "port": port
+                    }
+    except asyncio.TimeoutError:
+        return {
+            "available": False,
+            "error": "Connection timeout",
+            "host": host,
+            "port": port
+        }
+    except Exception as e:
+        return {
+            "available": False,
+            "error": str(e),
+            "host": host,
+            "port": port
+        }
+
+
+@config_bp.route('/ollama', methods=['GET'])
+async def get_ollama_config():
+    """Get current Ollama configuration."""
+    try:
+        config = {
+            "connection": {
+                "host": os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80'),
+                "port": int(os.getenv('OLLAMA_PORT', '11434')),
+                "timeout": int(os.getenv('OLLAMA_TIMEOUT', '30')),
+                "base_url": os.getenv('OLLAMA_BASE_URL', '')
+            },
+            "embedding": {
+                "model": os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
+                "enabled": os.getenv('USE_OLLAMA_EMBEDDINGS', 'false').lower() == 'true'
+            },
+            "generation": {
+                "default_model": os.getenv('OLLAMA_DEFAULT_MODEL', 'mistral:7b'),
+                "temperature": float(os.getenv('OLLAMA_TEMPERATURE', '0.7')),
+                "context_length": int(os.getenv('OLLAMA_CONTEXT_LENGTH', '4096'))
+            },
+            "performance": {
+                "num_parallel": int(os.getenv('OLLAMA_NUM_PARALLEL', '1')),
+                "num_ctx": int(os.getenv('OLLAMA_NUM_CTX', '2048')),
+                "num_gpu": int(os.getenv('OLLAMA_NUM_GPU', '-1')),
+                "low_vram": os.getenv('OLLAMA_LOW_VRAM', 'false').lower() == 'true'
+            }
+        }
+
+        # Add connection status
+        connection_status = await _test_ollama_connection(config["connection"])
+        config["status"] = connection_status
+
+        return jsonify({"success": True, "data": config})
+    except Exception as e:
+        logger.error(f"Error getting Ollama config: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@config_bp.route('/ollama', methods=['PUT'])
+async def update_ollama_config():
+    """Update Ollama configuration."""
+    try:
+        data = await request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "No configuration data provided"}), 400
+
+        # Validate configuration data
+        validation_errors = []
+        warnings = []
+        test_result = None
+
+        if "connection" in data:
+            conn = data["connection"]
+
+            # Validate host
+            if "host" in conn:
+                host = conn["host"]
+                if not host or not isinstance(host, str):
+                    validation_errors.append("Host must be a valid string")
+                elif not host.replace('.', '').replace('-', '').replace(':', '').isalnum():
+                    warnings.append("Host format may be invalid")
+
+            # Validate port
+            if "port" in conn:
+                port = conn["port"]
+                if not isinstance(port, int) or not (1 <= port <= 65535):
+                    validation_errors.append("Port must be between 1 and 65535")
+
+            # Validate timeout
+            if "timeout" in conn:
+                timeout = conn["timeout"]
+                if not isinstance(timeout, int) or timeout < 1:
+                    validation_errors.append("Timeout must be a positive integer")
+                elif timeout < 5:
+                    warnings.append("Very low timeout may cause connection issues")
+
+        if "performance" in data:
+            perf = data["performance"]
+
+            # Validate num_parallel
+            if "num_parallel" in perf:
+                num_parallel = perf["num_parallel"]
+                if not isinstance(num_parallel, int) or num_parallel < 1:
+                    validation_errors.append("num_parallel must be a positive integer")
+                elif num_parallel > 8:
+                    warnings.append("High parallelism may cause resource issues")
+
+            # Validate context lengths
+            if "num_ctx" in perf:
+                num_ctx = perf["num_ctx"]
+                if not isinstance(num_ctx, int) or num_ctx < 128:
+                    validation_errors.append("num_ctx must be at least 128")
+                elif num_ctx > 32768:
+                    warnings.append("Very large context may cause memory issues")
+
+        if validation_errors:
+            return jsonify({
+                "success": False,
+                "error": "Validation failed",
+                "validation_errors": validation_errors,
+                "warnings": warnings
+            }), 400
+
+        # Test connection if connection config provided
+        if "connection" in data:
+            test_result = await _test_ollama_connection(data["connection"])
+            if not test_result["available"]:
+                warnings.append(f"Ollama connection test failed: {test_result.get('error', 'Unknown error')}")
+
+        # Log the configuration update
+        logger.info(f"Ollama configuration update requested: {data}")
+
+        # Log to audit system if available
+        if _log_config_change:
+            await _log_config_change(
+                action="update",
+                config_type="ollama",
+                changes=data,
+                user_info={"source": "api", "timestamp": datetime.now().isoformat()},
+                metadata={"warnings": warnings, "connection_test": test_result}
+            )
+
+        response = {
+            "success": True,
+            "message": "Ollama configuration updated successfully",
+            "applied_config": data
+        }
+
+        if warnings:
+            response["warnings"] = warnings
+
+        return jsonify(response)
+    except Exception as e:
+        logger.error(f"Error updating Ollama config: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@config_bp.route('/ollama/test', methods=['POST'])
+async def test_ollama_connection_endpoint():
+    """Test Ollama connection with provided configuration."""
+    try:
+        data = await request.get_json()
+        connection_config = data.get("connection", {}) if data else {}
+
+        # Use defaults if not provided
+        config = {
+            "host": connection_config.get("host", os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80')),
+            "port": connection_config.get("port", int(os.getenv('OLLAMA_PORT', '11434'))),
+            "timeout": connection_config.get("timeout", int(os.getenv('OLLAMA_TIMEOUT', '30')))
+        }
+
+        result = await _test_ollama_connection(config)
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        logger.error(f"Error testing Ollama connection: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500

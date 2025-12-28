@@ -84,12 +84,12 @@ USE_UNIVERSAL_EXPANSION = os.getenv("USE_UNIVERSAL_EXPANSION", "true").lower() =
 # Environment variable to enable reranking by default for all searches
 ENABLE_RERANKING_BY_DEFAULT = os.getenv("ENABLE_RERANKING_BY_DEFAULT", "true").lower() == "true"
 
-# Reranker configuration - supports both Ollama adapter and vLLM
-# RERANKER_PROVIDER: "ollama" (default) or "vllm"
-RERANKER_PROVIDER = os.getenv("RERANKER_PROVIDER", "ollama").lower()
-# For vLLM: http://100.81.139.20:11435/v1/rerank
-# For Ollama adapter: http://ollama-reranker-adapter:8080/rerank
-RERANKER_URL = os.getenv("RERANKER_URL", "http://ollama-reranker-adapter:8080/rerank")
+# Reranker configuration - supports both vLLM (recommended) and Ollama adapter
+# RERANKER_PROVIDER: "vllm" (default, faster & better scores) or "ollama"
+RERANKER_PROVIDER = os.getenv("RERANKER_PROVIDER", "vllm").lower()
+# For vLLM: http://100.81.139.20:11435/rerank (native cross-encoder, ~5x faster)
+# For Ollama adapter: http://ollama-reranker-adapter:8080/rerank (generative approach)
+RERANKER_URL = os.getenv("RERANKER_URL", "http://100.81.139.20:11435/rerank")
 RERANKER_MODEL = os.getenv("RERANKER_MODEL", "qwen3-reranker-4b")
 RERANKER_TIMEOUT = float(os.getenv("RERANKER_TIMEOUT", "30.0"))
 

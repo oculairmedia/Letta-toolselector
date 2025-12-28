@@ -283,6 +283,7 @@ app.post('/mcp', async (req, res) => {
                                         default: true,
                                     },
                                 },
+                                required: ['query'],
                             },
                         },
                     ],

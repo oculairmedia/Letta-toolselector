@@ -153,7 +153,18 @@ class ToolSelectorServer {
                         description: 'Whether to request an immediate heartbeat (default: false)',
                         default: false,
                     },
+                    detailed_response: {
+                        type: 'boolean',
+                        description: 'Return detailed information about tool changes (default: false)',
+                        default: false,
+                    },
+                    apply_rules: {
+                        type: 'boolean',
+                        description: 'Apply tool dependency and exclusion rules (default: true)',
+                        default: true,
+                    },
                 },
+                required: ['query'],
             },
             handler: async (args, context) => this.handleFindTools(args, context),
         });

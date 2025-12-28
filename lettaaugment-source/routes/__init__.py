@@ -29,6 +29,7 @@ from .health import health_bp, configure as configure_health
 from .search import search_bp, configure as configure_search
 from .config import config_bp, configure as configure_config
 from .ollama import ollama_bp, configure as configure_ollama
+from .backup import backup_bp, configure as configure_backup
 
 # Also expose the modules for configure() calls
 from . import tools
@@ -36,6 +37,7 @@ from . import health
 from . import search
 from . import config
 from . import ollama
+from . import backup
 
 __all__ = [
     'tools_bp',
@@ -43,14 +45,17 @@ __all__ = [
     'search_bp',
     'config_bp',
     'ollama_bp',
+    'backup_bp',
     'configure_tools',
     'configure_health',
     'configure_search',
     'configure_config',
     'configure_ollama',
+    'configure_backup',
     'tools',
     'health',
     'search',
     'config',
     'ollama',
+    'backup',
 ]

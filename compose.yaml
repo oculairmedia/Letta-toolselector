@@ -61,7 +61,7 @@ services:
     networks:
       - letta-tools
   api-server:
-    image: ghcr.io/oculairmedia/letta-toolselector-api-server:main
+    image: ghcr.io/oculairmedia/letta-toolselector-api-server:feature-LTSEL-1-shared-sdk-scaffold
     container_name: weaviate-tools-api
     ports:
       - 8020:3001
@@ -115,7 +115,7 @@ services:
     networks:
       - letta-tools
   sync-service:
-    image: ghcr.io/oculairmedia/letta-toolselector-sync-service:main
+    image: ghcr.io/oculairmedia/letta-toolselector-sync-service:feature-LTSEL-1-shared-sdk-scaffold
     container_name: weaviate-tools-sync
     command: python sync_service.py
     environment:
@@ -172,7 +172,7 @@ services:
       - letta-tools
     restart: unless-stopped
   time-service:
-    image: ghcr.io/oculairmedia/letta-toolselector-api-server:main
+    image: ghcr.io/oculairmedia/letta-toolselector-api-server:feature-LTSEL-1-shared-sdk-scaffold
     container_name: weaviate-tools-time
     command: python time_memory_service.py
     environment:

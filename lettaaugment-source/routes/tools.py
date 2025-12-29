@@ -382,24 +382,26 @@ async def attach_tools():
             logger.debug("Getting current tools directly from agent %s (%s)...", agent_name, agent_id)
             logger.debug("Total tools on agent: %d", len(current_agent_tools))
             
-            # Use enhanced categorization for MCP tool counting
-            mcp_count = len([t for t in current_agent_tools 
-                           if (t.get("tool_type") == "external_mcp" or 
-                               (not _is_letta_core_tool(t) and t.get("tool_type") == "custom"))])
+            # Precompute MCP status once per tool (avoid redundant _is_letta_core_tool calls)
+            mcp_status: dict[str, bool] = {}
+            for tool in current_agent_tools:
+                tool_id = tool.get("id") or tool.get("tool_id")
+                if tool_id:
+                    is_mcp = (tool.get("tool_type") == "external_mcp" or 
+                              (not _is_letta_core_tool(tool) and tool.get("tool_type") == "custom"))
+                    mcp_status[tool_id] = is_mcp
+            
+            mcp_count = sum(1 for is_mcp in mcp_status.values() if is_mcp)
             logger.debug("Found %d total MCP tools, checking for duplicates...", mcp_count)
 
             for tool in current_agent_tools:
-                is_mcp_tool = (tool.get("tool_type") == "external_mcp" or 
-                             (not _is_letta_core_tool(tool) and tool.get("tool_type") == "custom"))
-                
-                if is_mcp_tool:
-                    tool_id = tool.get("id") or tool.get("tool_id")
-                    if tool_id and tool_id not in seen_tool_ids:
-                        seen_tool_ids.add(tool_id)
-                        tool_copy = tool.copy()
-                        tool_copy["id"] = tool_id
-                        tool_copy["tool_id"] = tool_id
-                        mcp_tools.append(tool_copy)
+                tool_id = tool.get("id") or tool.get("tool_id")
+                if tool_id and mcp_status.get(tool_id) and tool_id not in seen_tool_ids:
+                    seen_tool_ids.add(tool_id)
+                    tool_copy = tool.copy()
+                    tool_copy["id"] = tool_id
+                    tool_copy["tool_id"] = tool_id
+                    mcp_tools.append(tool_copy)
 
             # 3. Search for matching tools - ensure Weaviate client is ready
             weaviate_client = _get_weaviate_client_func() if _get_weaviate_client_func else None

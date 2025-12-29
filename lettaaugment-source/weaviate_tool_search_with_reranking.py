@@ -23,6 +23,20 @@ from weaviate_client_manager import get_client_manager
 # We support two modes: universal (schema-based) and legacy (hardcoded)
 QUERY_EXPANSION_AVAILABLE = False
 UNIVERSAL_EXPANSION_AVAILABLE = False
+INTENT_CLASSIFIER_AVAILABLE = False
+
+# Try intent classifier first (newest, best understanding)
+try:
+    from query_intent_classifier import (
+        classify_query,
+        QueryIntent,
+        QueryComplexity,
+        ActionType,
+    )
+    INTENT_CLASSIFIER_AVAILABLE = True
+    print("Query intent classifier loaded (structured intent parsing)")
+except ImportError as e:
+    print(f"Query intent classifier not available: {e}")
 
 # Try universal expansion first (preferred)
 try:
@@ -196,6 +210,28 @@ def search_tools_with_reranking(
     # Apply query expansion for better multifunctional tool discovery
     original_query = query
     expansion_metadata = None
+    intent_metadata = None
+    
+    # Step 1: Classify query intent (structured understanding)
+    if INTENT_CLASSIFIER_AVAILABLE:
+        try:
+            intent_metadata = classify_query(query)
+            if intent_metadata.primary_action:
+                print(f"Intent classification: '{original_query}'")
+                print(f"  Primary action: {intent_metadata.primary_action}")
+                print(f"  Complexity: {intent_metadata.complexity.value}")
+                print(f"  Entities: {[e.entity_type for e in intent_metadata.entities]}")
+                print(f"  Domains: {intent_metadata.detected_domains}")
+                
+                # Add boost keywords from intent analysis to the query
+                if intent_metadata.boost_keywords:
+                    boost_terms = ' '.join(intent_metadata.boost_keywords[:10])
+                    query = f"{query} {boost_terms}"
+                    print(f"  Added boost keywords: {intent_metadata.boost_keywords[:10]}")
+        except Exception as e:
+            print(f"Intent classification failed: {e}")
+    
+    # Step 2: Apply query expansion (legacy or universal)
     if use_expansion and QUERY_EXPANSION_AVAILABLE:
         # Prefer universal expansion (schema-based, dynamic)
         if UNIVERSAL_EXPANSION_AVAILABLE and USE_UNIVERSAL_EXPANSION:

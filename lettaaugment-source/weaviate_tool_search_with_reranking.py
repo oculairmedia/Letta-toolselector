@@ -276,9 +276,11 @@ def search_tools_with_reranking(
                                 # Build payload based on provider
                                 if RERANKER_PROVIDER == "vllm":
                                     # vLLM format: /v1/rerank endpoint
+                                    # Embed instruction in query since vLLM doesn't have separate instruction field
+                                    instructed_query = f"{DEFAULT_RERANK_INSTRUCTION}\n\nQuery: {cleaned_query}"
                                     payload = {
                                         "model": RERANKER_MODEL,
-                                        "query": cleaned_query,
+                                        "query": instructed_query,
                                         "documents": documents,
                                         "top_k": min(limit, len(documents)),
                                     }

@@ -78,9 +78,9 @@ def create_app(config: Optional[AppConfig] = None) -> Quart:
     # Register lifecycle hooks
     _register_lifecycle_hooks(app, config, services)
     
-    # Register blueprints (optional - can be enabled incrementally)
-    if os.getenv('USE_BLUEPRINTS', 'false').lower() == 'true':
-        _register_blueprints(app, services)
+    # Register blueprints is now done in startup hook after services are configured
+    # The USE_BLUEPRINTS flag controls whether to use factory-based registration
+    app.config['USE_FACTORY_BLUEPRINTS'] = os.getenv('USE_BLUEPRINTS', 'false').lower() == 'true'
     
     logger.info(f"Application created with config: "
                 f"search_provider={config.search.provider}, "
@@ -147,6 +147,10 @@ def _register_lifecycle_hooks(app: Quart, config: AppConfig, services: ServiceCo
         # Ensure cache directory exists
         os.makedirs(config.cache.cache_dir, exist_ok=True)
         logger.info(f"Cache directory: {config.cache.cache_dir}")
+        
+        # Register blueprints if factory-based registration is enabled
+        if app.config.get('USE_FACTORY_BLUEPRINTS', False):
+            await _register_blueprints(app, config, services)
         
         logger.info("Application startup complete")
     
@@ -268,24 +272,228 @@ async def _configure_services(config: AppConfig, services: ServiceContainer):
         logger.error(f"Failed to configure search_service: {e}")
 
 
-def _register_blueprints(app: Quart, services: ServiceContainer):
-    """Register route blueprints."""
+async def _register_blueprints(app: Quart, config: AppConfig, services: ServiceContainer):
+    """
+    Register all route blueprints with their dependencies.
+    
+    This mirrors the blueprint registration logic from api_server.py startup,
+    allowing the app factory to create a fully configured application.
+    """
+    # Import shared dependencies
+    from weaviate_tool_search_with_reranking import search_tools, init_client as init_weaviate_client
+    from bm25_vector_overrides import bm25_vector_override_service
+    from models import is_letta_core_tool as models_is_letta_core_tool
+    from audit_logging import emit_batch_event, emit_pruning_event, AuditAction, AuditSource
+    from services.tool_cache import get_tool_cache_service
+    from services.tool_search import configure_search_service
+    
+    # Import utility functions that blueprints need
+    # TODO: These should be extracted to dedicated service modules
+    from api_server import (
+        read_tool_cache, read_mcp_servers_cache, process_matching_tool,
+        log_config_change, perform_configuration_validation, test_service_connection,
+        test_letta_connection, test_weaviate_connection as api_test_weaviate,
+        get_tool_count_from_cache, get_cache_size, get_last_sync_time,
+        get_weaviate_index_status, get_memory_usage, get_disk_usage, get_cpu_info,
+        get_log_file_size, get_recent_error_count, get_recent_warning_count,
+        perform_cleanup_operation, perform_optimization,
+        get_log_entries, perform_log_analysis, get_error_log_entries,
+        clear_log_files, export_log_data, start_time
+    )
+    from routes.config import test_ollama_connection
+    
+    cache_dir = config.cache.cache_dir
+    
+    # Configure services layer
+    configure_search_service(search_tools)
+    tool_cache_service = get_tool_cache_service(cache_dir)
+    
+    # 1. Search routes
     try:
-        from routes import tools_bp, health_bp
-        from routes import tools as tools_routes, health as health_routes
-        
-        # Configure blueprints with service functions
-        # (This wires up the delegation pattern we created in Phase 5)
-        
-        # For now, we don't wire up the handlers since routes are still in api_server.py
-        # This will be done incrementally as routes are migrated
-        
-        # app.register_blueprint(tools_bp)
-        # app.register_blueprint(health_bp)
-        
-        logger.info("Blueprints registered (disabled - routes still in api_server.py)")
-    except ImportError as e:
-        logger.warning(f"Could not import blueprints: {e}")
+        from routes import search as search_routes, search_bp
+        search_routes.configure(bm25_vector_override_service=bm25_vector_override_service)
+        app.register_blueprint(search_bp)
+        logger.info("Search routes blueprint registered")
+    except Exception as e:
+        logger.error(f"Failed to register search blueprint: {e}")
+    
+    # 2. Config routes
+    try:
+        from routes import config as config_routes, config_bp
+        config_routes.configure(
+            http_session=services.http_session,
+            log_config_change=log_config_change,
+            tool_cache_service=tool_cache_service
+        )
+        app.register_blueprint(config_bp)
+        logger.info("Config routes blueprint registered")
+    except Exception as e:
+        logger.error(f"Failed to register config blueprint: {e}")
+    
+    # 3. Ollama routes
+    try:
+        from routes import ollama as ollama_routes, ollama_bp
+        ollama_routes.configure()
+        app.register_blueprint(ollama_bp)
+        logger.info("Ollama routes blueprint registered")
+    except Exception as e:
+        logger.error(f"Failed to register ollama blueprint: {e}")
+    
+    # 4. Backup routes
+    try:
+        from routes import backup as backup_routes, backup_bp
+        backup_routes.configure(
+            cache_dir=cache_dir,
+            log_config_change=log_config_change,
+            perform_configuration_validation=perform_configuration_validation,
+            test_service_connection=test_service_connection
+        )
+        app.register_blueprint(backup_bp)
+        logger.info("Backup routes blueprint registered")
+    except Exception as e:
+        logger.error(f"Failed to register backup blueprint: {e}")
+    
+    # 5. Cost control routes
+    try:
+        from routes import cost_control as cost_control_routes, cost_control_bp
+        try:
+            from cost_control_manager import get_cost_manager, CostCategory, BudgetPeriod, AlertLevel
+            cost_control_routes.configure(
+                get_cost_manager=get_cost_manager,
+                CostCategory=CostCategory,
+                BudgetPeriod=BudgetPeriod,
+                AlertLevel=AlertLevel
+            )
+        except ImportError:
+            cost_control_routes.configure()
+        app.register_blueprint(cost_control_bp)
+        logger.info("Cost control routes blueprint registered")
+    except Exception as e:
+        logger.error(f"Failed to register cost_control blueprint: {e}")
+    
+    # 6. Operations routes (maintenance, logs, environment)
+    try:
+        from routes import operations as operations_routes
+        from routes.operations import maintenance_bp, logs_bp, environment_bp
+        operations_routes.configure(
+            start_time=start_time,
+            cache_dir=cache_dir,
+            log_config_change=log_config_change,
+            test_weaviate_connection=api_test_weaviate,
+            test_ollama_connection=test_ollama_connection,
+            test_letta_connection=test_letta_connection,
+            get_tool_count_from_cache=get_tool_count_from_cache,
+            get_cache_size=get_cache_size,
+            get_last_sync_time=get_last_sync_time,
+            get_weaviate_index_status=get_weaviate_index_status,
+            get_memory_usage=get_memory_usage,
+            get_disk_usage=get_disk_usage,
+            get_cpu_info=get_cpu_info,
+            get_log_file_size=get_log_file_size,
+            get_recent_error_count=get_recent_error_count,
+            get_recent_warning_count=get_recent_warning_count,
+            perform_cleanup_operation=perform_cleanup_operation,
+            perform_optimization=perform_optimization,
+            get_log_entries=get_log_entries,
+            perform_log_analysis=perform_log_analysis,
+            get_error_log_entries=get_error_log_entries,
+            clear_log_files=clear_log_files,
+            export_log_data=export_log_data
+        )
+        app.register_blueprint(maintenance_bp)
+        app.register_blueprint(logs_bp)
+        app.register_blueprint(environment_bp)
+        logger.info("Operations routes blueprints registered")
+    except Exception as e:
+        logger.error(f"Failed to register operations blueprints: {e}")
+    
+    # 7. Benchmark routes
+    try:
+        from routes import benchmark as benchmark_routes
+        from routes.benchmark import benchmark_bp
+        benchmark_routes.configure(cache_dir=cache_dir, search_tools=search_tools)
+        app.register_blueprint(benchmark_bp)
+        logger.info("Benchmark routes blueprint registered")
+    except Exception as e:
+        logger.error(f"Failed to register benchmark blueprint: {e}")
+    
+    # 8. Reranker routes
+    try:
+        from routes import reranker as reranker_routes
+        from routes.reranker import reranker_bp
+        reranker_routes.configure(cache_dir=cache_dir)
+        app.register_blueprint(reranker_bp)
+        logger.info("Reranker routes blueprint registered")
+    except Exception as e:
+        logger.error(f"Failed to register reranker blueprint: {e}")
+    
+    # 9. Tools routes
+    try:
+        from routes import tools as tools_routes
+        from routes.tools import tools_bp
+        tools_routes.configure(
+            manage_only_mcp_tools=config.tool_limits.manage_only_mcp_tools,
+            default_min_score=config.search.default_min_score,
+            agent_service=services.agent_service,
+            tool_manager=services.tool_manager,
+            search_tools_func=search_tools,
+            read_tool_cache_func=read_tool_cache,
+            read_mcp_servers_cache_func=read_mcp_servers_cache,
+            process_matching_tool_func=process_matching_tool,
+            init_weaviate_client_func=init_weaviate_client,
+            get_weaviate_client_func=lambda: services.weaviate_client,
+            is_letta_core_tool_func=models_is_letta_core_tool,
+            emit_batch_event_func=emit_batch_event,
+            emit_pruning_event_func=emit_pruning_event,
+            audit_action_class=AuditAction,
+            audit_source_class=AuditSource
+        )
+        app.register_blueprint(tools_bp)
+        logger.info("Tools routes blueprint registered")
+    except Exception as e:
+        logger.error(f"Failed to register tools blueprint: {e}")
+    
+    # 10. Evaluation routes
+    try:
+        from routes import evaluation as evaluation_routes
+        from routes.evaluation import evaluation_bp
+        evaluation_routes.configure(
+            search_tools_func=search_tools,
+            bm25_vector_override_service=bm25_vector_override_service,
+            cache_dir=cache_dir
+        )
+        app.register_blueprint(evaluation_bp)
+        logger.info("Evaluation routes blueprint registered")
+    except Exception as e:
+        logger.error(f"Failed to register evaluation blueprint: {e}")
+    
+    # 11. Safety routes
+    try:
+        from routes import safety as safety_routes
+        from routes.safety import safety_bp
+        safety_routes.configure()
+        app.register_blueprint(safety_bp)
+        logger.info("Safety routes blueprint registered")
+    except Exception as e:
+        logger.error(f"Failed to register safety blueprint: {e}")
+    
+    # 12. Models routes
+    try:
+        from routes import models as models_routes
+        from routes.models import models_bp
+        models_routes.configure(
+            search_tools_func=search_tools,
+            bm25_vector_override_service=bm25_vector_override_service
+        )
+        app.register_blueprint(models_bp)
+        logger.info("Models routes blueprint registered")
+    except Exception as e:
+        logger.error(f"Failed to register models blueprint: {e}")
+    
+    # Load initial cache
+    await read_tool_cache(force_reload=True)
+    await read_mcp_servers_cache()
+    logger.info("Initial cache loaded")
 
 
 def get_app_services() -> ServiceContainer:

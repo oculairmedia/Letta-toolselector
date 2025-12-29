@@ -3,10 +3,16 @@ Structured audit logging for tool management operations.
 
 Emits structured JSON events for tool attach/detach operations
 that can be ingested by Loki, Elasticsearch, or other log aggregators.
+
+Events are queued and processed asynchronously to avoid blocking
+the request path. Use start_audit_processor() at app startup and
+stop_audit_processor() at shutdown.
 """
 
 import logging
 import json
+import asyncio
+from collections import deque
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from enum import Enum
@@ -26,6 +32,118 @@ if not audit_logger.handlers:
     formatter = logging.Formatter('%(message)s')
     handler.setFormatter(formatter)
     audit_logger.addHandler(handler)
+
+
+# ============================================================================
+# Async Queue for Background Processing
+# ============================================================================
+
+_audit_queue: deque = deque(maxlen=10000)  # Bounded queue, drops oldest if full
+_audit_task: Optional[asyncio.Task] = None
+_shutdown_event: Optional[asyncio.Event] = None
+_queue_enabled: bool = True  # Can be disabled for testing
+
+
+def queue_audit_event(event: dict) -> None:
+    """
+    Queue an event for background processing.
+    
+    If the queue is full, the oldest event is dropped (deque maxlen behavior).
+    If async processing is not started, falls back to sync logging.
+    """
+    if not _queue_enabled or _audit_task is None:
+        # Fallback to sync logging if queue not started
+        audit_logger.info(json.dumps(event))
+        return
+    
+    _audit_queue.append(event)
+
+
+async def _process_audit_queue() -> None:
+    """Background task to process queued audit events."""
+    while _shutdown_event is None or not _shutdown_event.is_set():
+        try:
+            # Process all pending events in batch
+            events_processed = 0
+            while _audit_queue and events_processed < 100:  # Process up to 100 per cycle
+                event = _audit_queue.popleft()
+                try:
+                    audit_logger.info(json.dumps(event))
+                    events_processed += 1
+                except Exception as e:
+                    logging.getLogger(__name__).error(f"Failed to emit audit event: {e}")
+            
+            # Short sleep to avoid busy-waiting
+            await asyncio.sleep(0.05)  # 50ms
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Error in audit processor: {e}")
+            await asyncio.sleep(0.5)
+
+
+async def start_audit_processor() -> None:
+    """Start the background audit event processor."""
+    global _audit_task, _shutdown_event
+    
+    if _audit_task is not None:
+        return  # Already running
+    
+    _shutdown_event = asyncio.Event()
+    _audit_task = asyncio.create_task(_process_audit_queue())
+    logging.getLogger(__name__).info("Audit event processor started")
+
+
+async def stop_audit_processor(timeout: float = 5.0) -> None:
+    """
+    Stop the audit processor and flush remaining events.
+    
+    Args:
+        timeout: Max seconds to wait for queue to drain
+    """
+    global _audit_task, _shutdown_event
+    
+    if _audit_task is None:
+        return
+    
+    # Signal shutdown
+    if _shutdown_event:
+        _shutdown_event.set()
+    
+    # Wait for task to complete with timeout
+    try:
+        await asyncio.wait_for(_audit_task, timeout=timeout)
+    except asyncio.TimeoutError:
+        logging.getLogger(__name__).warning("Audit processor shutdown timed out")
+        _audit_task.cancel()
+        try:
+            await _audit_task
+        except asyncio.CancelledError:
+            pass
+    
+    # Flush any remaining events synchronously
+    remaining = len(_audit_queue)
+    while _audit_queue:
+        event = _audit_queue.popleft()
+        try:
+            audit_logger.info(json.dumps(event))
+        except Exception:
+            pass
+    
+    if remaining > 0:
+        logging.getLogger(__name__).info(f"Flushed {remaining} remaining audit events")
+    
+    _audit_task = None
+    _shutdown_event = None
+    logging.getLogger(__name__).info("Audit event processor stopped")
+
+
+def get_queue_stats() -> Dict[str, Any]:
+    """Get statistics about the audit queue."""
+    return {
+        "queue_size": len(_audit_queue),
+        "queue_max_size": _audit_queue.maxlen,
+        "processor_running": _audit_task is not None and not _audit_task.done(),
+        "queue_enabled": _queue_enabled
+    }
 
 
 class AuditAction(str, Enum):
@@ -93,8 +211,8 @@ def emit_tool_event(
     if error:
         event["error"] = error
     
-    # Emit as structured JSON log
-    audit_logger.info(json.dumps(event))
+    # Queue for async processing
+    queue_audit_event(event)
 
 
 def emit_batch_event(
@@ -145,8 +263,8 @@ def emit_batch_event(
     if correlation_id:
         event["correlation_id"] = correlation_id
     
-    # Emit as structured JSON log
-    audit_logger.info(json.dumps(event))
+    # Queue for async processing
+    queue_audit_event(event)
 
 
 def emit_pruning_event(
@@ -190,8 +308,8 @@ def emit_pruning_event(
     if metadata:
         event["metadata"] = metadata
     
-    # Emit as structured JSON log
-    audit_logger.info(json.dumps(event))
+    # Queue for async processing
+    queue_audit_event(event)
 
 
 def emit_limit_enforcement_event(
@@ -227,8 +345,8 @@ def emit_limit_enforcement_event(
     if correlation_id:
         event["correlation_id"] = correlation_id
     
-    # Emit as structured JSON log
-    audit_logger.info(json.dumps(event))
+    # Queue for async processing
+    queue_audit_event(event)
 
 
 # Example usage and testing

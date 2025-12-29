@@ -51,6 +51,106 @@ def configure(http_session=None, log_config_change=None, tool_cache_service=None
     _http_session = http_session
     _log_config_change = log_config_change
     _tool_cache_service = tool_cache_service
+    
+    # Reload config cache on configure
+    _reload_config_cache()
+
+
+# =============================================================================
+# Config Caching
+# =============================================================================
+
+_config_cache: dict = {}
+_config_loaded_at: float = 0
+
+
+def _load_reranker_config() -> dict:
+    """Load reranker config from environment."""
+    return {
+        "enabled": os.getenv('RERANKER_ENABLED', 'true').lower() == 'true',
+        "model": os.getenv('RERANKER_MODEL', 'qwen3-reranker-4b'),
+        "provider": os.getenv('RERANKER_PROVIDER', 'vllm'),
+        "parameters": {
+            "temperature": float(os.getenv('RERANKER_TEMPERATURE', '0.1')),
+            "max_tokens": int(os.getenv('RERANKER_MAX_TOKENS', '512')),
+            "base_url": os.getenv('RERANKER_URL', 'http://100.81.139.20:11435/rerank')
+        }
+    }
+
+
+def _load_embedding_config() -> dict:
+    """Load embedding config from environment."""
+    return {
+        "model": os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
+        "provider": os.getenv('EMBEDDING_PROVIDER', 'ollama'),
+        "parameters": {
+            "dimensions": int(os.getenv('EMBEDDING_DIMENSION', '2560')),
+            "host": os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80'),
+            "use_ollama": os.getenv('USE_OLLAMA_EMBEDDINGS', 'true').lower() == 'true'
+        }
+    }
+
+
+def _load_ollama_config() -> dict:
+    """Load Ollama config from environment."""
+    return {
+        "connection": {
+            "host": os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80'),
+            "port": int(os.getenv('OLLAMA_PORT', '11434')),
+            "timeout": int(os.getenv('OLLAMA_TIMEOUT', '30')),
+            "base_url": os.getenv('OLLAMA_BASE_URL', '')
+        },
+        "embedding": {
+            "model": os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
+            "enabled": os.getenv('USE_OLLAMA_EMBEDDINGS', 'false').lower() == 'true'
+        },
+        "generation": {
+            "default_model": os.getenv('OLLAMA_DEFAULT_MODEL', 'mistral:7b'),
+            "temperature": float(os.getenv('OLLAMA_TEMPERATURE', '0.7')),
+            "context_length": int(os.getenv('OLLAMA_CONTEXT_LENGTH', '4096'))
+        },
+        "performance": {
+            "num_parallel": int(os.getenv('OLLAMA_NUM_PARALLEL', '1')),
+            "num_ctx": int(os.getenv('OLLAMA_NUM_CTX', '2048')),
+            "num_gpu": int(os.getenv('OLLAMA_NUM_GPU', '-1')),
+            "low_vram": os.getenv('OLLAMA_LOW_VRAM', 'false').lower() == 'true'
+        }
+    }
+
+
+def _reload_config_cache() -> None:
+    """Reload all config from environment into cache."""
+    global _config_cache, _config_loaded_at
+    _config_cache = {
+        "reranker": _load_reranker_config(),
+        "embedding": _load_embedding_config(),
+        "ollama": _load_ollama_config()
+    }
+    _config_loaded_at = time.time()
+    logger.debug("Config cache reloaded at %s", _config_loaded_at)
+
+
+@config_bp.route('/refresh', methods=['POST'])
+async def refresh_config_cache():
+    """Refresh the config cache from environment variables."""
+    try:
+        _reload_config_cache()
+        return jsonify({
+            "success": True, 
+            "message": "Config cache refreshed",
+            "loaded_at": _config_loaded_at
+        })
+    except Exception as e:
+        logger.error(f"Error refreshing config cache: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def get_cached_config(section: str) -> dict:
+    """Get cached config section, loading if needed."""
+    global _config_cache
+    if not _config_cache:
+        _reload_config_cache()
+    return _config_cache.get(section, {})
 
 
 # =============================================================================
@@ -61,16 +161,7 @@ def configure(http_session=None, log_config_change=None, tool_cache_service=None
 async def get_reranker_config():
     """Get current reranker configuration."""
     try:
-        config = {
-            "enabled": os.getenv('RERANKER_ENABLED', 'true').lower() == 'true',
-            "model": os.getenv('RERANKER_MODEL', 'qwen3-reranker-4b'),
-            "provider": os.getenv('RERANKER_PROVIDER', 'vllm'),
-            "parameters": {
-                "temperature": float(os.getenv('RERANKER_TEMPERATURE', '0.1')),
-                "max_tokens": int(os.getenv('RERANKER_MAX_TOKENS', '512')),
-                "base_url": os.getenv('RERANKER_URL', 'http://100.81.139.20:11435/rerank')
-            }
-        }
+        config = get_cached_config("reranker")
         return jsonify({"success": True, "data": config})
     except Exception as e:
         logger.error(f"Error getting reranker config: {str(e)}")
@@ -136,15 +227,7 @@ async def test_reranker_connection():
 async def get_embedding_config():
     """Get current embedding configuration."""
     try:
-        config = {
-            "model": os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
-            "provider": os.getenv('EMBEDDING_PROVIDER', 'ollama'),
-            "parameters": {
-                "dimensions": int(os.getenv('EMBEDDING_DIMENSION', '2560')),
-                "host": os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80'),
-                "use_ollama": os.getenv('USE_OLLAMA_EMBEDDINGS', 'true').lower() == 'true'
-            }
-        }
+        config = get_cached_config("embedding")
         return jsonify({"success": True, "data": config})
     except Exception as e:
         logger.error(f"Error getting embedding config: {str(e)}")
@@ -306,31 +389,9 @@ async def test_ollama_connection(config):
 async def get_ollama_config():
     """Get current Ollama configuration."""
     try:
-        config = {
-            "connection": {
-                "host": os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80'),
-                "port": int(os.getenv('OLLAMA_PORT', '11434')),
-                "timeout": int(os.getenv('OLLAMA_TIMEOUT', '30')),
-                "base_url": os.getenv('OLLAMA_BASE_URL', '')
-            },
-            "embedding": {
-                "model": os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
-                "enabled": os.getenv('USE_OLLAMA_EMBEDDINGS', 'false').lower() == 'true'
-            },
-            "generation": {
-                "default_model": os.getenv('OLLAMA_DEFAULT_MODEL', 'mistral:7b'),
-                "temperature": float(os.getenv('OLLAMA_TEMPERATURE', '0.7')),
-                "context_length": int(os.getenv('OLLAMA_CONTEXT_LENGTH', '4096'))
-            },
-            "performance": {
-                "num_parallel": int(os.getenv('OLLAMA_NUM_PARALLEL', '1')),
-                "num_ctx": int(os.getenv('OLLAMA_NUM_CTX', '2048')),
-                "num_gpu": int(os.getenv('OLLAMA_NUM_GPU', '-1')),
-                "low_vram": os.getenv('OLLAMA_LOW_VRAM', 'false').lower() == 'true'
-            }
-        }
+        config = get_cached_config("ollama").copy()  # Copy to avoid mutating cache
 
-        # Add connection status
+        # Add connection status (still needs live check)
         connection_status = await test_ollama_connection(config["connection"])
         config["status"] = connection_status
 

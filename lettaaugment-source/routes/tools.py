@@ -205,7 +205,7 @@ def _format_search_results(results: List[Dict]) -> List[Dict]:
 @tools_bp.route('/api/v1/tools/search', methods=['POST'])
 async def search():
     """Search for tools matching a query."""
-    logger.info("Received request for /api/v1/tools/search")
+    logger.debug("Received request for /api/v1/tools/search")
     
     try:
         data = await request.get_json()
@@ -235,7 +235,7 @@ async def search():
         # Search with higher limit if filtering for MCP tools
         if _manage_only_mcp_tools:
             search_limit = limit * 5
-            logger.info(f"MANAGE_ONLY_MCP_TOOLS enabled - searching with limit {search_limit}")
+            logger.debug("MANAGE_ONLY_MCP_TOOLS enabled - searching with limit %d", search_limit)
         else:
             search_limit = limit
             
@@ -247,11 +247,11 @@ async def search():
             tools_cache = await cache_service.read_tool_cache()
             filtered_results = _filter_mcp_results(results, tools_cache, limit)
             
-            logger.info(f"Search: {len(results)} total, {len(filtered_results)} after MCP filtering")
+            logger.debug("Search: %d total, %d after MCP filtering", len(results), len(filtered_results))
             _normalize_scores(filtered_results)
             return jsonify(filtered_results[:limit])
         else:
-            logger.info(f"Search successful, returning {len(results)} results")
+            logger.debug("Search successful, returning %d results", len(results))
             _normalize_scores(results)
             return jsonify(results)
             
@@ -263,7 +263,7 @@ async def search():
 @tools_bp.route('/api/v1/tools/search/rerank', methods=['POST'])
 async def search_with_reranking():
     """Search with reranking for better relevance."""
-    logger.info("Received request for /api/v1/tools/search/rerank")
+    logger.debug("Received request for /api/v1/tools/search/rerank")
     
     try:
         data = await request.get_json()
@@ -286,19 +286,19 @@ async def search_with_reranking():
             'top_k': data.get('reranker_top_k', limit)
         }
         
-        logger.info(f"Performing reranked search for: '{query}' with config: {reranker_config}")
+        logger.debug("Performing reranked search for: '%s' with config: %s", query, reranker_config)
         
         # Search with higher limit if filtering for MCP tools
         if _manage_only_mcp_tools:
             search_limit = limit * 5
-            logger.info(f"MANAGE_ONLY_MCP_TOOLS enabled - searching with limit {search_limit}")
+            logger.debug("MANAGE_ONLY_MCP_TOOLS enabled - searching with limit %d", search_limit)
         else:
             search_limit = limit
             
         results = ToolSearchService.search(query=query, limit=search_limit, reranker_config=reranker_config)
         
         if not results:
-            logger.warning("No results returned from search_tools")
+            logger.debug("No results returned from search_tools")
             return jsonify([])
         
         # Filter for MCP tools if enabled
@@ -307,11 +307,11 @@ async def search_with_reranking():
             tools_cache = await cache_service.read_tool_cache()
             filtered_results = _filter_mcp_results(results, tools_cache, limit)
             
-            logger.info(f"Reranked search: {len(results)} total, {len(filtered_results)} after MCP filtering")
+            logger.debug("Reranked search: %d total, %d after MCP filtering", len(results), len(filtered_results))
             formatted = _format_search_results(filtered_results[:limit])
             return jsonify(formatted)
         else:
-            logger.info(f"Reranked search successful, returning {len(results)} results")
+            logger.debug("Reranked search successful, returning %d results", len(results))
             formatted = _format_search_results(results[:limit])
             return jsonify(formatted)
             
@@ -323,12 +323,12 @@ async def search_with_reranking():
 @tools_bp.route('/api/v1/tools', methods=['GET'])
 async def list_tools():
     """List all available tools from cache."""
-    logger.info("Received request for /api/v1/tools")
+    logger.debug("Received request for /api/v1/tools")
     
     try:
         cache_service = get_tool_cache_service()
         tools = await cache_service.read_tool_cache()
-        logger.info(f"Returning {len(tools)} tools from cache")
+        logger.debug("Returning %d tools from cache", len(tools))
         return jsonify(tools)
     except Exception as e:
         logger.error(f"Error listing tools: {str(e)}", exc_info=True)
@@ -342,7 +342,7 @@ async def list_tools():
 @tools_bp.route('/api/v1/tools/attach', methods=['POST'])
 async def attach_tools():
     """Handle tool attachment requests with parallel processing using cache."""
-    logger.info(f"Received request for {request.path}")
+    logger.debug("Received request for %s", request.path)
     
     # Check required dependencies
     if not _agent_service or not _tool_manager:
@@ -363,7 +363,7 @@ async def attach_tools():
         min_score = data.get('min_score', _default_min_score)
         skip_loop_trigger = data.get('skip_loop_trigger', False)
         
-        logger.info(f"[DEBUG] Attach request payload: skip_loop_trigger={skip_loop_trigger}, keys={list(data.keys())}")
+        logger.debug("Attach request payload: skip_loop_trigger=%s, keys=%s", skip_loop_trigger, list(data.keys()))
 
         if not agent_id:
             logger.warning("Attach request missing 'agent_id'.")
@@ -379,14 +379,14 @@ async def attach_tools():
             # 2. Identify unique MCP tools currently on the agent
             mcp_tools = []
             seen_tool_ids = set()
-            logger.info(f"Getting current tools directly from agent {agent_name} ({agent_id})...")
-            logger.info(f"Total tools on agent: {len(current_agent_tools)}")
+            logger.debug("Getting current tools directly from agent %s (%s)...", agent_name, agent_id)
+            logger.debug("Total tools on agent: %d", len(current_agent_tools))
             
             # Use enhanced categorization for MCP tool counting
             mcp_count = len([t for t in current_agent_tools 
                            if (t.get("tool_type") == "external_mcp" or 
                                (not _is_letta_core_tool(t) and t.get("tool_type") == "custom"))])
-            logger.info(f"Found {mcp_count} total MCP tools, checking for duplicates...")
+            logger.debug("Found %d total MCP tools, checking for duplicates...", mcp_count)
 
             for tool in current_agent_tools:
                 is_mcp_tool = (tool.get("tool_type") == "external_mcp" or 
@@ -411,11 +411,11 @@ async def attach_tools():
                     if not weaviate_client or not weaviate_client.is_ready():
                         logger.error("Failed to re-initialize Weaviate client for /attach. Cannot perform search.")
                         return jsonify({"error": "Weaviate client not available after re-attempt"}), 500
-                    logger.info("Weaviate client successfully re-initialized for /attach endpoint.")
+                    logger.debug("Weaviate client successfully re-initialized for /attach endpoint.")
                 else:
                     return jsonify({"error": "Weaviate client not available and no init function configured"}), 500
             
-            logger.info(f"Running Weaviate search for query '{query}' directly...")
+            logger.debug("Running Weaviate search for query '%s' directly...", query)
             # Call the synchronous search_tools function in a separate thread
             matching_tools_from_search = await asyncio.to_thread(
                 _search_tools_func,
@@ -423,7 +423,7 @@ async def attach_tools():
                 limit=limit
             )
             
-            logger.info(f"Found {len(matching_tools_from_search)} matching tools from Weaviate search.")
+            logger.debug("Found %d matching tools from Weaviate search.", len(matching_tools_from_search))
             
             # 3.5. Filter tools by min_score threshold
             filtered_tools = []
@@ -440,7 +440,7 @@ async def attach_tools():
                 else:
                     logger.debug(f"Tool '{tool.get('name')}' filtered out with score {tool_score_percent:.1f}% < {min_score}%")
             
-            logger.info(f"Score filtering: {len(filtered_tools)} of {len(matching_tools_from_search)} tools passed min_score threshold of {min_score}%")
+            logger.debug("Score filtering: %d of %d tools passed min_score threshold of %s%%", len(filtered_tools), len(matching_tools_from_search), min_score)
 
             # 4. Process matching tools (check cache, register if needed)
             letta_tools_cache = await _read_tool_cache_func() if _read_tool_cache_func else []
@@ -457,7 +457,7 @@ async def attach_tools():
                     elif res:
                         processed_tools.append(res)
                 
-                logger.info(f"Successfully processed/registered {len(processed_tools)} tools for attachment consideration.")
+                logger.debug("Successfully processed/registered %d tools for attachment consideration.", len(processed_tools))
             else:
                 processed_tools = filtered_tools
                 logger.warning("No process_matching_tool_func configured, using filtered tools directly")
@@ -658,7 +658,7 @@ async def attach_tools():
 @tools_bp.route('/api/v1/tools/prune', methods=['POST'])
 async def prune_tools():
     """Prune tools attached to an agent based on their relevance to a user's prompt."""
-    logger.info("Received request for /api/v1/tools/prune")
+    logger.debug("Received request for /api/v1/tools/prune")
     
     if not _tool_manager:
         return jsonify({"error": "Tool pruning not configured - missing tool_manager"}), 503
@@ -773,7 +773,7 @@ async def prune_tools():
 @tools_bp.route('/api/v1/tools/sync', methods=['POST'])
 async def sync_tools():
     """Endpoint to manually trigger the sync process (for testing/debugging)."""
-    logger.info("Received request for /api/v1/tools/sync")
+    logger.debug("Received request for /api/v1/tools/sync")
     try:
         from sync_service import sync_tools as do_sync_tools
         await do_sync_tools()
@@ -790,7 +790,7 @@ async def sync_tools():
 @tools_bp.route('/api/v1/tools/refresh', methods=['POST'])
 async def refresh_tools():
     """Refresh the tool index from Letta API."""
-    logger.info("Received request for /api/v1/tools/refresh")
+    logger.debug("Received request for /api/v1/tools/refresh")
     try:
         if _read_tool_cache_func:
             await _read_tool_cache_func(force_reload=True)

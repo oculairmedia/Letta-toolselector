@@ -265,10 +265,10 @@ async def process_tools(
         Dict with keys: detached_tools, failed_detachments, successful_attachments, failed_attachments
     """
     keep_tools = keep_tools or []
-    logger.info(f"Processing tools for agent {agent_id}")
-    logger.info(f"Current unique MCP tools: {len(mcp_tools)}")
-    logger.info(f"Tools to attach: {len(matching_tools)}")
-    logger.info(f"Tools to keep: {len(keep_tools)}")
+    logger.debug("Processing tools for agent %s", agent_id)
+    logger.debug("Current unique MCP tools: %d", len(mcp_tools))
+    logger.debug("Tools to attach: %d", len(matching_tools))
+    logger.debug("Tools to keep: %d", len(keep_tools))
     
     MIN_MCP_TOOLS = get_min_mcp_tools()
     
@@ -282,7 +282,7 @@ async def process_tools(
         if tool_id:
             keep_tool_ids.add(tool_id)
     
-    logger.info(f"Tool IDs to keep: {keep_tool_ids}")
+    logger.debug("Tool IDs to keep: %s", keep_tool_ids)
     
     # Check session availability
     if not _http_session:
@@ -344,12 +344,12 @@ async def process_tools(
             if tool_id and tool_id not in keep_tool_ids:
                 tools_to_detach.append({"id": tool_id, "tool_id": tool_id, "name": tool_name})
     
-    logger.info(f"Tools to detach: {len(tools_to_detach)}")
+    logger.debug("Tools to detach: %d", len(tools_to_detach))
     
     # Run detachments in parallel
     detach_results = []
     if tools_to_detach:
-        logger.info(f"Executing {len(tools_to_detach)} detach operations in parallel...")
+        logger.debug("Executing %d detach operations in parallel...", len(tools_to_detach))
         detach_tasks = [
             detach_tool(agent_id, str(tool.get("tool_id") or tool.get("id") or ""))
             for tool in tools_to_detach
@@ -450,12 +450,12 @@ async def perform_tool_pruning(
     requested_keep_tool_ids = set(keep_tool_ids or [])
     requested_newly_matched_tool_ids = set(newly_matched_tool_ids or [])
     
-    logger.info(f"Pruning request for agent {agent_id} with prompt: '{user_prompt}', drop_rate: {drop_rate}")
-    logger.info(f"Requested to keep (all types): {requested_keep_tool_ids}, Requested newly matched (all types): {requested_newly_matched_tool_ids}")
+    logger.debug("Pruning request for agent %s with prompt: '%s', drop_rate: %s", agent_id, user_prompt, drop_rate)
+    logger.debug("Requested to keep (all types): %s, Requested newly matched (all types): %s", requested_keep_tool_ids, requested_newly_matched_tool_ids)
 
     try:
         # 1. Retrieve Current Agent Tools and categorize them
-        logger.info(f"Fetching current tools for agent {agent_id}...")
+        logger.debug("Fetching current tools for agent %s...", agent_id)
         current_agent_tools_list = await fetch_agent_tools(agent_id)
         
         core_tools_on_agent = []

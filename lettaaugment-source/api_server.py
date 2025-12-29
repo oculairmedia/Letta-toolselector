@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 # Import audit logging for structured events
 from audit_logging import (
     emit_tool_event, emit_batch_event, emit_pruning_event, emit_limit_enforcement_event,
-    AuditAction, AuditSource
+    AuditAction, AuditSource, start_audit_processor, stop_audit_processor
 )
 
 # Import connection test functions from config routes
@@ -906,6 +906,9 @@ async def startup():
     global weaviate_client, http_session
     logger.info("API Server starting up...")
     
+    # Start audit event processor for async logging
+    await start_audit_processor()
+    
     try:
         # Initialize new Weaviate client manager
         logger.info("Initializing Weaviate Client Manager...")
@@ -1183,6 +1186,10 @@ async def shutdown():
     if http_session:
         await http_session.close()
         logger.info("Global aiohttp client session closed.")
+    
+    # Stop audit processor and flush remaining events
+    await stop_audit_processor()
+    logger.info("Audit event processor stopped.")
 
 # ================================================================================
 # LDTS-58: Cost Control and Budget Management API Endpoints

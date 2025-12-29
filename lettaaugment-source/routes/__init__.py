@@ -36,6 +36,7 @@ from .benchmark import benchmark_bp, configure as configure_benchmark
 from .reranker import reranker_bp, configure as configure_reranker
 from .enrichment import enrichment_bp, configure as configure_enrichment
 from .pruning import pruning_bp
+from .metrics import metrics_bp
 
 # Also expose the modules for configure() calls
 from . import tools
@@ -89,4 +90,5 @@ __all__ = [
     'enrichment',
     'pruning_bp',
     'pruning',
+    'metrics_bp',
 ]

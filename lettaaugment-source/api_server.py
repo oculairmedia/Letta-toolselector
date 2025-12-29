@@ -1182,6 +1182,14 @@ async def startup():
     except Exception as e:
         logger.error(f"Failed to register enrichment blueprint: {e}")
 
+    # Metrics endpoint
+    try:
+        from routes.metrics import metrics_bp
+        app.register_blueprint(metrics_bp)
+        logger.info("Prometheus metrics endpoint registered at /metrics")
+    except Exception as e:
+        logger.warning(f"Failed to register metrics blueprint: {e}")
+
     # Pruning scheduler routes
     try:
         from routes.pruning import pruning_bp, get_scheduler

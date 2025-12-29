@@ -15,9 +15,18 @@ Routes:
 
 import os
 import asyncio
+import time
 from quart import Blueprint, request, jsonify
 import logging
 from typing import Optional, Callable, List, Dict, Any
+
+# Import metrics (optional - graceful degradation if not available)
+try:
+    from metrics import record_search, record_attach, record_prune
+    METRICS_ENABLED = True
+except ImportError:
+    METRICS_ENABLED = False
+    record_search = record_attach = record_prune = None
 
 from services.tool_cache import ToolCacheService, get_tool_cache_service
 from services.tool_search import ToolSearchService
@@ -206,6 +215,7 @@ def _format_search_results(results: List[Dict]) -> List[Dict]:
 async def search():
     """Search for tools matching a query."""
     logger.debug("Received request for /api/v1/tools/search")
+    start_time = time.time()
     
     try:
         data = await request.get_json()
@@ -249,11 +259,19 @@ async def search():
             
             logger.debug("Search: %d total, %d after MCP filtering", len(results), len(filtered_results))
             _normalize_scores(filtered_results)
-            return jsonify(filtered_results[:limit])
+            final_results = filtered_results[:limit]
         else:
             logger.debug("Search successful, returning %d results", len(results))
             _normalize_scores(results)
-            return jsonify(results)
+            final_results = results
+        
+        # Track metrics
+        if METRICS_ENABLED and record_search:
+            duration = time.time() - start_time
+            search_type = "reranked" if enable_reranking else "hybrid"
+            record_search(search_type=search_type, duration=duration, result_count=len(final_results))
+        
+        return jsonify(final_results)
             
     except Exception as e:
         logger.error(f"Error during search: {str(e)}", exc_info=True)

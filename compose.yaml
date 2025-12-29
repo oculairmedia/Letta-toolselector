@@ -184,6 +184,7 @@ services:
       - UPDATE_INTERVAL=60
     volumes:
       - ./.env:/app/.env:ro
+      - ./lettaaugment-source/time_memory_service.py:/app/time_memory_service.py:ro
     restart: unless-stopped
     depends_on:
       weaviate:

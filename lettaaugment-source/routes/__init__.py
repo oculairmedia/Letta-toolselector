@@ -35,6 +35,7 @@ from .operations import maintenance_bp, logs_bp, environment_bp, configure as co
 from .benchmark import benchmark_bp, configure as configure_benchmark
 from .reranker import reranker_bp, configure as configure_reranker
 from .enrichment import enrichment_bp, configure as configure_enrichment
+from .pruning import pruning_bp
 
 # Also expose the modules for configure() calls
 from . import tools
@@ -48,6 +49,7 @@ from . import operations
 from . import benchmark
 from . import reranker
 from . import enrichment
+from . import pruning
 
 __all__ = [
     'tools_bp',
@@ -85,4 +87,6 @@ __all__ = [
     'enrichment_bp',
     'configure_enrichment',
     'enrichment',
+    'pruning_bp',
+    'pruning',
 ]

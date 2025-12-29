@@ -1182,6 +1182,14 @@ async def startup():
     except Exception as e:
         logger.error(f"Failed to register enrichment blueprint: {e}")
 
+    # Pruning scheduler routes
+    try:
+        from routes.pruning import pruning_bp
+        app.register_blueprint(pruning_bp)
+        logger.info("Pruning scheduler routes blueprint registered.")
+    except Exception as e:
+        logger.error(f"Failed to register pruning blueprint: {e}")
+
     # Ensure cache directory exists
     os.makedirs(CACHE_DIR, exist_ok=True)
     logger.info(f"Cache directory set to: {CACHE_DIR}")

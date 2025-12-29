@@ -329,6 +329,7 @@ class EnrichmentService:
                         collection.data.update(
                             uuid=obj.uuid,
                             properties={
+                                "enhanced_description": enriched.enhanced_description or "",
                                 "action_entities": enriched.action_entities,
                                 "semantic_keywords": enriched.semantic_keywords,
                                 "use_cases": enriched.use_cases,

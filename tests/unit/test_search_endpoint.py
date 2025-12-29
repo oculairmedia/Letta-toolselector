@@ -23,6 +23,31 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lettaaugment-source"))
 
 
+def _register_tools_blueprint(app):
+    """
+    Register the tools blueprint with the app for testing.
+    
+    Since startup() is not called during tests, we need to manually register
+    the tools blueprint and configure it with the handlers from api_server.
+    """
+    import api_server
+    from routes import tools as tools_routes
+    from routes.tools import tools_bp
+    
+    # Only register if not already registered
+    if 'tools' not in app.blueprints:
+        tools_routes.configure(
+            search_func=api_server._tools_search_handler,
+            search_with_rerank_func=api_server._tools_search_rerank_handler,
+            list_tools_func=api_server._tools_list_handler,
+            attach_tools_func=api_server._tools_attach_handler,
+            prune_tools_func=api_server._tools_prune_handler,
+            sync_func=api_server._tools_sync_handler,
+            refresh_func=api_server._tools_refresh_handler
+        )
+        app.register_blueprint(tools_bp)
+
+
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -93,6 +118,7 @@ class TestSearchRequestValidation:
     async def test_search_missing_body_returns_400(self):
         """Should return 400 when request body is missing."""
         from api_server import app
+        _register_tools_blueprint(app)
         
         async with app.test_client() as client:
             # Send request with no body
@@ -107,6 +133,7 @@ class TestSearchRequestValidation:
     async def test_search_missing_query_returns_400(self):
         """Should return 400 when query parameter is missing."""
         from api_server import app
+        _register_tools_blueprint(app)
         
         async with app.test_client() as client:
             response = await client.post(
@@ -123,6 +150,7 @@ class TestSearchRequestValidation:
     async def test_search_empty_query_returns_400(self):
         """Should return 400 for empty query string."""
         from api_server import app
+        _register_tools_blueprint(app)
         
         async with app.test_client() as client:
             response = await client.post(
@@ -145,6 +173,7 @@ class TestSearchResponseFormat:
     async def test_search_returns_list(self, sample_search_results):
         """Search should return a JSON list."""
         from api_server import app
+        _register_tools_blueprint(app)
         
         with patch('api_server.search_tools', return_value=sample_search_results[:2]):
             async with app.test_client() as client:
@@ -161,6 +190,7 @@ class TestSearchResponseFormat:
     async def test_search_respects_limit(self, sample_search_results):
         """Search should respect the limit parameter."""
         from api_server import app
+        _register_tools_blueprint(app)
         
         # Return more results than limit
         with patch('api_server.search_tools', return_value=sample_search_results):
@@ -180,6 +210,7 @@ class TestSearchResponseFormat:
     async def test_search_default_limit(self, sample_search_results):
         """Search should use default limit of 10 when not specified."""
         from api_server import app
+        _register_tools_blueprint(app)
         
         mock_search = Mock(return_value=sample_search_results)
         
@@ -201,6 +232,7 @@ class TestSearchResponseFormat:
     async def test_search_result_has_required_fields(self, sample_search_results):
         """Each search result should have required fields."""
         from api_server import app
+        _register_tools_blueprint(app)
         
         with patch('api_server.search_tools', return_value=sample_search_results[:1]):
             with patch('api_server.MANAGE_ONLY_MCP_TOOLS', False):
@@ -231,6 +263,7 @@ class TestMCPToolFiltering:
     async def test_mcp_filter_excludes_letta_core(self, sample_search_results):
         """Should exclude letta_core tools when MANAGE_ONLY_MCP_TOOLS is enabled."""
         from api_server import app
+        _register_tools_blueprint(app)
         
         # Include the letta_core tool in results
         with patch('api_server.search_tools', return_value=sample_search_results):
@@ -256,6 +289,7 @@ class TestMCPToolFiltering:
     async def test_mcp_filter_includes_external_mcp(self, sample_search_results):
         """Should include external_mcp tools when MANAGE_ONLY_MCP_TOOLS is enabled."""
         from api_server import app
+        _register_tools_blueprint(app)
         
         with patch('api_server.search_tools', return_value=sample_search_results):
             with patch('api_server.MANAGE_ONLY_MCP_TOOLS', True):
@@ -287,6 +321,7 @@ class TestScoreNormalization:
     async def test_rerank_score_mapped_to_score(self):
         """Should map rerank_score to score field."""
         from api_server import app
+        _register_tools_blueprint(app)
         
         results_with_rerank = [
             {
@@ -326,6 +361,7 @@ class TestSearchErrorHandling:
     async def test_search_handles_weaviate_error(self):
         """Should return 500 and error message on Weaviate failure."""
         from api_server import app
+        _register_tools_blueprint(app)
         
         with patch('api_server.search_tools', side_effect=Exception("Weaviate connection failed")):
             async with app.test_client() as client:
@@ -343,6 +379,7 @@ class TestSearchErrorHandling:
     async def test_search_handles_empty_results(self):
         """Should return empty list for no matches."""
         from api_server import app
+        _register_tools_blueprint(app)
         
         with patch('api_server.search_tools', return_value=[]):
             with patch('api_server.MANAGE_ONLY_MCP_TOOLS', False):

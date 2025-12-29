@@ -273,8 +273,7 @@ def cosine_similarity(vec1, vec2):
     
     return dot_product / (magnitude1 * magnitude2)
 
-@app.route('/api/v1/tools/search', methods=['POST'])
-async def search():
+async def _tools_search_handler():
     """Search endpoint - Note: This still calls the original synchronous search_tools"""
     # TODO: Decide if this endpoint should also be async or use a different search mechanism
     logger.info("Received request for /api/v1/tools/search")
@@ -376,8 +375,7 @@ async def search():
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 
-@app.route('/api/v1/tools/search/rerank', methods=['POST'])
-async def search_with_reranking():
+async def _tools_search_rerank_handler():
     """Search with reranking endpoint for dashboard frontend."""
     logger.info("Received request for /api/v1/tools/search/rerank")
     
@@ -512,8 +510,7 @@ async def search_with_reranking():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/v1/tools', methods=['GET'])
-async def get_tools():
+async def _tools_list_handler():
     logger.info("Received request for /api/v1/tools")
     try:
         # Read directly from the cache asynchronously
@@ -577,8 +574,7 @@ async def process_matching_tool(tool, letta_tools_cache, mcp_servers):
             return None # Indicate it's not usable
 
 
-@app.route('/api/v1/tools/attach', methods=['POST'])
-async def attach_tools():
+async def _tools_attach_handler():
     """Handle tool attachment requests with parallel processing using cache"""
     logger.info(f"Received request for {request.path}")
     try:
@@ -906,8 +902,7 @@ def _is_letta_core_tool(tool: dict) -> bool:
     """
     return models_is_letta_core_tool(tool)
 
-@app.route('/api/v1/tools/prune', methods=['POST'])
-async def prune_tools():
+async def _tools_prune_handler():
     """Prune tools attached to an agent based on their relevance to a user's prompt."""
     logger.info("Received request for /api/v1/tools/prune")
     try:
@@ -1016,8 +1011,7 @@ async def prune_tools():
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 
-@app.route('/api/v1/tools/sync', methods=['POST'])
-async def sync_tools_endpoint(): # Renamed function to avoid conflict
+async def _tools_sync_handler():
     """Endpoint to manually trigger the sync process (for testing/debugging)."""
     logger.info("Received request for /api/v1/tools/sync")
     try:
@@ -1459,9 +1453,7 @@ async def perform_optimization(operation):
         return {"success": False, "details": f"Unknown optimization: {operation}"}
 
 
-# Tools refresh endpoint
-@app.route('/api/v1/tools/refresh', methods=['POST'])
-async def refresh_tools():
+async def _tools_refresh_handler():
     """Refresh the tool index from Letta API."""
     try:
         logger.info("Refreshing tool index...")
@@ -3483,6 +3475,21 @@ async def startup():
     reranker_routes.configure(cache_dir=CACHE_DIR)
     app.register_blueprint(reranker_bp)
     logger.info("Reranker routes blueprint registered.")
+
+    # Configure and register tools routes blueprint
+    from routes import tools as tools_routes
+    from routes.tools import tools_bp
+    tools_routes.configure(
+        search_func=_tools_search_handler,
+        search_with_rerank_func=_tools_search_rerank_handler,
+        list_tools_func=_tools_list_handler,
+        attach_tools_func=_tools_attach_handler,
+        prune_tools_func=_tools_prune_handler,
+        sync_func=_tools_sync_handler,
+        refresh_func=_tools_refresh_handler
+    )
+    app.register_blueprint(tools_bp)
+    logger.info("Tools routes blueprint registered.")
 
     # Ensure cache directory exists
     os.makedirs(CACHE_DIR, exist_ok=True)

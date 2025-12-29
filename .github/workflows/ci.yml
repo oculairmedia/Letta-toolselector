@@ -77,6 +77,10 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio pytest-cov
 
+      - name: Validate configuration
+        run: |
+          python3 scripts/validate_config.py
+          
       - name: Test embedding configuration
         run: |
           cd lettaaugment-source

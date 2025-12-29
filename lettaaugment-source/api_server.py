@@ -780,196 +780,13 @@ async def _tools_sync_handler():
         return jsonify({"error": f"Internal server error during sync: {str(e)}"}), 500
 
 
-async def _validate_config_handler():
-    """LDTS-69: Validate dashboard configuration using schema-based validation"""
-    logger.info("Received request for /api/v1/config/validate")
-    
-    try:
-        data = await request.get_json()
-        if not data:
-            return jsonify({"error": "No configuration data provided"}), 400
-        
-        logger.info(f"Validating configuration with {len(data)} top-level sections")
-        
-        # Validate the configuration
-        validation_result = validate_configuration(data)
-        
-        logger.info(f"Configuration validation completed: valid={validation_result.valid}, "
-                   f"errors={len(validation_result.errors)}, "
-                   f"warnings={len(validation_result.warnings)}")
-        
-        # Return validation result as JSON
-        return jsonify(validation_result.to_dict())
-        
-    except Exception as e:
-        logger.error(f"Configuration validation failed: {e}", exc_info=True)
-        return jsonify({"error": f"Validation failed: {str(e)}"}), 500
-
-
+# Config validation, tool selector config endpoints moved to routes/config.py blueprint
 # Search parameter routes moved to routes/search.py blueprint
-
-
 # Reranker and Embedding config routes moved to routes/config.py blueprint
-
 # Ollama routes moved to routes/ollama.py blueprint
-
 # Configuration presets routes moved to routes/config.py blueprint
-
-
-async def _get_tool_selector_config_handler():
-    """Get current tool selector configuration."""
-    try:
-        # Get configuration from environment variables
-        config = {
-            "tool_limits": {
-                "max_total_tools": int(os.getenv('MAX_TOTAL_TOOLS', '30')),
-                "max_mcp_tools": int(os.getenv('MAX_MCP_TOOLS', '20')),
-                "min_mcp_tools": int(os.getenv('MIN_MCP_TOOLS', '7'))
-            },
-            "behavior": {
-                "default_drop_rate": float(os.getenv('DEFAULT_DROP_RATE', '0.6')),
-                "exclude_letta_core_tools": os.getenv('EXCLUDE_LETTA_CORE_TOOLS', 'true').lower() == 'true',
-                "exclude_official_tools": os.getenv('EXCLUDE_OFFICIAL_TOOLS', 'true').lower() == 'true',
-                "manage_only_mcp_tools": os.getenv('MANAGE_ONLY_MCP_TOOLS', 'true').lower() == 'true'
-            },
-            "scoring": {
-                "min_score_default": float(os.getenv('MIN_SCORE_DEFAULT', '70.0')),
-                "semantic_weight": float(os.getenv('SEMANTIC_WEIGHT', '0.7')),
-                "keyword_weight": float(os.getenv('KEYWORD_WEIGHT', '0.3'))
-            }
-        }
-
-        # Add current usage statistics if available
-        try:
-            # Get basic stats from cached tools
-            tools = await read_tool_cache()
-            total_tools = len(tools) if tools else 0
-            mcp_tools = len([t for t in tools if t.get('source', '').startswith('mcp')]) if tools else 0
-            mcp_ratio = (mcp_tools / total_tools) if total_tools > 0 else 0
-
-            config["current_stats"] = {
-                "total_tools": total_tools,
-                "mcp_tools": mcp_tools,
-                "mcp_tools_ratio": round(mcp_ratio, 2),
-                "last_updated": datetime.now(timezone.utc).isoformat()
-            }
-        except Exception as e:
-            logger.warning(f"Could not load current stats: {str(e)}")
-            config["current_stats"] = {
-                "total_tools": 0,
-                "mcp_tools": 0,
-                "mcp_tools_ratio": 0.0,
-                "last_updated": datetime.now(timezone.utc).isoformat()
-            }
-
-        return jsonify({"success": True, "data": config})
-    except Exception as e:
-        logger.error(f"Error getting tool selector config: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-async def _update_tool_selector_config_handler():
-    """Update tool selector configuration."""
-    try:
-        data = await request.get_json()
-        if not data:
-            return jsonify({"success": False, "error": "No configuration data provided"}), 400
-
-        # Validate configuration data
-        validation_errors = []
-        warnings = []
-
-        if "tool_limits" in data:
-            limits = data["tool_limits"]
-            max_total = limits.get("max_total_tools", 30)
-            max_mcp = limits.get("max_mcp_tools", 20)
-            min_mcp = limits.get("min_mcp_tools", 7)
-
-            # Validation rules
-            if not (1 <= min_mcp <= 50):
-                validation_errors.append("min_mcp_tools must be between 1 and 50")
-            if not (5 <= max_mcp <= 100):
-                validation_errors.append("max_mcp_tools must be between 5 and 100")
-            if not (10 <= max_total <= 200):
-                validation_errors.append("max_total_tools must be between 10 and 200")
-            if min_mcp > max_mcp:
-                validation_errors.append("min_mcp_tools cannot be greater than max_mcp_tools")
-            if max_mcp > max_total:
-                validation_errors.append("max_mcp_tools cannot be greater than max_total_tools")
-
-            # Warnings for significant changes
-            if max_total > 50:
-                warnings.append("High tool limits may impact performance")
-            if min_mcp < 3:
-                warnings.append("Very low minimum MCP tools may reduce functionality")
-
-        if "behavior" in data:
-            behavior = data["behavior"]
-            drop_rate = behavior.get("default_drop_rate", 0.6)
-
-            if not (0.1 <= drop_rate <= 0.9):
-                validation_errors.append("default_drop_rate must be between 0.1 and 0.9")
-            if drop_rate > 0.8:
-                warnings.append("High drop rate may remove too many tools")
-
-        if "scoring" in data:
-            scoring = data["scoring"]
-            min_score = scoring.get("min_score_default", 70.0)
-            semantic_weight = scoring.get("semantic_weight", 0.7)
-            keyword_weight = scoring.get("keyword_weight", 0.3)
-
-            if not (0.0 <= min_score <= 100.0):
-                validation_errors.append("min_score_default must be between 0.0 and 100.0")
-            if not (0.0 <= semantic_weight <= 1.0):
-                validation_errors.append("semantic_weight must be between 0.0 and 1.0")
-            if not (0.0 <= keyword_weight <= 1.0):
-                validation_errors.append("keyword_weight must be between 0.0 and 1.0")
-            if abs((semantic_weight + keyword_weight) - 1.0) > 0.01:
-                warnings.append("semantic_weight + keyword_weight should equal 1.0 for optimal results")
-
-        # Return validation errors if any
-        if validation_errors:
-            return jsonify({
-                "success": False,
-                "error": "Validation failed",
-                "validation_errors": validation_errors,
-                "warnings": warnings
-            }), 400
-
-        # Log the configuration update
-        logger.info(f"Tool selector configuration update requested: {data}")
-
-        # Log to audit system
-        await log_config_change(
-            action="update",
-            config_type="tool_selector",
-            changes=data,
-            user_info={"source": "api", "timestamp": datetime.now().isoformat()},
-            metadata={"warnings": warnings}
-        )
-
-        # For now, just acknowledge the update
-        # TODO: Actually persist the configuration changes to environment or config file
-
-        response = {
-            "success": True,
-            "message": "Tool selector configuration updated successfully",
-            "applied_config": data
-        }
-
-        if warnings:
-            response["warnings"] = warnings
-
-        return jsonify(response)
-    except Exception as e:
-        logger.error(f"Error updating tool selector config: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
 # Ollama Configuration endpoints moved to routes/config.py blueprint
-
 # Weaviate Configuration endpoints moved to routes/config.py blueprint
-
 # Configuration Backup/Restore/Save/Validate/Audit endpoints moved to routes/backup.py blueprint
 
 
@@ -3117,14 +2934,19 @@ async def startup():
     app.register_blueprint(search_bp)
     logger.info("Search routes blueprint registered.")
     
+    # Initialize services layer early (needed by config blueprint)
+    from services.tool_search import configure_search_service
+    from services.tool_cache import get_tool_cache_service
+    configure_search_service(search_tools)
+    tool_cache_service = get_tool_cache_service(CACHE_DIR)
+    logger.info("Services layer configured.")
+    
     # Configure and register config routes blueprint
     from routes import config as config_routes, config_bp
     config_routes.configure(
         http_session=http_session,
         log_config_change=log_config_change,
-        validate_config_func=_validate_config_handler,
-        get_tool_selector_config_func=_get_tool_selector_config_handler,
-        update_tool_selector_config_func=_update_tool_selector_config_handler
+        tool_cache_service=tool_cache_service
     )
     app.register_blueprint(config_bp)
     logger.info("Config routes blueprint registered.")
@@ -3206,13 +3028,6 @@ async def startup():
     reranker_routes.configure(cache_dir=CACHE_DIR)
     app.register_blueprint(reranker_bp)
     logger.info("Reranker routes blueprint registered.")
-
-    # Configure services layer
-    from services.tool_search import configure_search_service
-    from services.tool_cache import get_tool_cache_service
-    configure_search_service(search_tools)
-    get_tool_cache_service(CACHE_DIR)  # Initialize with cache dir
-    logger.info("Services layer configured.")
 
     # Configure and register tools routes blueprint
     from routes import tools as tools_routes

@@ -1465,9 +1465,7 @@ async def _tools_refresh_handler():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# Evaluation endpoints
-@app.route('/api/v1/evaluations', methods=['POST'])
-async def submit_evaluation():
+async def _submit_evaluation_handler():
     """Submit an evaluation rating."""
     try:
         data = await request.get_json()
@@ -1501,8 +1499,7 @@ async def submit_evaluation():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/v1/evaluations', methods=['GET'])
-async def get_evaluations():
+async def _get_evaluations_handler():
     """Get evaluations with optional query and limit parameters."""
     try:
         query = request.args.get('query')
@@ -1525,9 +1522,7 @@ async def get_evaluations():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# Analytics endpoint
-@app.route('/api/v1/analytics', methods=['GET'])
-async def get_analytics():
+async def _get_analytics_handler():
     """Get analytics with optional date range parameters."""
     try:
         start_date = request.args.get('start_date')
@@ -1559,9 +1554,7 @@ async def get_analytics():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# Rerank comparison endpoint
-@app.route('/api/v1/rerank/compare', methods=['POST'])
-async def compare_rerank_configurations():
+async def _compare_rerank_handler():
     """Compare two reranker configurations side-by-side."""
     try:
         data = await request.get_json()
@@ -1692,9 +1685,7 @@ def calculate_rank_correlation(results_a, results_b):
         return 0.0
 
 
-# Search test endpoint with parameter overrides
-@app.route('/api/v1/search/test', methods=['GET'])
-async def test_search_with_overrides():
+async def _search_test_handler():
     """Test search functionality with parameter overrides and detailed rankings."""
     try:
         query = request.args.get('query')
@@ -1785,9 +1776,7 @@ async def test_search_with_overrides():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# Model listing endpoints
-@app.route('/api/v1/models/embedding', methods=['GET'])
-async def get_embedding_models():
+async def _get_embedding_models_handler():
     """Get available embedding models from all configured providers."""
     try:
         models = []
@@ -1882,8 +1871,7 @@ async def get_embedding_models():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/v1/embedding/health', methods=['GET'])
-async def get_embedding_health():
+async def _get_embedding_health_handler():
     """Get comprehensive embedding model health and status information."""
     try:
         embedding_provider = os.getenv("EMBEDDING_PROVIDER", "").lower()
@@ -2026,8 +2014,7 @@ async def get_embedding_health():
         }), 500
 
 
-@app.route('/api/v1/models/reranker', methods=['GET'])  
-async def get_reranker_models():
+async def _get_reranker_models_handler():
     """Get available reranker models from all configured providers."""
     try:
         models = []
@@ -2109,10 +2096,7 @@ async def get_reranker_models():
 # NOTE: Benchmark routes moved to routes/benchmark.py
 # NOTE: Reranker model registry routes moved to routes/reranker.py
 
-# A/B Comparison Runner Endpoints
-
-@app.route('/api/v1/ab-comparison/run', methods=['POST'])
-async def run_ab_comparison():
+async def _run_ab_comparison_handler():
     """Run A/B comparison tests with statistical significance analysis."""
     try:
         data = await request.get_json()
@@ -2162,8 +2146,7 @@ async def run_ab_comparison():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/v1/ab-comparison/results', methods=['GET'])
-async def get_ab_comparison_results():
+async def _get_ab_results_handler():
     """Get A/B comparison results with filtering."""
     try:
         # Query parameters
@@ -2222,8 +2205,7 @@ async def get_ab_comparison_results():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/v1/ab-comparison/results/<comparison_id>', methods=['GET'])
-async def get_ab_comparison_result(comparison_id):
+async def _get_ab_result_by_id_handler(comparison_id):
     """Get specific A/B comparison result."""
     try:
         ab_comparison_dir = os.path.join(CACHE_DIR, 'ab_comparisons')
@@ -2655,10 +2637,7 @@ def count_significant_degradations(statistical_results):
     return count
 
 
-# Safety Status Endpoints
-
-@app.route('/api/v1/safety/status', methods=['GET'])
-async def get_safety_status():
+async def _get_safety_status_handler():
     """Get comprehensive safety system status."""
     try:
         # Check environment safety configurations
@@ -2739,8 +2718,7 @@ async def get_safety_status():
         }), 500
 
 
-@app.route('/api/v1/safety/validate-operation', methods=['POST'])
-async def validate_operation():
+async def _validate_operation_handler():
     """Validate if a specific operation is safe to perform."""
     try:
         data = await request.get_json()
@@ -2785,8 +2763,7 @@ async def validate_operation():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/v1/safety/emergency-status', methods=['GET'])
-async def get_emergency_status():
+async def _get_emergency_status_handler():
     """Get emergency safety status for critical monitoring."""
     try:
         # Quick emergency checks
@@ -3490,6 +3467,44 @@ async def startup():
     )
     app.register_blueprint(tools_bp)
     logger.info("Tools routes blueprint registered.")
+
+    # Configure and register evaluation routes blueprint
+    from routes import evaluation as evaluation_routes
+    from routes.evaluation import evaluation_bp
+    evaluation_routes.configure(
+        submit_evaluation_func=_submit_evaluation_handler,
+        get_evaluations_func=_get_evaluations_handler,
+        get_analytics_func=_get_analytics_handler,
+        compare_rerank_func=_compare_rerank_handler,
+        run_ab_comparison_func=_run_ab_comparison_handler,
+        get_ab_results_func=_get_ab_results_handler,
+        get_ab_result_by_id_func=_get_ab_result_by_id_handler
+    )
+    app.register_blueprint(evaluation_bp)
+    logger.info("Evaluation routes blueprint registered.")
+
+    # Configure and register safety routes blueprint
+    from routes import safety as safety_routes
+    from routes.safety import safety_bp
+    safety_routes.configure(
+        get_safety_status_func=_get_safety_status_handler,
+        validate_operation_func=_validate_operation_handler,
+        get_emergency_status_func=_get_emergency_status_handler
+    )
+    app.register_blueprint(safety_bp)
+    logger.info("Safety routes blueprint registered.")
+
+    # Configure and register models routes blueprint
+    from routes import models as models_routes
+    from routes.models import models_bp
+    models_routes.configure(
+        get_embedding_models_func=_get_embedding_models_handler,
+        get_reranker_models_func=_get_reranker_models_handler,
+        get_embedding_health_func=_get_embedding_health_handler,
+        search_test_func=_search_test_handler
+    )
+    app.register_blueprint(models_bp)
+    logger.info("Models routes blueprint registered.")
 
     # Ensure cache directory exists
     os.makedirs(CACHE_DIR, exist_ok=True)

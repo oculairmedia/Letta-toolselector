@@ -174,7 +174,8 @@ TOOL_CACHE_FILE_PATH = os.path.join(CACHE_DIR, "tool_cache.json")
 MCP_SERVERS_CACHE_FILE_PATH = os.path.join(CACHE_DIR, "mcp_servers_cache.json")
 _tool_cache = None # In-memory cache variable for tools
 _tool_cache_last_modified = 0 # Timestamp of last tool cache load
-# Note: We won't use in-memory caching for MCP servers here, read on demand
+_mcp_servers_cache = None  # In-memory cache for MCP servers
+_mcp_servers_cache_mtime = 0  # Timestamp of last MCP servers cache load
 
 # --- Global Clients ---
 weaviate_client = None
@@ -222,23 +223,62 @@ async def read_tool_cache(force_reload=False):
         return []
 
 # --- Helper function to read MCP servers cache ---
-async def read_mcp_servers_cache():
-    """Reads the MCP servers cache file asynchronously."""
+async def read_mcp_servers_cache(force_reload=False):
+    """
+    Reads the MCP servers cache file asynchronously, using an in-memory cache.
+    
+    Args:
+        force_reload: If True, reload from disk even if cached in memory
+        
+    Returns:
+        List of MCP server dictionaries
+    """
+    global _mcp_servers_cache, _mcp_servers_cache_mtime
     try:
-        async with aiofiles.open(MCP_SERVERS_CACHE_FILE_PATH, mode='r') as f:
-            content = await f.read()
-            mcp_servers = json.loads(content)
-        logger.debug(f"Successfully read {len(mcp_servers)} MCP servers from cache: {MCP_SERVERS_CACHE_FILE_PATH}")
-        return mcp_servers
+        # Check modification time synchronously first
+        try:
+            current_mtime = os.path.getmtime(MCP_SERVERS_CACHE_FILE_PATH)
+        except FileNotFoundError:
+            logger.error(f"MCP servers cache file not found: {MCP_SERVERS_CACHE_FILE_PATH}. Returning empty list.")
+            _mcp_servers_cache = []
+            _mcp_servers_cache_mtime = 0
+            return []
+        
+        # Reload if forced, cache is empty, or file has been modified
+        if force_reload or _mcp_servers_cache is None or current_mtime > _mcp_servers_cache_mtime:
+            logger.info(f"Loading MCP servers cache from file: {MCP_SERVERS_CACHE_FILE_PATH}")
+            async with aiofiles.open(MCP_SERVERS_CACHE_FILE_PATH, mode='r') as f:
+                content = await f.read()
+                _mcp_servers_cache = json.loads(content)
+            _mcp_servers_cache_mtime = current_mtime
+            logger.info(f"Loaded {len(_mcp_servers_cache)} MCP servers into cache.")
+        
+        return _mcp_servers_cache if _mcp_servers_cache else []
     except FileNotFoundError:
-        logger.error(f"MCP servers cache file not found: {MCP_SERVERS_CACHE_FILE_PATH}. Returning empty list.")
+        logger.error(f"MCP servers cache file not found during async read: {MCP_SERVERS_CACHE_FILE_PATH}. Returning empty list.")
+        _mcp_servers_cache = []
+        _mcp_servers_cache_mtime = 0
         return []
     except json.JSONDecodeError:
         logger.error(f"Error decoding JSON from MCP servers cache file: {MCP_SERVERS_CACHE_FILE_PATH}. Returning empty list.")
+        _mcp_servers_cache = []
+        _mcp_servers_cache_mtime = 0
         return []
     except Exception as e:
         logger.error(f"Error reading MCP servers cache file {MCP_SERVERS_CACHE_FILE_PATH}: {e}")
+        _mcp_servers_cache = []
+        _mcp_servers_cache_mtime = 0
         return []
+
+
+def get_mcp_servers_cache_count() -> int:
+    """
+    Get the count of cached MCP servers without async I/O.
+    
+    Returns:
+        Number of MCP servers in cache, or 0 if cache not loaded
+    """
+    return len(_mcp_servers_cache) if _mcp_servers_cache else 0
 
 # Removed update_mcp_servers_cache function as this is now handled by sync_service.py
 
@@ -816,23 +856,22 @@ async def health_check():
             tool_cache_in_memory_status = "Error: File exists but not loaded in memory"
 
         
-    # Check MCP servers cache file status (check file on disk)
+    # Check MCP servers cache status (use in-memory cache, no async I/O)
     mcp_servers_cache_file_status = "OK"
-    mcp_servers_cache_size_on_disk = 0
+    mcp_servers_cache_size = 0
     try:
-        if os.path.exists(MCP_SERVERS_CACHE_FILE_PATH):
-            # For health check, just check existence and maybe size, avoid full async read if possible
-            # However, the current code does an async read, let's keep it for consistency for now
-            # but be mindful this could be slow if file is huge.
-            # A better approach for health might be just checking os.path.getmtime if file exists.
-            async with aiofiles.open(MCP_SERVERS_CACHE_FILE_PATH, 'r') as f:
-                mcp_data = json.loads(await f.read())
-                mcp_servers_cache_size_on_disk = len(mcp_data)
-        else:
-            mcp_servers_cache_file_status = "Error: File not found"
+        # Use in-memory cache count (O(1), no I/O)
+        mcp_servers_cache_size = get_mcp_servers_cache_count()
+        
+        if mcp_servers_cache_size == 0:
+            # Check if file exists but cache not loaded
+            if os.path.exists(MCP_SERVERS_CACHE_FILE_PATH):
+                mcp_servers_cache_file_status = "Warning: File exists but not loaded in memory"
+            else:
+                mcp_servers_cache_file_status = "Error: File not found"
     except Exception as e:
-        mcp_servers_cache_file_status = f"Error reading file: {str(e)}"
-        logger.warning(f"Health check: Error reading MCP servers cache file: {e}")
+        mcp_servers_cache_file_status = f"Error checking cache: {str(e)}"
+        logger.warning(f"Health check: Error checking MCP servers cache: {e}")
 
     # Determine overall health
     # Weaviate is critical. Cache files are important.
@@ -868,9 +907,9 @@ async def health_check():
                 "last_loaded": tool_cache_last_mod_str,
                 "source_file_path": TOOL_CACHE_FILE_PATH
             },
-            "mcp_servers_cache_file": { # Clarified this is about the file on disk
+            "mcp_servers_cache": {  # Now uses in-memory cache
                 "status": mcp_servers_cache_file_status,
-                "size_on_disk": mcp_servers_cache_size_on_disk if mcp_servers_cache_file_status == "OK" else "N/A",
+                "size": mcp_servers_cache_size,
                 "path": MCP_SERVERS_CACHE_FILE_PATH
             }
         },

@@ -325,16 +325,19 @@ class EnrichmentService:
                     
                     if result.objects:
                         obj = result.objects[0]
-                        # Update with enrichment data
-                        collection.data.update(
+                        # Merge enrichment data with current properties
+                        # Using replace() instead of update() because Weaviate's update()
+                        # doesn't properly handle partial property updates
+                        merged_props = dict(obj.properties)
+                        merged_props["enhanced_description"] = enriched.enhanced_description or ""
+                        merged_props["action_entities"] = enriched.action_entities
+                        merged_props["semantic_keywords"] = enriched.semantic_keywords
+                        merged_props["use_cases"] = enriched.use_cases
+                        merged_props["server_domain"] = enriched.server_domain or ""
+                        
+                        collection.data.replace(
                             uuid=obj.uuid,
-                            properties={
-                                "enhanced_description": enriched.enhanced_description or "",
-                                "action_entities": enriched.action_entities,
-                                "semantic_keywords": enriched.semantic_keywords,
-                                "use_cases": enriched.use_cases,
-                                "server_domain": enriched.server_domain or ""
-                            }
+                            properties=merged_props
                         )
                         stats["tools_updated"] += 1
                     else:

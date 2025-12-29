@@ -120,14 +120,16 @@ def sync_enriched_tools(
     
     stats = {"updated": 0, "skipped": 0, "not_found": 0, "errors": 0}
     
-    # Build lookup of existing tools by name
+    # Build lookup of existing tools by name -> (uuid, properties)
+    # We need full properties because Weaviate's update() doesn't work for partial updates
+    # We must use replace() with merged properties instead
     logger.info("Fetching existing tools from Weaviate...")
     existing_tools = {}
     
     for item in collection.iterator(include_vector=False):
         name = item.properties.get("name")
         if name:
-            existing_tools[name] = item.uuid
+            existing_tools[name] = (item.uuid, dict(item.properties))
     
     logger.info(f"Found {len(existing_tools)} tools in Weaviate")
     
@@ -139,30 +141,33 @@ def sync_enriched_tools(
             stats["skipped"] += 1
             continue
         
-        uuid = existing_tools.get(tool_name)
-        if not uuid:
+        tool_data = existing_tools.get(tool_name)
+        if not tool_data:
             logger.debug(f"Tool not found in Weaviate: {tool_name}")
             stats["not_found"] += 1
             continue
         
-        # Prepare update data
-        update_data = {
-            "enhanced_description": enriched.get("enhanced_description", ""),
-            "action_entities": enriched.get("action_entities", []),
-            "semantic_keywords": enriched.get("semantic_keywords", []),
-            "use_cases": enriched.get("use_cases", []),
-            "server_domain": enriched.get("server_domain", "")
-        }
+        uuid, current_props = tool_data
+        
+        # Merge enrichment data into current properties
+        # Using replace() instead of update() because Weaviate's update() 
+        # doesn't properly handle partial property updates
+        merged_props = dict(current_props)
+        merged_props["enhanced_description"] = enriched.get("enhanced_description", "")
+        merged_props["action_entities"] = enriched.get("action_entities", [])
+        merged_props["semantic_keywords"] = enriched.get("semantic_keywords", [])
+        merged_props["use_cases"] = enriched.get("use_cases", [])
+        merged_props["server_domain"] = enriched.get("server_domain", "")
         
         if dry_run:
-            logger.info(f"[DRY RUN] Would update {tool_name}: {len(update_data['action_entities'])} actions")
+            logger.info(f"[DRY RUN] Would update {tool_name}: {len(merged_props['action_entities'])} actions")
             stats["updated"] += 1
             continue
         
         try:
-            collection.data.update(
+            collection.data.replace(
                 uuid=uuid,
-                properties=update_data
+                properties=merged_props
             )
             stats["updated"] += 1
             logger.debug(f"Updated {tool_name}")

@@ -1184,9 +1184,95 @@ async def startup():
 
     # Pruning scheduler routes
     try:
-        from routes.pruning import pruning_bp
+        from routes.pruning import pruning_bp, get_scheduler
         app.register_blueprint(pruning_bp)
         logger.info("Pruning scheduler routes blueprint registered.")
+        
+        # Configure the pruning scheduler with actual functions
+        # Try to configure if we have a Letta API URL (even without USE_LETTA_SDK flag)
+        letta_api_url = os.getenv('LETTA_API_URL')
+        if letta_api_url:
+            from letta_sdk_client import LettaSDKClient
+            import requests
+            
+            def list_agents_func():
+                """List all agents from Letta API."""
+                try:
+                    # Direct HTTP call to Letta API
+                    resp = requests.get(f"{letta_api_url}/agents", timeout=30)
+                    resp.raise_for_status()
+                    agents = resp.json()
+                    logger.info(f"Listed {len(agents)} agents from Letta API")
+                    return [{"id": str(a.get("id", "")), "name": a.get("name", "")} for a in agents]
+                except Exception as e:
+                    logger.error(f"Failed to list agents: {e}")
+                    return []
+            
+            async def prune_func(agent_id: str, drop_rate: float, dry_run: bool = True, user_prompt: str = "scheduled_prune"):
+                """Prune MCP tools from an agent using the scheduler's safety logic."""
+                try:
+                    from pruning_scheduler import get_pruning_scheduler
+                    sched = get_pruning_scheduler()
+                    client = LettaSDKClient(base_url=letta_api_url)
+                    
+                    # Get agent's current tools
+                    tools = await client.list_agent_tools(agent_id)
+                    
+                    # Filter to only MCP tools that are safe to prune
+                    tools_to_consider = []
+                    for tool in tools:
+                        tool_name = tool.get("name", "")
+                        tool_type = tool.get("tool_type", "")
+                        tags = tool.get("tags", [])
+                        
+                        # Only consider MCP tools
+                        if not sched._is_mcp_tool(tool):
+                            continue
+                        # Skip protected tools
+                        if sched._is_protected_tool(tool_name):
+                            continue
+                        # Skip Letta core tools
+                        if sched._is_letta_core_tool(tool):
+                            continue
+                        tools_to_consider.append(tool)
+                    
+                    # Calculate how many to remove based on drop_rate
+                    import random
+                    num_to_remove = int(len(tools_to_consider) * drop_rate)
+                    tools_to_remove = random.sample(tools_to_consider, min(num_to_remove, len(tools_to_consider)))
+                    
+                    removed = []
+                    for tool in tools_to_remove:
+                        tool_id = tool.get("id", "")
+                        tool_name = tool.get("name", "")
+                        if dry_run:
+                            removed.append({"id": tool_id, "name": tool_name, "dry_run": True})
+                        else:
+                            await client.detach_tool(agent_id, tool_id, tool_name)
+                            removed.append({"id": tool_id, "name": tool_name})
+                    
+                    return {
+                        "success": True,
+                        "message": f"Pruned {len(removed)} tools" if removed else "No tools to prune",
+                        "details": {
+                            "mcp_tools_on_agent_before": len(tools_to_consider),
+                            "mcp_tools_detached_count": len(removed),
+                            "protected_tool_names": [t.get("name") for t in tools if sched._is_protected_tool(t.get("name", ""))],
+                            "tools_removed": removed,
+                            "dry_run": dry_run,
+                            "total_tools": len(tools)
+                        }
+                    }
+                except Exception as e:
+                    logger.error(f"Failed to prune agent {agent_id}: {e}")
+                    return {"success": False, "error": str(e)}
+            
+            scheduler = get_scheduler()
+            scheduler.configure(
+                list_agents_func=list_agents_func,
+                prune_agent_func=prune_func
+            )
+            logger.info("Pruning scheduler configured with Letta SDK functions.")
     except Exception as e:
         logger.error(f"Failed to register pruning blueprint: {e}")
 

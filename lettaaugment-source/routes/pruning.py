@@ -12,6 +12,9 @@ from quart import Blueprint, jsonify, request
 
 from pruning_scheduler import get_pruning_scheduler, PruningSchedulerConfig
 
+# Alias for external configuration
+get_scheduler = get_pruning_scheduler
+
 logger = logging.getLogger(__name__)
 
 pruning_bp = Blueprint('pruning', __name__, url_prefix='/api/v1/pruning')

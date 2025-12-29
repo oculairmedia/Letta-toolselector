@@ -93,7 +93,11 @@ if not QUERY_EXPANSION_AVAILABLE:
 
 
 # Environment variable to enable/disable query expansion
-ENABLE_QUERY_EXPANSION = os.getenv("ENABLE_QUERY_EXPANSION", "true").lower() == "true"
+# DEFAULT: false - Query expansion dilutes the original query signal.
+# With 75% vector search, embeddings already handle synonyms naturally.
+# Expansion mainly hurts the 25% BM25 component by adding noise.
+# Only enable if you have specific cases where exact keyword matching fails.
+ENABLE_QUERY_EXPANSION = os.getenv("ENABLE_QUERY_EXPANSION", "false").lower() == "true"
 # Environment variable to prefer universal expansion over legacy
 USE_UNIVERSAL_EXPANSION = os.getenv("USE_UNIVERSAL_EXPANSION", "true").lower() == "true"
 # Environment variable to enable reranking by default for all searches
@@ -213,6 +217,11 @@ def search_tools_with_reranking(
     intent_metadata = None
     
     # Step 1: Classify query intent (structured understanding)
+    # NOTE: We do NOT inject keywords into the query - that dilutes the original signal.
+    # Instead, intent is used for:
+    # - Understanding what user wants (logging/debugging)
+    # - Informing reranker with context
+    # - Post-search filtering or explanation
     if INTENT_CLASSIFIER_AVAILABLE:
         try:
             intent_metadata = classify_query(query)
@@ -222,12 +231,8 @@ def search_tools_with_reranking(
                 print(f"  Complexity: {intent_metadata.complexity.value}")
                 print(f"  Entities: {[e.entity_type for e in intent_metadata.entities]}")
                 print(f"  Domains: {intent_metadata.detected_domains}")
-                
-                # Add boost keywords from intent analysis to the query
-                if intent_metadata.boost_keywords:
-                    boost_terms = ' '.join(intent_metadata.boost_keywords[:10])
-                    query = f"{query} {boost_terms}"
-                    print(f"  Added boost keywords: {intent_metadata.boost_keywords[:10]}")
+                # Intent metadata is preserved but NOT used to modify query
+                # This prevents query dilution while still providing structured understanding
         except Exception as e:
             print(f"Intent classification failed: {e}")
     

@@ -179,7 +179,7 @@ services:
       - WEAVIATE_URL=http://weaviate:8080/
       - WEAVIATE_API_KEY=${WEAVIATE_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - LETTA_API_URL=http://192.168.50.90:8289/v1
+      - LETTA_API_URL=http://192.168.50.90:8283/v1
       - LETTA_PASSWORD=${LETTA_PASSWORD}
       - UPDATE_INTERVAL=60
     volumes:

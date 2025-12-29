@@ -1153,6 +1153,35 @@ async def startup():
     app.register_blueprint(models_bp)
     logger.info("Models routes blueprint registered.")
 
+    # Enrichment routes
+    try:
+        from routes import enrichment as enrichment_routes
+        from routes.enrichment import enrichment_bp
+        
+        def get_tools_by_server():
+            """Group cached tools by MCP server."""
+            tools = _tool_cache.copy() if _tool_cache else []
+            by_server: dict = {}
+            for tool in tools:
+                server = tool.get('mcp_server_name', 'unknown')
+                if server not in by_server:
+                    by_server[server] = []
+                by_server[server].append(tool)
+            return by_server
+        
+        def get_all_tools():
+            """Get all cached tools."""
+            return _tool_cache.copy() if _tool_cache else []
+        
+        enrichment_routes.configure(
+            get_tools_by_server_func=get_tools_by_server,
+            get_all_tools_func=get_all_tools
+        )
+        app.register_blueprint(enrichment_bp)
+        logger.info("Enrichment routes blueprint registered.")
+    except Exception as e:
+        logger.error(f"Failed to register enrichment blueprint: {e}")
+
     # Ensure cache directory exists
     os.makedirs(CACHE_DIR, exist_ok=True)
     logger.info(f"Cache directory set to: {CACHE_DIR}")

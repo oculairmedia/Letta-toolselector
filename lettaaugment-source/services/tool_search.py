@@ -10,10 +10,18 @@ import os
 import hashlib
 import json
 from typing import List, Dict, Any, Optional, Callable
-from cachetools import TTLCache
 import threading
 
 logger = logging.getLogger(__name__)
+
+# Try to import cachetools, fall back to disabled caching if not available
+try:
+    from cachetools import TTLCache
+    CACHETOOLS_AVAILABLE = True
+except ImportError:
+    logger.warning("cachetools not installed - search caching disabled. Install with: pip install cachetools")
+    CACHETOOLS_AVAILABLE = False
+    TTLCache = None  # type: ignore
 
 # Module state - search function injected at startup
 _search_tools_func: Optional[Callable] = None
@@ -21,10 +29,10 @@ _search_tools_func: Optional[Callable] = None
 # Cache configuration from environment
 SEARCH_CACHE_TTL_SECONDS = int(os.getenv("SEARCH_CACHE_TTL_SECONDS", "60"))
 SEARCH_CACHE_MAX_SIZE = int(os.getenv("SEARCH_CACHE_MAX_SIZE", "1000"))
-SEARCH_CACHE_ENABLED = os.getenv("SEARCH_CACHE_ENABLED", "true").lower() == "true"
+SEARCH_CACHE_ENABLED = os.getenv("SEARCH_CACHE_ENABLED", "true").lower() == "true" and CACHETOOLS_AVAILABLE
 
-# Thread-safe cache for search results
-_search_cache: TTLCache = TTLCache(maxsize=SEARCH_CACHE_MAX_SIZE, ttl=SEARCH_CACHE_TTL_SECONDS)
+# Thread-safe cache for search results (only if cachetools is available)
+_search_cache = TTLCache(maxsize=SEARCH_CACHE_MAX_SIZE, ttl=SEARCH_CACHE_TTL_SECONDS) if CACHETOOLS_AVAILABLE else {}
 _cache_lock = threading.Lock()
 _cache_stats = {"hits": 0, "misses": 0, "evictions": 0}
 

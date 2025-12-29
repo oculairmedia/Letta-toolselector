@@ -1028,8 +1028,7 @@ async def _tools_sync_handler():
         return jsonify({"error": f"Internal server error during sync: {str(e)}"}), 500
 
 
-@app.route('/api/v1/config/validate', methods=['POST'])
-async def validate_config_endpoint():
+async def _validate_config_handler():
     """LDTS-69: Validate dashboard configuration using schema-based validation"""
     logger.info("Received request for /api/v1/config/validate")
     
@@ -1065,9 +1064,7 @@ async def validate_config_endpoint():
 # Configuration presets routes moved to routes/config.py blueprint
 
 
-# Tool Selector Configuration endpoints
-@app.route('/api/v1/config/tool-selector', methods=['GET'])
-async def get_tool_selector_config():
+async def _get_tool_selector_config_handler():
     """Get current tool selector configuration."""
     try:
         # Get configuration from environment variables
@@ -1119,8 +1116,7 @@ async def get_tool_selector_config():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/v1/config/tool-selector', methods=['PUT'])
-async def update_tool_selector_config():
+async def _update_tool_selector_config_handler():
     """Update tool selector configuration."""
     try:
         data = await request.get_json()
@@ -3371,7 +3367,13 @@ async def startup():
     
     # Configure and register config routes blueprint
     from routes import config as config_routes, config_bp
-    config_routes.configure(http_session=http_session, log_config_change=log_config_change)
+    config_routes.configure(
+        http_session=http_session,
+        log_config_change=log_config_change,
+        validate_config_func=_validate_config_handler,
+        get_tool_selector_config_func=_get_tool_selector_config_handler,
+        update_tool_selector_config_func=_update_tool_selector_config_handler
+    )
     app.register_blueprint(config_bp)
     logger.info("Config routes blueprint registered.")
     

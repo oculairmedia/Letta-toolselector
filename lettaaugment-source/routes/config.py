@@ -27,19 +27,30 @@ config_bp = Blueprint('config', __name__, url_prefix='/api/v1/config')
 # Module state - to be configured
 _http_session = None
 _log_config_change = None
+_validate_config_func = None
+_get_tool_selector_config_func = None
+_update_tool_selector_config_func = None
 
 
-def configure(http_session=None, log_config_change=None):
+def configure(http_session=None, log_config_change=None, validate_config_func=None,
+              get_tool_selector_config_func=None, update_tool_selector_config_func=None):
     """
     Configure the config routes with required dependencies.
     
     Args:
         http_session: aiohttp ClientSession for API calls
         log_config_change: Async function to log configuration changes
+        validate_config_func: Function for /config/validate endpoint
+        get_tool_selector_config_func: Function for GET /config/tool-selector
+        update_tool_selector_config_func: Function for PUT /config/tool-selector
     """
     global _http_session, _log_config_change
+    global _validate_config_func, _get_tool_selector_config_func, _update_tool_selector_config_func
     _http_session = http_session
     _log_config_change = log_config_change
+    _validate_config_func = validate_config_func
+    _get_tool_selector_config_func = get_tool_selector_config_func
+    _update_tool_selector_config_func = update_tool_selector_config_func
 
 
 # =============================================================================
@@ -732,3 +743,31 @@ async def get_weaviate_schema():
     except Exception as e:
         logger.error(f"Error getting Weaviate schema: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# =============================================================================
+# Configuration Validation & Tool Selector Configuration
+# =============================================================================
+
+@config_bp.route('/validate', methods=['POST'])
+async def validate_config():
+    """Validate dashboard configuration using schema-based validation."""
+    if not _validate_config_func:
+        return jsonify({"error": "Configuration validation not configured"}), 503
+    return await _validate_config_func()
+
+
+@config_bp.route('/tool-selector', methods=['GET'])
+async def get_tool_selector_config():
+    """Get current tool selector configuration."""
+    if not _get_tool_selector_config_func:
+        return jsonify({"error": "Tool selector config not configured"}), 503
+    return await _get_tool_selector_config_func()
+
+
+@config_bp.route('/tool-selector', methods=['PUT'])
+async def update_tool_selector_config():
+    """Update tool selector configuration."""
+    if not _update_tool_selector_config_func:
+        return jsonify({"error": "Tool selector config update not configured"}), 503
+    return await _update_tool_selector_config_func()

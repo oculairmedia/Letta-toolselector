@@ -281,12 +281,26 @@ def search_tools_with_reranking(
                     print(f"Using client-side reranking: retrieving {rerank_initial_limit} candidates for top-{limit} results")
                     
                     # Get initial results without Weaviate reranking to avoid panics
+                    # BM25 field boosting:
+                    #   - action_entities^3: Highest boost for action-entity pairs (e.g., "create issue")
+                    #   - name^2: Tool name is important for exact matches
+                    #   - semantic_keywords^2: Enriched keywords from LLM analysis
+                    #   - enhanced_description^1.5: LLM-enriched description
+                    #   - description^1: Original description (baseline)
+                    #   - tags: Categorical tags
                     result = collection.query.hybrid(
                         query=hybrid_query,
                         alpha=0.75,  # 75% vector search, 25% keyword search
                         limit=rerank_initial_limit,  # Get more candidates for reranking
                         fusion_type=HybridFusion.RELATIVE_SCORE,
-                        query_properties=["name^2", "enhanced_description^2", "description^1.5", "tags"],
+                        query_properties=[
+                            "action_entities^3",      # Highest: "create issue", "delete file"
+                            "name^2",                 # Tool name
+                            "semantic_keywords^2",    # Enriched keywords
+                            "enhanced_description^1.5",  # LLM description
+                            "description",            # Original description
+                            "tags"                    # Category tags
+                        ],
                         return_metadata=MetadataQuery(score=True)
                     )
                     
@@ -394,12 +408,20 @@ def search_tools_with_reranking(
                     print(f"Standard search without reranking for {limit} results")
                     
                     # Standard hybrid search without reranking
+                    # Uses same field boosting as reranking path for consistency
                     result = collection.query.hybrid(
                         query=hybrid_query,
                         alpha=0.75,
                         limit=limit,
                         fusion_type=HybridFusion.RELATIVE_SCORE,
-                        query_properties=["name^2", "enhanced_description^2", "description^1.5", "tags"],
+                        query_properties=[
+                            "action_entities^3",      # Highest: "create issue", "delete file"
+                            "name^2",                 # Tool name
+                            "semantic_keywords^2",    # Enriched keywords
+                            "enhanced_description^1.5",  # LLM description
+                            "description",            # Original description
+                            "tags"                    # Category tags
+                        ],
                         return_metadata=MetadataQuery(score=True)
                     )
 

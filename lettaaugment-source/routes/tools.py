@@ -130,9 +130,12 @@ def _filter_mcp_results(results: List[Dict], tools_cache: List[Dict], limit: int
     """
     Filter search results to only include MCP tools.
     
+    Uses O(1) dictionary lookup instead of O(n) linear search for better performance
+    when filtering large result sets against large tool caches.
+    
     Args:
         results: Raw search results
-        tools_cache: Cached tools for type checking
+        tools_cache: Cached tools for type checking (unused, kept for API compatibility)
         limit: Maximum results to return
         
     Returns:
@@ -146,8 +149,8 @@ def _filter_mcp_results(results: List[Dict], tools_cache: List[Dict], limit: int
         if not tool_name:
             continue
             
-        # Find tool in cache
-        cached_tool = next((t for t in tools_cache if t.get('name') == tool_name), None)
+        # O(1) lookup by name instead of O(n) linear search
+        cached_tool = cache_service.get_tool_by_name(tool_name)
         
         if cached_tool:
             tool_type = cached_tool.get("tool_type", "")

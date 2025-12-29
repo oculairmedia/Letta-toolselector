@@ -15,8 +15,17 @@ logger = logging.getLogger(__name__)
 
 # Module state
 _tool_cache: List[Dict[str, Any]] = []
+_tool_cache_by_name: Dict[str, Dict[str, Any]] = {}  # O(1) lookup by name
+_tool_cache_by_id: Dict[str, Dict[str, Any]] = {}    # O(1) lookup by id
 _cache_last_loaded: Optional[datetime] = None
 _cache_dir: Optional[str] = None
+
+
+def _rebuild_cache_indexes():
+    """Rebuild the name and id indexes from the tool cache list."""
+    global _tool_cache_by_name, _tool_cache_by_id
+    _tool_cache_by_name = {t.get('name'): t for t in _tool_cache if t.get('name')}
+    _tool_cache_by_id = {t.get('id', t.get('tool_id')): t for t in _tool_cache if t.get('id') or t.get('tool_id')}
 
 
 class ToolCacheService:
@@ -56,14 +65,17 @@ class ToolCacheService:
                 async with aiofiles.open(self.cache_file, 'r') as f:
                     content = await f.read()
                     _tool_cache = json.loads(content) if content else []
+                    _rebuild_cache_indexes()  # Build O(1) lookup indexes
                     _cache_last_loaded = datetime.now(timezone.utc)
-                    logger.info(f"Loaded {len(_tool_cache)} tools from cache")
+                    logger.info(f"Loaded {len(_tool_cache)} tools from cache (indexed by name and id)")
             else:
                 logger.warning(f"Tool cache file not found: {self.cache_file}")
                 _tool_cache = []
+                _rebuild_cache_indexes()
         except Exception as e:
             logger.error(f"Error reading tool cache: {e}")
             _tool_cache = []
+            _rebuild_cache_indexes()
         
         return _tool_cache
     
@@ -84,8 +96,9 @@ class ToolCacheService:
             async with aiofiles.open(self.cache_file, 'w') as f:
                 await f.write(json.dumps(tools, indent=2))
             _tool_cache = tools
+            _rebuild_cache_indexes()  # Rebuild O(1) lookup indexes
             _cache_last_loaded = datetime.now(timezone.utc)
-            logger.info(f"Wrote {len(tools)} tools to cache")
+            logger.info(f"Wrote {len(tools)} tools to cache (indexed by name and id)")
             return True
         except Exception as e:
             logger.error(f"Error writing tool cache: {e}")
@@ -94,6 +107,30 @@ class ToolCacheService:
     def get_cached_tools(self) -> List[Dict[str, Any]]:
         """Get the in-memory cached tools without reading from disk."""
         return _tool_cache
+    
+    def get_tool_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a tool by name using O(1) dictionary lookup.
+        
+        Args:
+            name: The tool name to look up
+            
+        Returns:
+            Tool dictionary if found, None otherwise
+        """
+        return _tool_cache_by_name.get(name)
+    
+    def get_tool_by_id(self, tool_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a tool by ID using O(1) dictionary lookup.
+        
+        Args:
+            tool_id: The tool ID to look up
+            
+        Returns:
+            Tool dictionary if found, None otherwise
+        """
+        return _tool_cache_by_id.get(tool_id)
     
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get statistics about the cache."""

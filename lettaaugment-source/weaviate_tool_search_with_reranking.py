@@ -94,6 +94,27 @@ RERANKER_URL = os.getenv("RERANKER_URL", "http://100.81.139.20:11435/rerank")
 RERANKER_MODEL = os.getenv("RERANKER_MODEL", "qwen3-reranker-4b")
 RERANKER_TIMEOUT = float(os.getenv("RERANKER_TIMEOUT", "30.0"))
 
+# Persistent HTTP client for reranker (avoids TCP connection overhead per request)
+import httpx
+_reranker_client: httpx.Client = None
+
+def get_reranker_client() -> httpx.Client:
+    """Get or create persistent HTTP client for reranker calls."""
+    global _reranker_client
+    if _reranker_client is None:
+        _reranker_client = httpx.Client(
+            timeout=RERANKER_TIMEOUT,
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+        )
+    return _reranker_client
+
+def close_reranker_client():
+    """Close the reranker client. Call on app shutdown."""
+    global _reranker_client
+    if _reranker_client is not None:
+        _reranker_client.close()
+        _reranker_client = None
+
 def init_client():
     """Initialize Weaviate client using v4 API."""
     load_dotenv()
@@ -270,8 +291,8 @@ def search_tools_with_reranking(
                                 documents.append(doc_text.strip())
                             
                             if documents:
-                                # Call reranker - supports both Ollama adapter and vLLM
-                                import httpx
+                                # Call reranker using persistent client (avoids TCP overhead)
+                                client = get_reranker_client()
                                 
                                 # Build payload based on provider
                                 if RERANKER_PROVIDER == "vllm":
@@ -293,7 +314,7 @@ def search_tools_with_reranking(
                                         "instruction": DEFAULT_RERANK_INSTRUCTION,
                                     }
                                 
-                                response = httpx.post(RERANKER_URL, json=payload, timeout=RERANKER_TIMEOUT)
+                                response = client.post(RERANKER_URL, json=payload)
                                 if response.status_code == 200:
                                     rerank_data = response.json()
                                     rerank_results = rerank_data.get('results', [])

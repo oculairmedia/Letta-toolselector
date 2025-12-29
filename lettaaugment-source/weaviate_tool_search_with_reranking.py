@@ -300,6 +300,8 @@ def search_tools_with_reranking(
                             "action_entities^3",      # Highest: "create issue", "delete file"
                             "name^2",                 # Tool name
                             "semantic_keywords^2",    # Enriched keywords
+                            "use_cases^1.5",          # Natural language scenarios
+                            "server_domain^1.5",      # MCP server domain context
                             "enhanced_description^1.5",  # LLM description
                             "description",            # Original description
                             "tags"                    # Category tags
@@ -421,6 +423,8 @@ def search_tools_with_reranking(
                             "action_entities^3",      # Highest: "create issue", "delete file"
                             "name^2",                 # Tool name
                             "semantic_keywords^2",    # Enriched keywords
+                            "use_cases^1.5",          # Natural language scenarios
+                            "server_domain^1.5",      # MCP server domain context
                             "enhanced_description^1.5",  # LLM description
                             "description",            # Original description
                             "tags"                    # Category tags

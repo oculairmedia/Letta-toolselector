@@ -34,6 +34,7 @@ from .cost_control import cost_control_bp, configure as configure_cost_control
 from .operations import maintenance_bp, logs_bp, environment_bp, configure as configure_operations
 from .benchmark import benchmark_bp, configure as configure_benchmark
 from .reranker import reranker_bp, configure as configure_reranker
+from .enrichment import enrichment_bp, configure as configure_enrichment
 
 # Also expose the modules for configure() calls
 from . import tools
@@ -46,6 +47,7 @@ from . import cost_control
 from . import operations
 from . import benchmark
 from . import reranker
+from . import enrichment
 
 __all__ = [
     'tools_bp',
@@ -80,4 +82,7 @@ __all__ = [
     'operations',
     'benchmark',
     'reranker',
+    'enrichment_bp',
+    'configure_enrichment',
+    'enrichment',
 ]

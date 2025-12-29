@@ -409,6 +409,109 @@ async def process_tools(
 
 
 # ============================================================================
+# Protected Tools Enforcement
+# ============================================================================
+
+async def ensure_protected_tools(
+    agent_id: str,
+    protected_tool_names: List[str],
+    available_tools: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """
+    Ensure protected tools are attached to an agent.
+    
+    Checks if the agent has all protected tools attached. If any are missing,
+    attempts to attach them from the available tools library.
+    
+    Args:
+        agent_id: The agent ID
+        protected_tool_names: List of tool names that must be attached
+        available_tools: Optional list of available tools to search. If None,
+                        will attempt to fetch from tool cache.
+    
+    Returns:
+        Dict with:
+            - success: bool - True if all protected tools are now attached
+            - already_attached: List[str] - Tools that were already on agent
+            - newly_attached: List[str] - Tools that were attached
+            - failed: List[str] - Tools that could not be attached
+            - errors: List[str] - Error messages for failed attachments
+    """
+    result = {
+        "success": True,
+        "already_attached": [],
+        "newly_attached": [],
+        "failed": [],
+        "errors": []
+    }
+    
+    if not protected_tool_names:
+        return result
+    
+    # Get current agent tools
+    try:
+        agent_tools = await fetch_agent_tools(agent_id)
+        agent_tool_names = {t.get("name", "").lower() for t in agent_tools}
+    except Exception as e:
+        result["success"] = False
+        result["errors"].append(f"Failed to fetch agent tools: {str(e)}")
+        return result
+    
+    # Check which protected tools are missing
+    missing_tools = []
+    for tool_name in protected_tool_names:
+        if tool_name.lower() in agent_tool_names:
+            result["already_attached"].append(tool_name)
+        else:
+            missing_tools.append(tool_name)
+    
+    if not missing_tools:
+        return result
+    
+    # Try to find and attach missing tools
+    if available_tools is None:
+        # Try to get tools from cache or search
+        try:
+            from services.tool_cache import get_tool_cache_service
+            cache = get_tool_cache_service()
+            if cache:
+                available_tools = cache.get_cached_tools() or []
+        except Exception:
+            available_tools = []
+    
+    # Build lookup of available tools by name
+    tool_lookup = {}
+    for tool in (available_tools or []):
+        name = tool.get("name", "")
+        if name:
+            tool_lookup[name.lower()] = tool
+    
+    # Attach missing protected tools
+    for tool_name in missing_tools:
+        tool = tool_lookup.get(tool_name.lower())
+        if not tool:
+            result["failed"].append(tool_name)
+            result["errors"].append(f"Protected tool '{tool_name}' not found in available tools")
+            result["success"] = False
+            continue
+        
+        try:
+            attach_result = await attach_tool(agent_id, tool)
+            if attach_result.get("success"):
+                result["newly_attached"].append(tool_name)
+            else:
+                result["failed"].append(tool_name)
+                result["errors"].append(f"Failed to attach '{tool_name}': {attach_result.get('error', 'Unknown error')}")
+                result["success"] = False
+        except Exception as e:
+            result["failed"].append(tool_name)
+            result["errors"].append(f"Exception attaching '{tool_name}': {str(e)}")
+            result["success"] = False
+    
+    return result
+
+
+# ============================================================================
 # Tool Pruning
 # ============================================================================
 

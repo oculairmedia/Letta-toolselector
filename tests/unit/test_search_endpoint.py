@@ -42,13 +42,19 @@ def _register_tools_blueprint(app):
         configure_search_service(api_server.search_tools)
         get_tool_cache_service('/tmp/test_cache')
         
-        # Configure blueprint with delegated handlers only
+        # Configure blueprint with dependencies (handlers now live in blueprint)
         tools_routes.configure(
             manage_only_mcp_tools=api_server.MANAGE_ONLY_MCP_TOOLS,
-            attach_tools_func=api_server._tools_attach_handler,
-            prune_tools_func=api_server._tools_prune_handler,
-            sync_func=api_server._tools_sync_handler,
-            refresh_func=api_server._tools_refresh_handler
+            default_min_score=api_server.DEFAULT_MIN_SCORE,
+            agent_service=api_server.agent_service,
+            tool_manager=api_server.tool_manager,
+            search_tools_func=api_server.search_tools,
+            read_tool_cache_func=api_server.read_tool_cache,
+            read_mcp_servers_cache_func=api_server.read_mcp_servers_cache,
+            process_matching_tool_func=api_server.process_matching_tool,
+            init_weaviate_client_func=api_server.init_weaviate_client,
+            get_weaviate_client_func=lambda: api_server.weaviate_client,
+            is_letta_core_tool_func=api_server.models_is_letta_core_tool
         )
         app.register_blueprint(tools_bp)
 

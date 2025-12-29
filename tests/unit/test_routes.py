@@ -64,35 +64,33 @@ class TestToolsBlueprint:
         assert tools_bp is not None
         assert tools_bp.name == 'tools'
     
-    def test_configure_sets_all_functions(self):
-        """Should store all handler functions."""
+    def test_configure_sets_dependencies(self):
+        """Should store all dependencies for handlers."""
         from routes import tools
         
-        mock_attach = AsyncMock()
-        mock_prune = AsyncMock()
-        mock_sync = AsyncMock()
-        mock_refresh = AsyncMock()
+        mock_agent_service = Mock()
+        mock_tool_manager = Mock()
+        mock_search_tools = Mock()
         
-        # New API: search/list are now in the blueprint, only delegation handlers are configured
+        # New API: handlers are now in the blueprint, dependencies are injected
         tools.configure(
             manage_only_mcp_tools=True,
-            attach_tools_func=mock_attach,
-            prune_tools_func=mock_prune,
-            sync_func=mock_sync,
-            refresh_func=mock_refresh
+            default_min_score=35.0,
+            agent_service=mock_agent_service,
+            tool_manager=mock_tool_manager,
+            search_tools_func=mock_search_tools
         )
         
         assert tools._manage_only_mcp_tools is True
-        assert tools._attach_tools_func is mock_attach
-        assert tools._prune_tools_func is mock_prune
-        assert tools._sync_func is mock_sync
-        assert tools._refresh_func is mock_refresh
+        assert tools._default_min_score == 35.0
+        assert tools._agent_service is mock_agent_service
+        assert tools._tool_manager is mock_tool_manager
+        assert tools._search_tools_func is mock_search_tools
         
         # Clean up
-        tools._attach_tools_func = None
-        tools._prune_tools_func = None
-        tools._sync_func = None
-        tools._refresh_func = None
+        tools._agent_service = None
+        tools._tool_manager = None
+        tools._search_tools_func = None
 
 
 class TestRoutesPackage:
@@ -158,7 +156,7 @@ class TestBlueprintIntegration:
     
     @pytest.mark.asyncio
     async def test_tools_attach_returns_503_when_not_configured(self):
-        """Tools attach should return 503 when not configured."""
+        """Tools attach should return 503 when agent_service/tool_manager not configured."""
         from routes import tools
         from quart import Quart
         
@@ -166,36 +164,39 @@ class TestBlueprintIntegration:
         test_app = Quart(__name__)
         
         # Ensure not configured
-        tools._attach_tools_func = None
+        tools._agent_service = None
+        tools._tool_manager = None
         
         test_app.register_blueprint(tools.tools_bp)
         
         async with test_app.test_client() as client:
-            response = await client.post('/api/v1/tools/attach')
+            response = await client.post('/api/v1/tools/attach', json={"agent_id": "test", "query": "test"})
             assert response.status_code == 503
             data = await response.get_json()
             assert "not configured" in data["error"]
     
     @pytest.mark.asyncio
-    async def test_tools_attach_delegates_when_configured(self):
-        """Tools attach should delegate to configured function."""
+    async def test_tools_prune_returns_503_when_not_configured(self):
+        """Tools prune should return 503 when tool_manager not configured."""
         from routes import tools
-        from quart import Quart, jsonify
+        from quart import Quart
         
         test_app = Quart(__name__)
         
-        # Create mock attach function
-        async def mock_attach():
-            return jsonify({"success": True, "attached": 1})
+        # Ensure not configured
+        tools._tool_manager = None
         
-        tools.configure(attach_tools_func=mock_attach)
         test_app.register_blueprint(tools.tools_bp)
         
         async with test_app.test_client() as client:
-            response = await client.post('/api/v1/tools/attach')
-            assert response.status_code == 200
+            response = await client.post('/api/v1/tools/prune', json={
+                "agent_id": "test",
+                "user_prompt": "test",
+                "drop_rate": 0.5
+            })
+            assert response.status_code == 503
             data = await response.get_json()
-            assert data["success"] is True
+            assert "not configured" in data["error"]
         
         # Clean up
         tools._attach_tools_func = None

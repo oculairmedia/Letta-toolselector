@@ -139,6 +139,20 @@ class WebhookConfig:
 
 
 @dataclass
+class EnrichmentConfig:
+    """Configuration for semantic enrichment service."""
+    enabled: bool = False  # Disabled by default, enable with ENABLE_AUTO_ENRICHMENT=true
+    anthropic_url: str = "http://192.168.50.90:8082/v1"  # OpenAI-compatible proxy URL
+    anthropic_key: str = "dummy"  # API key (can be dummy for local proxy)
+    cache_dir: str = "/app/enrichment_cache"
+    interval_seconds: int = 3600  # How often to run enrichment (standalone mode)
+    max_tools_per_run: int = 50  # Rate limit for tools per run
+    max_servers_per_run: int = 10  # Rate limit for server profiles per run
+    profile_max_age_days: int = 7  # Force server profile refresh after this many days
+    tool_max_age_days: int = 30  # Force tool re-enrichment after this many days
+
+
+@dataclass
 class AppConfig:
     """
     Master application configuration.
@@ -152,6 +166,7 @@ class AppConfig:
     tool_limits: ToolLimitsConfig = field(default_factory=ToolLimitsConfig)
     cache: CacheConfig = field(default_factory=CacheConfig)
     webhook: WebhookConfig = field(default_factory=WebhookConfig)
+    enrichment: EnrichmentConfig = field(default_factory=EnrichmentConfig)
     
     # Runtime flags
     debug: bool = False
@@ -239,6 +254,19 @@ def load_config_from_env() -> AppConfig:
         matrix_bridge_url=os.getenv('MATRIX_BRIDGE_WEBHOOK_URL')
     )
     
+    # Build enrichment config
+    enrichment_config = EnrichmentConfig(
+        enabled=os.getenv('ENABLE_AUTO_ENRICHMENT', 'false').lower() == 'true',
+        anthropic_url=os.getenv('ANTHROPIC_BASE_URL', 'http://192.168.50.90:8082/v1'),
+        anthropic_key=os.getenv('ANTHROPIC_API_KEY', 'dummy'),
+        cache_dir=os.getenv('ENRICHMENT_CACHE_DIR', '/app/enrichment_cache'),
+        interval_seconds=int(os.getenv('ENRICHMENT_INTERVAL', '3600')),
+        max_tools_per_run=int(os.getenv('ENRICHMENT_MAX_TOOLS', '50')),
+        max_servers_per_run=int(os.getenv('ENRICHMENT_MAX_SERVERS', '10')),
+        profile_max_age_days=int(os.getenv('ENRICHMENT_PROFILE_MAX_AGE_DAYS', '7')),
+        tool_max_age_days=int(os.getenv('ENRICHMENT_TOOL_MAX_AGE_DAYS', '30'))
+    )
+    
     return AppConfig(
         letta=letta_config,
         weaviate=weaviate_config,
@@ -246,6 +274,7 @@ def load_config_from_env() -> AppConfig:
         tool_limits=tool_limits_config,
         cache=cache_config,
         webhook=webhook_config,
+        enrichment=enrichment_config,
         debug=os.getenv('DEBUG', 'false').lower() == 'true',
         testing=os.getenv('TESTING', 'false').lower() == 'true'
     )

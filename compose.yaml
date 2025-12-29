@@ -124,14 +124,47 @@ services:
       - LETTA_PASSWORD=${LETTA_PASSWORD}
       - API_URL=http://api-server:3001
       - SYNC_INTERVAL=300
+      # Enrichment settings (triggers enrichment when new tools are detected)
+      - ENABLE_AUTO_ENRICHMENT=${ENABLE_AUTO_ENRICHMENT:-false}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://192.168.50.90:8082/v1}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-dummy}
+      - ENRICHMENT_CACHE_DIR=/app/enrichment_cache
     volumes:
       - ./.env:/app/.env:ro
       - tool_cache_volume:/app/runtime_cache # CORRECTED PATH
+      - enrichment_cache_volume:/app/enrichment_cache # Persistent enrichment cache
       - ./lettaaugment-source:/app:rw # Mount entire source directory with embedding providers
     restart: unless-stopped
     depends_on:
       api-server:
         condition: service_started
+    networks:
+      - letta-tools
+  # Optional: Standalone enrichment service for scheduled/manual enrichment
+  enrichment-service:
+    image: ghcr.io/oculairmedia/letta-toolselector-sync-service:feature-LTSEL-1-shared-sdk-scaffold
+    container_name: weaviate-tools-enrichment
+    command: python enrichment_service.py
+    profiles:
+      - enrichment  # Only starts when explicitly enabled with --profile enrichment
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://192.168.50.90:8082/v1}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-dummy}
+      - ENRICHMENT_CACHE_DIR=/app/enrichment_cache
+      - ENRICHMENT_INTERVAL=${ENRICHMENT_INTERVAL:-3600}
+      - WEAVIATE_HTTP_HOST=weaviate
+      - WEAVIATE_HTTP_PORT=8080
+      - WEAVIATE_GRPC_PORT=50051
+    volumes:
+      - ./.env:/app/.env:ro
+      - tool_cache_volume:/app/runtime_cache
+      - enrichment_cache_volume:/app/enrichment_cache
+      - ./lettaaugment-source:/app:rw
+    restart: unless-stopped
+    depends_on:
+      weaviate:
+        condition: service_healthy
     networks:
       - letta-tools
   worker-service:
@@ -303,3 +336,4 @@ networks:
 volumes:
   weaviate_data: null
   tool_cache_volume: null # Define the shared volume
+  enrichment_cache_volume: null # Persistent cache for semantic enrichment

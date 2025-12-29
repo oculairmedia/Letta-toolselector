@@ -101,7 +101,10 @@ ENABLE_QUERY_EXPANSION = os.getenv("ENABLE_QUERY_EXPANSION", "false").lower() ==
 # Environment variable to prefer universal expansion over legacy
 USE_UNIVERSAL_EXPANSION = os.getenv("USE_UNIVERSAL_EXPANSION", "true").lower() == "true"
 # Environment variable to enable reranking by default for all searches
-ENABLE_RERANKING_BY_DEFAULT = os.getenv("ENABLE_RERANKING_BY_DEFAULT", "true").lower() == "true"
+# NOTE: Disabled by default because qwen3-reranker demotes exact matches (e.g., "matrix message" 
+# incorrectly ranks letta_agent_advanced higher than matrix_messaging). The hybrid search with 
+# BM25 field boosting provides better results for service-specific queries.
+ENABLE_RERANKING_BY_DEFAULT = os.getenv("ENABLE_RERANKING_BY_DEFAULT", "false").lower() == "true"
 
 # Reranker configuration - supports both vLLM (recommended) and Ollama adapter
 # RERANKER_PROVIDER: "vllm" (default, faster & better scores) or "ollama"
@@ -478,11 +481,15 @@ def search_tools(query: str, limit: int = 10, reranker_config: Optional[Dict[str
     Backward-compatible wrapper that uses reranking if enabled.
     Maintains the original API signature while adding reranking capabilities.
     
-    Reranking is enabled by default via ENABLE_RERANKING_BY_DEFAULT env var (default: true).
-    Can be overridden by passing reranker_config={'enabled': False}.
+    Reranking is DISABLED by default via ENABLE_RERANKING_BY_DEFAULT env var (default: false).
+    The qwen3-reranker model was found to demote exact matches (e.g., "matrix message" ranked
+    letta_agent_advanced higher than matrix_messaging). Hybrid search with BM25 field boosting
+    provides better results for service-specific queries.
+    
+    Can be overridden by passing reranker_config={'enabled': True}.
     """
     # Determine if reranking should be used
-    # Default to ENABLE_RERANKING_BY_DEFAULT env var (true by default)
+    # Default to ENABLE_RERANKING_BY_DEFAULT env var (false by default - reranker demotes exact matches)
     use_reranking = ENABLE_RERANKING_BY_DEFAULT
     
     # Allow explicit override via reranker_config

@@ -86,8 +86,8 @@ services:
       - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-dengcao/Qwen3-Embedding-4B:Q4_K_M}
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-2560}
       - USE_OLLAMA_EMBEDDINGS=${USE_OLLAMA_EMBEDDINGS:-true}
-      - ENABLE_RERANKING=${ENABLE_RERANKING:-true}
-      - ENABLE_RERANKING_BY_DEFAULT=${ENABLE_RERANKING_BY_DEFAULT:-true}  # Use reranker for all searches by default
+      - ENABLE_RERANKING=${ENABLE_RERANKING:-false}  # Disabled: qwen3-reranker demotes exact matches
+      - ENABLE_RERANKING_BY_DEFAULT=${ENABLE_RERANKING_BY_DEFAULT:-false}  # Disabled: hybrid search with BM25 boosting works better
       - RERANK_INITIAL_LIMIT=${RERANK_INITIAL_LIMIT:-50}  # Fetch more candidates for better reranking
       - RERANK_TOP_K=${RERANK_TOP_K:-10}
       - RERANKER_MODEL=${RERANKER_MODEL:-qwen3-reranker-4b}

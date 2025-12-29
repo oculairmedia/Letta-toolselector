@@ -28,18 +28,23 @@ def _register_tools_blueprint(app):
     Register the tools blueprint with the app for testing.
     
     Since startup() is not called during tests, we need to manually register
-    the tools blueprint and configure it with the handlers from api_server.
+    the tools blueprint and configure services.
     """
     import api_server
     from routes import tools as tools_routes
     from routes.tools import tools_bp
+    from services.tool_search import configure_search_service
+    from services.tool_cache import get_tool_cache_service
     
     # Only register if not already registered
     if 'tools' not in app.blueprints:
+        # Configure services
+        configure_search_service(api_server.search_tools)
+        get_tool_cache_service('/tmp/test_cache')
+        
+        # Configure blueprint with delegated handlers only
         tools_routes.configure(
-            search_func=api_server._tools_search_handler,
-            search_with_rerank_func=api_server._tools_search_rerank_handler,
-            list_tools_func=api_server._tools_list_handler,
+            manage_only_mcp_tools=api_server.MANAGE_ONLY_MCP_TOOLS,
             attach_tools_func=api_server._tools_attach_handler,
             prune_tools_func=api_server._tools_prune_handler,
             sync_func=api_server._tools_sync_handler,
@@ -175,7 +180,7 @@ class TestSearchResponseFormat:
         from api_server import app
         _register_tools_blueprint(app)
         
-        with patch('api_server.search_tools', return_value=sample_search_results[:2]):
+        with patch('services.tool_search.ToolSearchService.search', return_value=sample_search_results[:2]):
             async with app.test_client() as client:
                 response = await client.post(
                     '/api/v1/tools/search',
@@ -193,8 +198,8 @@ class TestSearchResponseFormat:
         _register_tools_blueprint(app)
         
         # Return more results than limit
-        with patch('api_server.search_tools', return_value=sample_search_results):
-            with patch('api_server.MANAGE_ONLY_MCP_TOOLS', False):
+        with patch('services.tool_search.ToolSearchService.search', return_value=sample_search_results):
+            with patch('routes.tools._manage_only_mcp_tools', False):
                 async with app.test_client() as client:
                     response = await client.post(
                         '/api/v1/tools/search',
@@ -214,15 +219,15 @@ class TestSearchResponseFormat:
         
         mock_search = Mock(return_value=sample_search_results)
         
-        with patch('api_server.search_tools', mock_search):
-            with patch('api_server.MANAGE_ONLY_MCP_TOOLS', False):
+        with patch('services.tool_search.ToolSearchService.search', mock_search):
+            with patch('routes.tools._manage_only_mcp_tools', False):
                 async with app.test_client() as client:
                     response = await client.post(
                         '/api/v1/tools/search',
                         json={"query": "test query"}
                     )
                     
-                    # Verify search_tools was called with limit=10
+                    # Verify search was called with limit=10
                     mock_search.assert_called_once()
                     call_kwargs = mock_search.call_args
                     assert call_kwargs.kwargs.get('limit') == 10 or \
@@ -234,8 +239,8 @@ class TestSearchResponseFormat:
         from api_server import app
         _register_tools_blueprint(app)
         
-        with patch('api_server.search_tools', return_value=sample_search_results[:1]):
-            with patch('api_server.MANAGE_ONLY_MCP_TOOLS', False):
+        with patch('services.tool_search.ToolSearchService.search', return_value=sample_search_results[:1]):
+            with patch('routes.tools._manage_only_mcp_tools', False):
                 async with app.test_client() as client:
                     response = await client.post(
                         '/api/v1/tools/search',
@@ -266,9 +271,9 @@ class TestMCPToolFiltering:
         _register_tools_blueprint(app)
         
         # Include the letta_core tool in results
-        with patch('api_server.search_tools', return_value=sample_search_results):
-            with patch('api_server.MANAGE_ONLY_MCP_TOOLS', True):
-                with patch('api_server.read_tool_cache', new_callable=AsyncMock) as mock_cache:
+        with patch('services.tool_search.ToolSearchService.search', return_value=sample_search_results):
+            with patch('routes.tools._manage_only_mcp_tools', True):
+                with patch('services.tool_cache.ToolCacheService.read_tool_cache', new_callable=AsyncMock) as mock_cache:
                     # Mock tool cache to return same data
                     mock_cache.return_value = sample_search_results
                     
@@ -291,9 +296,9 @@ class TestMCPToolFiltering:
         from api_server import app
         _register_tools_blueprint(app)
         
-        with patch('api_server.search_tools', return_value=sample_search_results):
-            with patch('api_server.MANAGE_ONLY_MCP_TOOLS', True):
-                with patch('api_server.read_tool_cache', new_callable=AsyncMock) as mock_cache:
+        with patch('services.tool_search.ToolSearchService.search', return_value=sample_search_results):
+            with patch('routes.tools._manage_only_mcp_tools', True):
+                with patch('services.tool_cache.ToolCacheService.read_tool_cache', new_callable=AsyncMock) as mock_cache:
                     mock_cache.return_value = sample_search_results
                     
                     async with app.test_client() as client:
@@ -332,8 +337,8 @@ class TestScoreNormalization:
             }
         ]
         
-        with patch('api_server.search_tools', return_value=results_with_rerank):
-            with patch('api_server.MANAGE_ONLY_MCP_TOOLS', False):
+        with patch('services.tool_search.ToolSearchService.search', return_value=results_with_rerank):
+            with patch('routes.tools._manage_only_mcp_tools', False):
                 async with app.test_client() as client:
                     response = await client.post(
                         '/api/v1/tools/search',
@@ -363,7 +368,7 @@ class TestSearchErrorHandling:
         from api_server import app
         _register_tools_blueprint(app)
         
-        with patch('api_server.search_tools', side_effect=Exception("Weaviate connection failed")):
+        with patch('services.tool_search.ToolSearchService.search', side_effect=Exception("Weaviate connection failed")):
             async with app.test_client() as client:
                 response = await client.post(
                     '/api/v1/tools/search',
@@ -381,8 +386,8 @@ class TestSearchErrorHandling:
         from api_server import app
         _register_tools_blueprint(app)
         
-        with patch('api_server.search_tools', return_value=[]):
-            with patch('api_server.MANAGE_ONLY_MCP_TOOLS', False):
+        with patch('services.tool_search.ToolSearchService.search', return_value=[]):
+            with patch('routes.tools._manage_only_mcp_tools', False):
                 async with app.test_client() as client:
                     response = await client.post(
                         '/api/v1/tools/search',

@@ -68,36 +68,27 @@ class TestToolsBlueprint:
         """Should store all handler functions."""
         from routes import tools
         
-        mock_search = AsyncMock()
-        mock_rerank = AsyncMock()
-        mock_list = AsyncMock()
         mock_attach = AsyncMock()
         mock_prune = AsyncMock()
         mock_sync = AsyncMock()
         mock_refresh = AsyncMock()
         
+        # New API: search/list are now in the blueprint, only delegation handlers are configured
         tools.configure(
-            search_func=mock_search,
-            search_with_rerank_func=mock_rerank,
-            list_tools_func=mock_list,
+            manage_only_mcp_tools=True,
             attach_tools_func=mock_attach,
             prune_tools_func=mock_prune,
             sync_func=mock_sync,
             refresh_func=mock_refresh
         )
         
-        assert tools._search_func is mock_search
-        assert tools._search_with_rerank_func is mock_rerank
-        assert tools._list_tools_func is mock_list
+        assert tools._manage_only_mcp_tools is True
         assert tools._attach_tools_func is mock_attach
         assert tools._prune_tools_func is mock_prune
         assert tools._sync_func is mock_sync
         assert tools._refresh_func is mock_refresh
         
         # Clean up
-        tools._search_func = None
-        tools._search_with_rerank_func = None
-        tools._list_tools_func = None
         tools._attach_tools_func = None
         tools._prune_tools_func = None
         tools._sync_func = None
@@ -166,8 +157,8 @@ class TestBlueprintIntegration:
         health._get_health_status_func = None
     
     @pytest.mark.asyncio
-    async def test_tools_search_returns_503_when_not_configured(self):
-        """Tools search should return 503 when not configured."""
+    async def test_tools_attach_returns_503_when_not_configured(self):
+        """Tools attach should return 503 when not configured."""
         from routes import tools
         from quart import Quart
         
@@ -175,37 +166,36 @@ class TestBlueprintIntegration:
         test_app = Quart(__name__)
         
         # Ensure not configured
-        tools._search_func = None
+        tools._attach_tools_func = None
         
         test_app.register_blueprint(tools.tools_bp)
         
         async with test_app.test_client() as client:
-            response = await client.post('/api/v1/tools/search')
+            response = await client.post('/api/v1/tools/attach')
             assert response.status_code == 503
             data = await response.get_json()
             assert "not configured" in data["error"]
     
     @pytest.mark.asyncio
-    async def test_tools_search_delegates_when_configured(self):
-        """Tools search should delegate to configured function."""
+    async def test_tools_attach_delegates_when_configured(self):
+        """Tools attach should delegate to configured function."""
         from routes import tools
         from quart import Quart, jsonify
         
         test_app = Quart(__name__)
         
-        # Create mock search function
-        async def mock_search():
-            return jsonify([{"name": "test_tool", "score": 0.9}])
+        # Create mock attach function
+        async def mock_attach():
+            return jsonify({"success": True, "attached": 1})
         
-        tools.configure(search_func=mock_search)
+        tools.configure(attach_tools_func=mock_attach)
         test_app.register_blueprint(tools.tools_bp)
         
         async with test_app.test_client() as client:
-            response = await client.post('/api/v1/tools/search')
+            response = await client.post('/api/v1/tools/attach')
             assert response.status_code == 200
             data = await response.get_json()
-            assert len(data) == 1
-            assert data[0]["name"] == "test_tool"
+            assert data["success"] is True
         
         # Clean up
-        tools._search_func = None
+        tools._attach_tools_func = None

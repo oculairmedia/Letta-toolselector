@@ -3455,13 +3455,18 @@ async def startup():
     app.register_blueprint(reranker_bp)
     logger.info("Reranker routes blueprint registered.")
 
+    # Configure services layer
+    from services.tool_search import configure_search_service
+    from services.tool_cache import get_tool_cache_service
+    configure_search_service(search_tools)
+    get_tool_cache_service(CACHE_DIR)  # Initialize with cache dir
+    logger.info("Services layer configured.")
+
     # Configure and register tools routes blueprint
     from routes import tools as tools_routes
     from routes.tools import tools_bp
     tools_routes.configure(
-        search_func=_tools_search_handler,
-        search_with_rerank_func=_tools_search_rerank_handler,
-        list_tools_func=_tools_list_handler,
+        manage_only_mcp_tools=MANAGE_ONLY_MCP_TOOLS,
         attach_tools_func=_tools_attach_handler,
         prune_tools_func=_tools_prune_handler,
         sync_func=_tools_sync_handler,

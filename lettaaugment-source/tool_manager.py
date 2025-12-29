@@ -519,6 +519,7 @@ async def perform_tool_pruning(
             return {
                 "success": True, 
                 "message": "No MCP tools to prune. Core tools preserved.",
+                "remaining_tools": core_tools_on_agent,  # All current tools remain
                 "details": {
                     "tools_on_agent_before_total": num_total_attached,
                     "mcp_tools_on_agent_before": 0,
@@ -534,6 +535,7 @@ async def perform_tool_pruning(
             return {
                 "success": True, 
                 "message": f"Pruning skipped: Agent has {num_currently_attached_mcp} MCP tools (minimum required: {MIN_MCP_TOOLS})",
+                "remaining_tools": core_tools_on_agent + mcp_tools_on_agent_list,  # All current tools remain
                 "details": {
                     "tools_on_agent_before_total": num_total_attached,
                     "mcp_tools_on_agent_before": num_currently_attached_mcp,
@@ -690,9 +692,17 @@ async def perform_tool_pruning(
         # 7. Final list of tools on agent
         final_tool_ids_on_agent = current_core_tool_ids.union(final_mcp_tool_ids_to_keep)
         
+        # Build remaining_tools list from core + kept MCP tools (avoids re-fetch)
+        remaining_tools = []
+        remaining_tools.extend(core_tools_on_agent)
+        for tool in mcp_tools_on_agent_list:
+            if tool.get('id') in final_mcp_tool_ids_to_keep:
+                remaining_tools.append(tool)
+        
         return {
             "success": True,
             "message": f"Pruning completed for agent {agent_id}. Only MCP tools were considered for pruning.",
+            "remaining_tools": remaining_tools,  # Include tool objects to avoid re-fetch
             "details": {
                 "tools_on_agent_before_total": num_total_attached,
                 "mcp_tools_on_agent_before": num_currently_attached_mcp,

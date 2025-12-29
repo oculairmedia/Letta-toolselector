@@ -524,8 +524,8 @@ async def attach_tools():
                         removed_count = preattach_prune_result.get("details", {}).get("mcp_tools_detached_count", 0)
                         logger.info(f"Pre-attach pruning completed: removed {removed_count} tools to make room")
                         
-                        # Re-fetch current agent tools after pre-attach pruning
-                        current_agent_tools = await _tool_manager.fetch_agent_tools(agent_id)
+                        # Use remaining_tools from pruning result to avoid redundant API call
+                        current_agent_tools = preattach_prune_result.get("remaining_tools", [])
                         mcp_tools = []
                         seen_tool_ids = set()
                         

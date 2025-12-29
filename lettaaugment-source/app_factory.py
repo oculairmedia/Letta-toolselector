@@ -490,6 +490,37 @@ async def _register_blueprints(app: Quart, config: AppConfig, services: ServiceC
     except Exception as e:
         logger.error(f"Failed to register models blueprint: {e}")
     
+    # Enrichment routes
+    try:
+        from routes import enrichment as enrichment_routes
+        from routes.enrichment import enrichment_bp
+        
+        # Helper function to get tools by server
+        def get_tools_by_server():
+            from services.tool_cache import get_tool_cache_service
+            cache = get_tool_cache_service()
+            tools = cache.get_cached_tools()
+            by_server: dict = {}
+            for tool in tools:
+                server = tool.get('mcp_server_name', 'unknown')
+                if server not in by_server:
+                    by_server[server] = []
+                by_server[server].append(tool)
+            return by_server
+        
+        def get_all_tools():
+            from services.tool_cache import get_tool_cache_service
+            return get_tool_cache_service().get_cached_tools()
+        
+        enrichment_routes.configure(
+            get_tools_by_server_func=get_tools_by_server,
+            get_all_tools_func=get_all_tools
+        )
+        app.register_blueprint(enrichment_bp)
+        logger.info("Enrichment routes blueprint registered")
+    except Exception as e:
+        logger.error(f"Failed to register enrichment blueprint: {e}")
+    
     # Load initial cache
     await read_tool_cache(force_reload=True)
     await read_mcp_servers_cache()

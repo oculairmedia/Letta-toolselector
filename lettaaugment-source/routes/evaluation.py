@@ -43,7 +43,7 @@ except ImportError:
 
 def configure(
     search_tools_func: Optional[Callable] = None,
-    bm25_vector_override_service: Optional[Callable] = None,
+    bm25_vector_override_service: Optional[Any] = None,
     cache_dir: Optional[str] = None
 ):
     """

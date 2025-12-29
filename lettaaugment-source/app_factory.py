@@ -70,7 +70,7 @@ def create_app(config: Optional[AppConfig] = None) -> Quart:
     services = ServiceContainer(config=config)
     
     # Store services in app context
-    app.services = services
+    app.services = services  # type: ignore[attr-defined]
     
     # Set global services (for backward compatibility)
     set_services(services)
@@ -128,10 +128,10 @@ def _register_lifecycle_hooks(app: Quart, config: AppConfig, services: ServiceCo
         # Initialize Letta SDK client function if enabled
         if config.letta.use_sdk:
             try:
-                from letta_sdk_client import LettaSdkClient
+                from letta_sdk_client import LettaSDKClient
                 
                 def get_letta_sdk_client():
-                    return LettaSdkClient(
+                    return LettaSDKClient(
                         base_url=config.letta.url,
                         api_key=config.letta.api_key
                     )

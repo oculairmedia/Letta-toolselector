@@ -39,12 +39,12 @@ except ImportError:
     CostCategory = None
     BudgetPeriod = None
     AlertLevel = None
-    def record_embedding_cost(*args, **kwargs):
-        return None
-    def record_weaviate_cost(*args, **kwargs):
-        return None
-    def record_letta_api_cost(*args, **kwargs):
-        return None
+    async def record_embedding_cost(*args, **kwargs) -> bool:
+        return False
+    async def record_weaviate_cost(*args, **kwargs) -> bool:
+        return False
+    async def record_letta_api_cost(*args, **kwargs) -> bool:
+        return False
 # Configure basic logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -56,12 +56,13 @@ from audit_logging import (
 )
 
 # Import connection test functions from config routes
-from routes.config import test_ollama_connection, test_weaviate_connection
+from routes.config import test_ollama_connection, test_weaviate_connection  # type: ignore[assignment]
 
 # Import Letta SDK client wrapper for SDK-based API calls
 # Feature flag to enable SDK migration (set USE_LETTA_SDK=true to enable)
 USE_LETTA_SDK = os.getenv('USE_LETTA_SDK', 'false').lower() == 'true'
 _letta_sdk_client = None
+get_letta_sdk_client = None  # Will be set if SDK is enabled
 
 # Tool search provider configuration
 # Options: 'weaviate' (default), 'letta', 'hybrid' (try Letta first, fallback to Weaviate)
@@ -76,6 +77,7 @@ if USE_LETTA_SDK or TOOL_SEARCH_PROVIDER in ('letta', 'hybrid'):
     except ImportError as e:
         logger.warning(f"Failed to import Letta SDK client, falling back to aiohttp: {e}")
         USE_LETTA_SDK = False
+        get_letta_sdk_client = None
         if TOOL_SEARCH_PROVIDER == 'letta':
             TOOL_SEARCH_PROVIDER = 'weaviate'
             logger.warning("TOOL_SEARCH_PROVIDER set to 'letta' but SDK import failed, falling back to 'weaviate'")
@@ -539,7 +541,7 @@ async def get_weaviate_index_status():
     """Get Weaviate index status."""
     try:
         config = {"url": os.getenv('WEAVIATE_URL', 'http://weaviate:8080/')}
-        result = await test_weaviate_connection(config)
+        result = await test_weaviate_connection(config)  # type: ignore[call-arg]
         if result["available"]:
             return {
                 "status": "healthy",
@@ -550,25 +552,6 @@ async def get_weaviate_index_status():
             return {"status": "unavailable", "error": result.get("error")}
     except Exception as e:
         return {"status": "error", "error": str(e)}
-
-def get_log_file_size():
-    """Get log file size."""
-    try:
-        # This would depend on your logging configuration
-        # For now, return placeholder
-        return {"size_mb": 0, "note": "log file size tracking not implemented"}
-    except Exception:
-        return {"size_mb": 0, "error": "unable to determine"}
-
-async def get_recent_error_count():
-    """Get recent error count from logs."""
-    # Placeholder implementation
-    return 0
-
-async def get_recent_warning_count():
-    """Get recent warning count from logs."""
-    # Placeholder implementation
-    return 0
 
 async def test_letta_connection():
     """Test Letta API connection."""
@@ -1207,7 +1190,7 @@ async def shutdown():
 # Cost control routes moved to routes/cost_control.py blueprint
 
 # Configuration validation helper functions
-async def perform_configuration_validation(config_type: str, field: str, value, context: dict = None):
+async def perform_configuration_validation(config_type: str, field: str, value, context: dict | None = None):
     """Perform comprehensive validation of configuration values."""
     import re
     from urllib.parse import urlparse
@@ -1514,7 +1497,7 @@ async def test_service_connection(service_type: str, config: dict):
         if service_type == "ollama":
             return await test_ollama_connection(config)
         elif service_type == "weaviate":
-            return await test_weaviate_connection(config)
+            return await test_weaviate_connection(config)  # type: ignore[call-arg]
         elif service_type == "letta_api":
             return await test_letta_connection()  # Uses environment variables
         elif service_type == "openai":

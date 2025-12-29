@@ -132,7 +132,7 @@ async def fetch_agent_tools(agent_id: str) -> List[Dict[str, Any]]:
 # Core Tool Operations
 # ============================================================================
 
-async def detach_tool(agent_id: str, tool_id: str, tool_name: str = None) -> Dict[str, Any]:
+async def detach_tool(agent_id: str, tool_id: str, tool_name: Optional[str] = None) -> Dict[str, Any]:
     """
     Detach a single tool from an agent.
     
@@ -351,7 +351,7 @@ async def process_tools(
     if tools_to_detach:
         logger.info(f"Executing {len(tools_to_detach)} detach operations in parallel...")
         detach_tasks = [
-            detach_tool(agent_id, tool.get("tool_id") or tool.get("id"))
+            detach_tool(agent_id, str(tool.get("tool_id") or tool.get("id") or ""))
             for tool in tools_to_detach
         ]
         raw_results = await asyncio.gather(*detach_tasks, return_exceptions=True)

@@ -6,10 +6,14 @@ This is the new entry point for the Tool Selector API server.
 It uses the app_factory pattern for better testability and modularity.
 
 Usage:
-    python main.py              # Run with default config from environment
-    USE_BLUEPRINTS=true python main.py  # Use factory-based blueprint registration
+    # Via Hypercorn (production - used by Dockerfile):
+    hypercorn main:app --bind 0.0.0.0:3001
     
-For backward compatibility, api_server.py can still be run directly.
+    # Direct execution (development):
+    python main.py
+    
+    # With blueprints enabled:
+    USE_BLUEPRINTS=true python main.py
 """
 
 import os
@@ -26,16 +30,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Import and create app at module level for Hypercorn compatibility
+# Hypercorn needs `main:app` to reference a module-level ASGI app
+from app_factory import create_app
+
+logger.info("Creating application via app_factory...")
+app = create_app()
+
 
 def main():
-    """Main entry point."""
-    # Import here to ensure logging is configured first
-    from app_factory import create_app
-    
-    # Create the application
-    logger.info("Creating application via app_factory...")
-    app = create_app()
-    
+    """Main entry point for direct execution."""
     # Configure Hypercorn
     port = int(os.getenv('PORT', 3001))
     config = Config()

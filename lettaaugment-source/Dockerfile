@@ -34,6 +34,10 @@ COPY --chown=app:app --from=builder /opt/venv /opt/venv
 
 # Copy application code
 COPY --chown=app:app *.py ./
+COPY --chown=app:app routes/ ./routes/
+COPY --chown=app:app services/ ./services/
+COPY --chown=app:app semantic_enrichment/ ./semantic_enrichment/
+COPY --chown=app:app time_service/ ./time_service/
 
 # Create and set permissions for the cache directory before switching user
 # This helps if the volume is new or doesn't have specific host permissions overriding it.

@@ -1,0 +1,76 @@
+{
+  "timestamp": "2025-12-29T00:00:00Z",
+  "version": "feature-LTSEL-1-shared-sdk-scaffold",
+  "description": "Performance baseline after shared SDK scaffold refactoring (81% complete)",
+  "environment": {
+    "api_endpoint": "http://localhost:8020",
+    "container": "weaviate-tools-api",
+    "test_file": "tests/performance/test_attachment_load.py"
+  },
+  "results": {
+    "sequential_baseline": {
+      "requests": 10,
+      "success_rate": 1.0,
+      "latency_ms": {
+        "min": 4.58,
+        "avg": 5.58,
+        "p50": 5.79,
+        "p95": 6.47,
+        "p99": 6.47,
+        "max": 6.47
+      },
+      "requests_per_second": 138.94
+    },
+    "concurrent_10": {
+      "requests": 10,
+      "success_rate": 1.0,
+      "latency_ms": {
+        "min": 194.05,
+        "avg": 835.87,
+        "p50": 900.54,
+        "p95": 1487.44,
+        "p99": 1487.44,
+        "max": 1487.44
+      },
+      "requests_per_second": 6.70,
+      "notes": "First concurrent test shows cold start / connection pool warming"
+    },
+    "concurrent_25": {
+      "requests": 25,
+      "success_rate": 1.0,
+      "latency_ms": {
+        "min": 30.91,
+        "avg": 41.95,
+        "p50": 40.82,
+        "p95": 55.77,
+        "p99": 58.80,
+        "max": 58.80
+      },
+      "requests_per_second": 395.55
+    },
+    "concurrent_50": {
+      "requests": 50,
+      "success_rate": 1.0,
+      "latency_ms": {
+        "min": 54.25,
+        "avg": 81.04,
+        "p50": 83.74,
+        "p95": 104.16,
+        "p99": 110.04,
+        "max": 110.04
+      },
+      "requests_per_second": 403.15
+    }
+  },
+  "thresholds": {
+    "concurrent_10_p95_max_ms": 5000,
+    "concurrent_25_p95_max_ms": 8000,
+    "concurrent_50_p95_max_ms": 15000,
+    "max_failure_rate": 0.05
+  },
+  "comparison_to_historical": {
+    "september_2025_search_latency_ms": 262.55,
+    "current_sequential_avg_ms": 5.58,
+    "improvement_factor": 47.05
+  }
+}

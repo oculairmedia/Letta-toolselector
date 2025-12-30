@@ -76,7 +76,7 @@ false_vector = batch_scores[:, token_false_id]
    - Wrong output parsing logic
    - Missing proper tokenization
 
-2. **`lettaaugment-source/weaviate_tool_search_with_reranking.py`** (Lines 130-148)
+2. **`tool-selector-api/weaviate_tool_search_with_reranking.py`** (Lines 130-148)
    - Improper query formatting for reranker
    - Suboptimal document preparation
 

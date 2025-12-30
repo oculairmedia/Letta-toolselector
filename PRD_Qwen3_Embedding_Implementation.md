@@ -17,7 +17,7 @@ The Letta Tool Selector currently uses Qwen3-Embedding-4B model but does not imp
 Based on code analysis, the following critical issues were identified:
 
 #### 1. Incorrect Instruction Format
-**File:** `lettaaugment-source/specialized_embedding.py`
+**File:** `tool-selector-api/specialized_embedding.py`
 **Issue:** Uses generic instruction templates instead of Qwen3's required "Instruct:" and "Query:" format.
 
 ```python
@@ -36,7 +36,7 @@ def get_detailed_instruct(task_description: str, query: str) -> str:
 ```
 
 #### 2. Wrong Embedding API Usage
-**File:** `lettaaugment-source/embedding_providers.py`
+**File:** `tool-selector-api/embedding_providers.py`
 **Issue:** Uses standard OpenAI-compatible API calls that don't implement Qwen3's last token pooling.
 
 ```python
@@ -48,7 +48,7 @@ response = await self.client.embeddings.create(
 ```
 
 #### 3. Query Contamination
-**File:** `lettaaugment-source/weaviate_tool_search.py`
+**File:** `tool-selector-api/weaviate_tool_search.py`
 **Issue:** Adds filler text that hurts recall with last token pooling embedders.
 
 ```python
@@ -57,7 +57,7 @@ enhanced_query = enhance_query_for_embedding(expanded_query)
 ```
 
 #### 4. Improper Tool Description Enhancement
-**File:** `lettaaugment-source/upload_tools_to_weaviate.py`
+**File:** `tool-selector-api/upload_tools_to_weaviate.py`
 **Issue:** Uses wrong enhancement format for tool descriptions.
 
 ```python
@@ -137,7 +137,7 @@ enhanced_description = enhance_tool_for_embedding(
 ### Phase 1: Core Infrastructure Changes
 
 #### 1.1 Update Specialized Embedding Module
-**File:** `lettaaugment-source/specialized_embedding.py`
+**File:** `tool-selector-api/specialized_embedding.py`
 **Changes Required:**
 - Replace `PromptTemplate` system with Qwen3 format functions
 - Implement `get_detailed_instruct(task_description: str, query: str) -> str`
@@ -162,7 +162,7 @@ def format_query_for_qwen3(query: str) -> str:
 ```
 
 #### 1.2 Update Embedding Providers
-**File:** `lettaaugment-source/embedding_providers.py`
+**File:** `tool-selector-api/embedding_providers.py`
 **Changes Required:**
 - Add Qwen3-specific embedding provider class
 - Implement proper last token pooling
@@ -189,7 +189,7 @@ class Qwen3EmbeddingProvider(OllamaEmbeddingProvider):
 ```
 
 #### 1.3 Update Search Functions
-**File:** `lettaaugment-source/weaviate_tool_search.py`
+**File:** `tool-selector-api/weaviate_tool_search.py`
 **Changes Required:**
 - Remove `enhance_query_for_embedding()` calls
 - Implement proper Qwen3 query formatting
@@ -203,7 +203,7 @@ class Qwen3EmbeddingProvider(OllamaEmbeddingProvider):
 ### Phase 2: Tool Upload and Enhancement
 
 #### 2.1 Update Tool Upload Process
-**File:** `lettaaugment-source/upload_tools_to_weaviate.py`
+**File:** `tool-selector-api/upload_tools_to_weaviate.py`
 **Changes Required:**
 - Modify tool description enhancement to use raw text
 - Remove instruction prefixes for tool descriptions
@@ -215,7 +215,7 @@ class Qwen3EmbeddingProvider(OllamaEmbeddingProvider):
 - Update schema to support new embedding format
 
 #### 2.2 Update API Server
-**File:** `lettaaugment-source/api_server.py`
+**File:** `tool-selector-api/api_server.py`
 **Changes Required:**
 - Update search endpoints to use new formatting
 - Add configuration endpoints for Qwen3 settings
@@ -306,11 +306,11 @@ QWEN3_MIGRATION_MODE=gradual   # immediate, gradual, disabled
 ## Appendix
 
 ### File References
-- `lettaaugment-source/specialized_embedding.py` - Core embedding enhancement logic
-- `lettaaugment-source/embedding_providers.py` - Embedding provider implementations
-- `lettaaugment-source/weaviate_tool_search.py` - Search functionality
-- `lettaaugment-source/upload_tools_to_weaviate.py` - Tool upload and enhancement
-- `lettaaugment-source/api_server.py` - API endpoints and configuration
+- `tool-selector-api/specialized_embedding.py` - Core embedding enhancement logic
+- `tool-selector-api/embedding_providers.py` - Embedding provider implementations
+- `tool-selector-api/weaviate_tool_search.py` - Search functionality
+- `tool-selector-api/upload_tools_to_weaviate.py` - Tool upload and enhancement
+- `tool-selector-api/api_server.py` - API endpoints and configuration
 
 ### Technical References
 - Qwen3-Embedding-4B Documentation

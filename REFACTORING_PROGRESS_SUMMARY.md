@@ -29,7 +29,7 @@ This document summarizes the comprehensive refactoring and enhancement work comp
 ### Session 1: Foundation & Bug Fixes
 
 #### LTSEL-27: Fixed Critical Set-to-List Conversion Bug
-**File**: `lettaaugment-source/api_server.py:1208-1217`
+**File**: `tool-selector-api/api_server.py:1208-1217`
 
 - **Problem**: Double conversion causing mismatched tool ID logging
 - **Fix**: Convert set to list once, reuse for result mapping
@@ -44,7 +44,7 @@ This document summarizes the comprehensive refactoring and enhancement work comp
 - Verified working in production logs
 
 #### LTSEL-14: Enhanced Health Endpoint
-**File**: `lettaaugment-source/api_server.py:7145-7169`
+**File**: `tool-selector-api/api_server.py:7145-7169`
 
 **Added Fields**:
 - `version`: "1.0.0"
@@ -84,7 +84,7 @@ This document summarizes the comprehensive refactoring and enhancement work comp
 **Features**: Real API integration, proper fixtures, tagged for CI
 
 #### LTSEL-11: Structured Audit Logging System
-**File**: `lettaaugment-source/audit_logging.py`
+**File**: `tool-selector-api/audit_logging.py`
 
 **Event Types**:
 - `tool_management`: Individual tool operations
@@ -121,7 +121,7 @@ This document summarizes the comprehensive refactoring and enhancement work comp
 ### Session 2: Advanced Features & Testing
 
 #### LTSEL-7: Pre-Attach Pruning Implementation
-**File**: `lettaaugment-source/api_server.py:881-987`
+**File**: `tool-selector-api/api_server.py:881-987`
 
 **What It Does**:
 - Calculates projected tool counts BEFORE attachment
@@ -174,7 +174,7 @@ if projected_total > MAX_TOTAL_TOOLS or projected_mcp > MAX_MCP_TOOLS:
 **Coverage**: All enforcement scenarios with realistic data
 
 #### Audit Logging Integration - Attach Endpoint
-**File**: `lettaaugment-source/api_server.py:990-1043`
+**File**: `tool-selector-api/api_server.py:990-1043`
 
 **Events Emitted**:
 1. **Successful attachments** (batch)
@@ -196,7 +196,7 @@ if projected_total > MAX_TOTAL_TOOLS or projected_mcp > MAX_MCP_TOOLS:
 - Structured JSON format
 
 #### Audit Logging Integration - Prune Endpoint
-**File**: `lettaaugment-source/api_server.py:1459-1528`
+**File**: `tool-selector-api/api_server.py:1459-1528`
 
 **Events Emitted**:
 1. **Pruning summary event**
@@ -289,7 +289,7 @@ if projected_total > MAX_TOTAL_TOOLS or projected_mcp > MAX_MCP_TOOLS:
 1. `API_CONTRACT.md` - API specification
 2. `COMPOSE_SETUP.md` - Deployment guide
 3. `docs/OPERATIONAL_RUNBOOKS.md` - Operations manual
-4. `lettaaugment-source/audit_logging.py` - Audit system (203 lines)
+4. `tool-selector-api/audit_logging.py` - Audit system (203 lines)
 5. `scripts/validate_config.py` - Config validation script (370 lines)
 6. `tests/integration/test_tool_limits.py` - Integration tests
 7. `tests/integration/test_preattach_pruning.py` - Pre-attach tests
@@ -300,7 +300,7 @@ if projected_total > MAX_TOTAL_TOOLS or projected_mcp > MAX_MCP_TOOLS:
 12. `REFACTORING_PROGRESS_SUMMARY.md` - This document
 
 ### Modified Files (6)
-1. `lettaaugment-source/api_server.py`
+1. `tool-selector-api/api_server.py`
    - Pre-attach pruning logic (lines 881-987)
    - Audit event emissions (attach endpoint, lines 990-1043)
    - Audit event emissions (prune endpoint, lines 1459-1528)
@@ -548,7 +548,7 @@ pytest tests/integration/ -v -m integration
 pytest tests/integration/test_preattach_pruning.py -v
 
 # With coverage
-pytest tests/integration/ -v --cov=lettaaugment-source
+pytest tests/integration/ -v --cov=tool-selector-api
 ```
 
 ### Running Unit Tests
@@ -583,7 +583,7 @@ pytest tests/integration/test_tool_limits.py \
        tests/integration/test_prune_contract.py \
        tests/unit/test_protected_tools.py \
        tests/unit/test_limit_enforcement.py \
-       -v --cov=lettaaugment-source --cov-report=html
+       -v --cov=tool-selector-api --cov-report=html
 ```
 
 ---

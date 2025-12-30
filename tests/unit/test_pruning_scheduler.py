@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch, AsyncMock
 import os
 import sys
 
-# Add lettaaugment-source to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'lettaaugment-source'))
+# Add tool-selector-api to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'tool-selector-api'))
 
 from pruning_scheduler import (
     PruningScheduler,

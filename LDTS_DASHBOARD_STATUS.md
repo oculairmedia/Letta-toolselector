@@ -12,16 +12,16 @@ Scope: Map key LDTS issues to current code evidence and identify gaps blocking t
 
 ## Implemented Foundations (evidence in repo)
 - Embedding provider factory (OpenAI + Ollama)
-  - File: lettaaugment-source/embedding_providers.py
+  - File: tool-selector-api/embedding_providers.py
   - Highlights: `EmbeddingProviderFactory.create()` / `create_from_env()`, async provider interface, batching, env overrides.
 - Weaviate search with optional client-side reranking
-  - File: lettaaugment-source/weaviate_tool_search_with_reranking.py
+  - File: tool-selector-api/weaviate_tool_search_with_reranking.py
   - Two-stage retrieval + HTTP reranker adapter; flags: ENABLE_RERANKING, RERANK_INITIAL_LIMIT, RERANK_TOP_K.
 - Base Weaviate hybrid search (non-reranking)
-  - File: lettaaugment-source/weaviate_tool_search.py
+  - File: tool-selector-api/weaviate_tool_search.py
   - Uses v4 client, HybridFusion, query expansion.
 - API server (Quart/Hypercorn) search and attach flows
-  - File: lettaaugment-source/api_server.py
+  - File: tool-selector-api/api_server.py
   - Provides /api/v1/tools/search; recognizes `rerank_score` when present in results.
 - Compose/env wiring for providers and reranking
   - Files: compose.yaml, compose-with-reranker.yaml, .env.example
@@ -153,10 +153,10 @@ Scope: Map key LDTS issues to current code evidence and identify gaps blocking t
    - POST /api/v1/config/validate (schema-based)
 
 ## Evidence Pointers (files)
-- Embedding providers: lettaaugment-source/embedding_providers.py
-- Weaviate search (base): lettaaugment-source/weaviate_tool_search.py
-- Weaviate search (rerank): lettaaugment-source/weaviate_tool_search_with_reranking.py
-- API server: lettaaugment-source/api_server.py
+- Embedding providers: tool-selector-api/embedding_providers.py
+- Weaviate search (base): tool-selector-api/weaviate_tool_search.py
+- Weaviate search (rerank): tool-selector-api/weaviate_tool_search_with_reranking.py
+- API server: tool-selector-api/api_server.py
 - Compose/env: compose.yaml, compose-with-reranker.yaml, .env.example
 - Docs: EMBEDDINGS_USAGE.md, GRAPHITI_EMBEDDING_COMPATIBILITY.md, RERANKER_TESTING_DASHBOARD_PRD.md
 

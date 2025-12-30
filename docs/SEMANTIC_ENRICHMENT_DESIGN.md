@@ -306,7 +306,7 @@ GET /api/v1/enrichment/stats
 ## Files to Create
 
 ```
-lettaaugment-source/
+tool-selector-api/
 ├── semantic_enrichment/
 │   ├── __init__.py
 │   ├── server_profiler.py      # MCP server profiling

@@ -81,7 +81,7 @@ pytest tests/ -v
 pytest tests/unit/ -v -m unit
 
 # Run with coverage
-pytest tests/ --cov=lettaaugment-source --cov-report=html
+pytest tests/ --cov=tool-selector-api --cov-report=html
 
 # Run specific categories
 pytest -m integration              # Integration tests only
@@ -119,7 +119,7 @@ git log --oneline feature/improve-test-coverage
 
 3. **Run Coverage Analysis**:
    ```bash
-   pytest tests/unit/ --cov=lettaaugment-source --cov-report=html
+   pytest tests/unit/ --cov=tool-selector-api --cov-report=html
    open htmlcov/index.html
    ```
 

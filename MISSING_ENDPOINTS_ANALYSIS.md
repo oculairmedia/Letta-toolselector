@@ -25,7 +25,7 @@ This document outlines the API endpoints that the frontend expects but are not c
 - `POST /api/v1/tools/refresh` - Refresh tool index
 
 **Current status:** 
-- These exist in `lettaaugment-source/api_server.py` but not in dashboard backend
+- These exist in `tool-selector-api/api_server.py` but not in dashboard backend
 - Dashboard backend has `/search` and `/rerank` but frontend calls `/tools/search`
 
 #### 2. Configuration Presets

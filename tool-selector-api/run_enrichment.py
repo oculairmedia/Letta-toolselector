@@ -224,7 +224,7 @@ def main():
     # Check tool cache exists
     if not os.path.exists(args.tool_cache):
         # Try alternative path
-        alt_path = "/opt/stacks/lettatoolsselector/lettaaugment-source/cache/tool_cache.json"
+        alt_path = "/opt/stacks/lettatoolsselector/tool-selector-api/cache/tool_cache.json"
         if os.path.exists(alt_path):
             args.tool_cache = alt_path
         else:

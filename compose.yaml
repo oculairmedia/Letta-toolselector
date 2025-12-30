@@ -16,7 +16,7 @@ services:
       OLLAMA_API_ENDPOINT: http://192.168.50.80:11434
       TEXT2VEC_OLLAMA_API_ENDPOINT: http://192.168.50.80:11434
       # Point to our Ollama reranker adapter
-      RERANKER_INFERENCE_API: http://reranker-ollama-adapter:8080
+      RERANKER_INFERENCE_API: http://reranker:8080
     volumes:
       - weaviate_data:/var/lib/weaviate
     healthcheck:
@@ -30,15 +30,16 @@ services:
       retries: 5
       start_period: 40s
     depends_on:
-      reranker-ollama-adapter:
+      reranker:
         condition: service_healthy
     networks:
       - letta-tools
-  reranker-ollama-adapter:
-    image: ghcr.io/oculairmedia/letta-toolselector-reranker-adapter:main
-    container_name: ollama-reranker-adapter
+
+  reranker:
+    image: ghcr.io/oculairmedia/letta-toolselector-reranker:main
+    container_name: letta-toolselector-reranker
     ports:
-      - 8091:8080 # Expose on 8091 for debugging
+      - 8091:8080
     environment:
       - OLLAMA_BASE_URL=http://192.168.50.80:11434
       - OLLAMA_MODEL=dengcao/Qwen3-Reranker-4B:Q5_K_M
@@ -60,9 +61,10 @@ services:
       start_period: 10s
     networks:
       - letta-tools
-  api-server:
-    image: ghcr.io/oculairmedia/letta-toolselector-api-server:feature-LTSEL-1-shared-sdk-scaffold
-    container_name: weaviate-tools-api
+
+  tool-selector-api:
+    image: ghcr.io/oculairmedia/letta-toolselector-api:main
+    container_name: letta-toolselector-api
     ports:
       - 8020:3001
     environment:
@@ -79,74 +81,68 @@ services:
       - EXCLUDE_LETTA_CORE_TOOLS=${EXCLUDE_LETTA_CORE_TOOLS:-true}
       - EXCLUDE_OFFICIAL_TOOLS=${EXCLUDE_OFFICIAL_TOOLS:-true}
       - MANAGE_ONLY_MCP_TOOLS=${MANAGE_ONLY_MCP_TOOLS:-true}
-      - NEVER_DETACH_TOOLS=${NEVER_DETACH_TOOLS:-find_tools,Read,Write,Edit,Glob,Grep,Bash,BashOutput,KillBash,TodoWrite,Skill,AskUserQuestion,memory,memory_apply_patch,conversation_search,archival_memory_search,archival_memory_insert,find_agents,matrix_messaging,matrix_agent_message}  # Comma-separated tool names to never detach
-      - PROTECTED_TOOLS=${PROTECTED_TOOLS:-find_tools,Read,Write,Edit,Glob,Grep,Bash,BashOutput,KillBash,TodoWrite,Skill,AskUserQuestion,memory,memory_apply_patch,conversation_search,archival_memory_search,archival_memory_insert,find_agents,matrix_messaging,matrix_agent_message}  # Alias for NEVER_DETACH_TOOLS
+      - NEVER_DETACH_TOOLS=${NEVER_DETACH_TOOLS:-find_tools,Read,Write,Edit,Glob,Grep,Bash,BashOutput,KillBash,TodoWrite,Skill,AskUserQuestion,memory,memory_apply_patch,conversation_search,archival_memory_search,archival_memory_insert,find_agents,matrix_messaging,matrix_agent_message}
+      - PROTECTED_TOOLS=${PROTECTED_TOOLS:-find_tools,Read,Write,Edit,Glob,Grep,Bash,BashOutput,KillBash,TodoWrite,Skill,AskUserQuestion,memory,memory_apply_patch,conversation_search,archival_memory_search,archival_memory_insert,find_agents,matrix_messaging,matrix_agent_message}
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-ollama}
       - OLLAMA_EMBEDDING_HOST=${OLLAMA_EMBEDDING_HOST:-192.168.50.80}
       - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-dengcao/Qwen3-Embedding-4B:Q4_K_M}
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-2560}
       - USE_OLLAMA_EMBEDDINGS=${USE_OLLAMA_EMBEDDINGS:-true}
-      - ENABLE_RERANKING=${ENABLE_RERANKING:-false}  # Disabled: qwen3-reranker demotes exact matches
-      - ENABLE_RERANKING_BY_DEFAULT=${ENABLE_RERANKING_BY_DEFAULT:-false}  # Disabled: hybrid search with BM25 boosting works better
-      - RERANK_INITIAL_LIMIT=${RERANK_INITIAL_LIMIT:-50}  # Fetch more candidates for better reranking
+      - ENABLE_RERANKING=${ENABLE_RERANKING:-false}
+      - ENABLE_RERANKING_BY_DEFAULT=${ENABLE_RERANKING_BY_DEFAULT:-false}
+      - RERANK_INITIAL_LIMIT=${RERANK_INITIAL_LIMIT:-50}
       - RERANK_TOP_K=${RERANK_TOP_K:-10}
       - RERANKER_MODEL=${RERANKER_MODEL:-qwen3-reranker-4b}
-      - RERANKER_PROVIDER=${RERANKER_PROVIDER:-vllm}  # vllm (recommended) or ollama
-      - RERANKER_URL=${RERANKER_URL:-http://100.81.139.20:11435/v1/rerank}  # vLLM reranker endpoint
+      - RERANKER_PROVIDER=${RERANKER_PROVIDER:-vllm}
+      - RERANKER_URL=${RERANKER_URL:-http://100.81.139.20:11435/v1/rerank}
       - RERANKER_TIMEOUT=${RERANKER_TIMEOUT:-30.0}
       - RERANKER_TEMPERATURE=${RERANKER_TEMPERATURE:-0.1}
-      - OLLAMA_RERANKER_BASE_URL=${OLLAMA_RERANKER_BASE_URL:-http://ollama-reranker-adapter:8080}  # Legacy Ollama adapter
+      - OLLAMA_RERANKER_BASE_URL=${OLLAMA_RERANKER_BASE_URL:-http://reranker:8080}
       - LETTA_DIRECT_MESSAGE_URL=${LETTA_DIRECT_MESSAGE_URL:-http://192.168.50.90:8283}
-      - MATRIX_BRIDGE_WEBHOOK_URL=${MATRIX_BRIDGE_WEBHOOK_URL:-}  # Optional: URL to notify Matrix bridge of new runs for cross-run tracking
+      - MATRIX_BRIDGE_WEBHOOK_URL=${MATRIX_BRIDGE_WEBHOOK_URL:-}
     restart: unless-stopped
     volumes:
       - ./.env:/app/.env:ro
-      - tool_cache_volume:/app/runtime_cache # Mount shared volume to the correct path
-      - ./lettaaugment-source:/app:rw # Mount entire source directory with our embedding providers
-    # healthcheck:
-    #   test: ["CMD", "python", "-c", "import socket; s = socket.socket(); s.settimeout(3); s.connect(('localhost', 3001)); s.close()"]
-    #   interval: 30s
-    #   timeout: 10s
-    #   retries: 5
-    #   start_period: 120s
+      - tool_cache_volume:/app/runtime_cache
+      - ./tool-selector-api:/app:rw
     depends_on:
       weaviate:
         condition: service_healthy
     networks:
       - letta-tools
-  sync-service:
-    image: ghcr.io/oculairmedia/letta-toolselector-sync-service:feature-LTSEL-1-shared-sdk-scaffold
-    container_name: weaviate-tools-sync
+
+  tool-sync:
+    image: ghcr.io/oculairmedia/letta-toolselector-sync:main
+    container_name: letta-toolselector-sync
     command: python sync_service.py
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LETTA_API_URL=${LETTA_API_URL}
       - LETTA_PASSWORD=${LETTA_PASSWORD}
-      - API_URL=http://api-server:3001
+      - API_URL=http://tool-selector-api:3001
       - SYNC_INTERVAL=300
-      # Enrichment settings (triggers enrichment when new tools are detected)
       - ENABLE_AUTO_ENRICHMENT=${ENABLE_AUTO_ENRICHMENT:-false}
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://192.168.50.90:8082/v1}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-dummy}
       - ENRICHMENT_CACHE_DIR=/app/enrichment_cache
     volumes:
       - ./.env:/app/.env:ro
-      - tool_cache_volume:/app/runtime_cache # CORRECTED PATH
-      - enrichment_cache_volume:/app/enrichment_cache # Persistent enrichment cache
-      - ./lettaaugment-source:/app:rw # Mount entire source directory with embedding providers
+      - tool_cache_volume:/app/runtime_cache
+      - enrichment_cache_volume:/app/enrichment_cache
+      - ./tool-selector-api:/app:rw
     restart: unless-stopped
     depends_on:
-      api-server:
+      tool-selector-api:
         condition: service_started
     networks:
       - letta-tools
-  # Optional: Standalone enrichment service for scheduled/manual enrichment
-  enrichment-service:
-    image: ghcr.io/oculairmedia/letta-toolselector-sync-service:feature-LTSEL-1-shared-sdk-scaffold
-    container_name: weaviate-tools-enrichment
+
+  semantic-enrichment:
+    image: ghcr.io/oculairmedia/letta-toolselector-sync:main
+    container_name: letta-toolselector-enrichment
     command: python enrichment_service.py
     profiles:
-      - enrichment  # Only starts when explicitly enabled with --profile enrichment
+      - enrichment
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://192.168.50.90:8082/v1}
@@ -160,14 +156,15 @@ services:
       - ./.env:/app/.env:ro
       - tool_cache_volume:/app/runtime_cache
       - enrichment_cache_volume:/app/enrichment_cache
-      - ./lettaaugment-source:/app:rw
+      - ./tool-selector-api:/app:rw
     restart: unless-stopped
     depends_on:
       weaviate:
         condition: service_healthy
     networks:
       - letta-tools
-  worker-service:
+
+  task-worker:
     build:
       context: .
       dockerfile: worker-service/Dockerfile
@@ -199,14 +196,15 @@ services:
       retries: 3
       start_period: 10s
     depends_on:
-      api-server:
+      tool-selector-api:
         condition: service_started
     networks:
       - letta-tools
     restart: unless-stopped
+
   time-service:
-    image: ghcr.io/oculairmedia/letta-toolselector-api-server:feature-LTSEL-1-shared-sdk-scaffold
-    container_name: weaviate-tools-time
+    image: ghcr.io/oculairmedia/letta-toolselector-api:main
+    container_name: letta-toolselector-time
     command: python time_memory_service.py
     environment:
       - WEAVIATE_URL=http://weaviate:8080/
@@ -217,16 +215,17 @@ services:
       - UPDATE_INTERVAL=60
     volumes:
       - ./.env:/app/.env:ro
-      - ./lettaaugment-source/time_memory_service.py:/app/time_memory_service.py:ro
+      - ./tool-selector-api/time_memory_service.py:/app/time_memory_service.py:ro
     restart: unless-stopped
     depends_on:
       weaviate:
         condition: service_healthy
     networks:
       - letta-tools
-  mcp-server:
-    image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:main
-    container_name: toolselector-mcp
+
+  tool-selector-mcp:
+    image: ghcr.io/oculairmedia/letta-toolselector-mcp:main
+    container_name: letta-toolselector-mcp
     ports:
       - 3020:3020
     environment:
@@ -234,10 +233,10 @@ services:
       - NODE_ENV=production
       - LETTA_API_URL=${LETTA_API_URL}
       - LETTA_PASSWORD=${LETTA_PASSWORD}
-      - API_URL=http://api-server:3001
-      - TOOLS_API_BASE_URL=http://api-server:3001
+      - API_URL=http://tool-selector-api:3001
+      - TOOLS_API_BASE_URL=http://tool-selector-api:3001
       - TOOLS_API_ALLOW_INSECURE_HTTP=true
-      - WORKER_SERVICE_URL=http://worker-service:3021
+      - WORKER_SERVICE_URL=http://task-worker:3021
       - WORKER_REQUEST_TIMEOUT_MS=${WORKER_REQUEST_TIMEOUT_MS:-15000}
     restart: unless-stopped
     labels:
@@ -258,14 +257,15 @@ services:
       start_period: 10s
     networks:
       - letta-tools
-  dashboard-backend:
-    image: ghcr.io/oculairmedia/letta-toolselector-dashboard-backend:main
-    container_name: letta-toolselector-dashboard-backend
+
+  dashboard-api:
+    image: ghcr.io/oculairmedia/letta-toolselector-dashboard-api:main
+    container_name: letta-toolselector-dashboard-api
     ports:
       - 8030:8030
     environment:
       - LDTS_API_URL=http://192.168.50.90:8020
-      - LDTS_MCP_URL=http://mcp-server:3020/mcp
+      - LDTS_MCP_URL=http://tool-selector-mcp:3020/mcp
       - WEAVIATE_URL=http://weaviate:8080
       - LETTA_API_URL=${LETTA_API_URL}
       - LETTA_PASSWORD=${LETTA_PASSWORD}
@@ -288,19 +288,20 @@ services:
       retries: 3
       start_period: 15s
     depends_on:
-      api-server:
+      tool-selector-api:
         condition: service_started
-      worker-service:
+      task-worker:
         condition: service_healthy
-      mcp-server:
+      tool-selector-mcp:
         condition: service_healthy
       weaviate:
         condition: service_healthy
     networks:
       - letta-tools
-  frontend:
-    image: ghcr.io/oculairmedia/letta-toolselector-frontend:main
-    container_name: letta-toolselector-frontend
+
+  dashboard-ui:
+    image: ghcr.io/oculairmedia/letta-toolselector-dashboard-ui:main
+    container_name: letta-toolselector-dashboard-ui
     ports:
       - 8406:80
     environment:
@@ -326,14 +327,16 @@ services:
       retries: 3
       start_period: 15s
     depends_on:
-      dashboard-backend:
+      dashboard-api:
         condition: service_healthy
     networks:
       - letta-tools
+
 networks:
   letta-tools:
     driver: bridge
+
 volumes:
   weaviate_data: null
-  tool_cache_volume: null # Define the shared volume
-  enrichment_cache_volume: null # Persistent cache for semantic enrichment
+  tool_cache_volume: null
+  enrichment_cache_volume: null

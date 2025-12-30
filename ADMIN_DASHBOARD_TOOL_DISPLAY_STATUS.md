@@ -10,7 +10,7 @@ This document provides a comprehensive analysis of the current state of the admi
 
 #### 1. Frontend Tool Browser Component
 
-**Location**: `dashboard-frontend/src/components/ToolBrowser/ToolBrowser.tsx`
+**Location**: `dashboard-ui/src/components/ToolBrowser/ToolBrowser.tsx`
 
 The Tool Browser is a fully-featured React component with comprehensive functionality:
 
@@ -40,7 +40,7 @@ const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
 #### 2. Navigation Integration
 
-**Location**: `dashboard-frontend/src/App.tsx`
+**Location**: `dashboard-ui/src/App.tsx`
 
 The Tool Browser is fully integrated into the main dashboard navigation as the second menu item:
 
@@ -55,7 +55,7 @@ const navigationItems = [
 
 #### 3. Data Types & Interfaces
 
-**Location**: `dashboard-frontend/src/types/index.ts`
+**Location**: `dashboard-ui/src/types/index.ts`
 
 Comprehensive TypeScript interfaces for tool data:
 
@@ -84,7 +84,7 @@ export interface ToolDetailResponse extends ExtendedTool {
 
 #### 4. API Service Layer
 
-**Location**: `dashboard-frontend/src/services/api.ts`
+**Location**: `dashboard-ui/src/services/api.ts`
 
 Complete API service implementation for all tool browser operations:
 
@@ -110,7 +110,7 @@ async refreshToolIndex(): Promise<void>
 
 #### 5. React Query Hooks
 
-**Location**: `dashboard-frontend/src/hooks/useApi.ts`
+**Location**: `dashboard-ui/src/hooks/useApi.ts`
 
 Optimized data fetching with caching and error handling:
 
@@ -204,7 +204,7 @@ The frontend expects these endpoints to be available at the dashboard backend:
 
 #### Current Workaround
 
-Some tool-related endpoints exist in `lettaaugment-source/api_server.py` but are not integrated into the dashboard backend:
+Some tool-related endpoints exist in `tool-selector-api/api_server.py` but are not integrated into the dashboard backend:
 
 ```python
 @app.route('/api/v1/tools', methods=['GET'])
@@ -248,7 +248,7 @@ The system has multiple data sources for tool information:
 
 1. **Weaviate Vector Database** - Stores tool embeddings and metadata
 2. **Letta API** - Source of truth for tool registration and schemas
-3. **Tool Cache** - Local cache for performance (`lettaaugment-source/`)
+3. **Tool Cache** - Local cache for performance (`tool-selector-api/`)
 4. **Tool Inventory Browser** - Enhanced metadata management (`data-management/browser/`)
 
 ### 🎯 **Implementation Requirements**

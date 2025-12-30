@@ -557,12 +557,12 @@ async def embed_texts(texts: List[str], provider_name: Optional[str] = None) -> 
 async def embed_text(text: str, provider_name: Optional[str] = None) -> EmbeddingResult:
     """Embed single text using global manager"""
     return await get_embedding_manager().embed_single_text(text, provider_name)
-# --- Shim added to provide EmbeddingProviderFactory compatibility with lettaaugment-source ---
+# --- Shim added to provide EmbeddingProviderFactory compatibility with tool-selector-api ---
 class EmbeddingProviderFactory:
     """
     Compatibility shim so that 'from embedding_providers import EmbeddingProviderFactory'
     works for modules (e.g. upload_tools_to_weaviate.py) that expect the factory API
-    from lettaaugment-source.
+    from tool-selector-api.
 
     This shim delegates actual embedding work to the already-initialized global
     MultiProviderEmbeddingManager (if available). It intentionally provides only
@@ -632,7 +632,7 @@ class EmbeddingProviderFactory:
             # Manager not initialized; return common defaults
             return ["openai", "ollama", "huggingface"]
 
-# Convenience functions mirroring lettaaugment-source API expectations
+# Convenience functions mirroring tool-selector-api API expectations
 async def get_embedding_for_text(text: str, provider: Optional[str] = None) -> List[float]:
     p = EmbeddingProviderFactory.create(provider) if provider else EmbeddingProviderFactory.create_from_env()
     try:

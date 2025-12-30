@@ -9,10 +9,8 @@ services:
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
       PERSISTENCE_DATA_PATH: /var/lib/weaviate
       DEFAULT_VECTORIZER_MODULE: text2vec-ollama
-      # Enable reranker-transformers module
       ENABLE_MODULES: text2vec-ollama,text2vec-openai,reranker-transformers
-      # Point to our Ollama adapter
-      RERANKER_INFERENCE_API: http://reranker-ollama-adapter:8080
+      RERANKER_INFERENCE_API: http://reranker:8080
       CLUSTER_HOSTNAME: node1
       READINESS_MAX_WAIT_SECS: 300
     volumes:
@@ -28,18 +26,16 @@ services:
       retries: 5
       start_period: 40s
     depends_on:
-      reranker-ollama-adapter:
+      reranker:
         condition: service_healthy
     networks:
       - letta-tools
 
-  # NEW: Ollama Reranker Adapter Service
-  reranker-ollama-adapter:
-    # Use published container with panic fixes
-    image: ghcr.io/oculairmedia/letta-toolselector-reranker-adapter:latest
-    container_name: ollama-reranker-adapter
+  reranker:
+    image: ghcr.io/oculairmedia/letta-toolselector-reranker:latest
+    container_name: letta-toolselector-reranker
     ports:
-      - 8091:8080  # Expose on 8091 for debugging
+      - 8091:8080
     environment:
       - OLLAMA_BASE_URL=http://192.168.50.80:11434
       - OLLAMA_MODEL=dengcao/Qwen3-Reranker-4B:Q5_K_M
@@ -58,9 +54,9 @@ services:
     networks:
       - letta-tools
 
-  api-server:
-    image: ghcr.io/oculairmedia/letta-toolselector-api-server:latest
-    container_name: weaviate-tools-api
+  tool-selector-api:
+    image: ghcr.io/oculairmedia/letta-toolselector-api:latest
+    container_name: letta-toolselector-api
     ports:
       - 8020:3001
     environment:
@@ -77,13 +73,11 @@ services:
       - EXCLUDE_LETTA_CORE_TOOLS=${EXCLUDE_LETTA_CORE_TOOLS:-true}
       - EXCLUDE_OFFICIAL_TOOLS=${EXCLUDE_OFFICIAL_TOOLS:-true}
       - MANAGE_ONLY_MCP_TOOLS=${MANAGE_ONLY_MCP_TOOLS:-true}
-      # Embedding Provider Configuration
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-ollama}
       - OLLAMA_EMBEDDING_HOST=${OLLAMA_EMBEDDING_HOST:-192.168.50.80}
       - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-dengcao/Qwen3-Embedding-4B:Q4_K_M}
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-2560}
       - USE_OLLAMA_EMBEDDINGS=${USE_OLLAMA_EMBEDDINGS:-true}
-      # Reranking Configuration
       - ENABLE_RERANKING=${ENABLE_RERANKING:-true}
       - RERANK_INITIAL_LIMIT=${RERANK_INITIAL_LIMIT:-30}
       - RERANK_TOP_K=${RERANK_TOP_K:-10}
@@ -91,37 +85,37 @@ services:
     volumes:
       - ./.env:/app/.env:ro
       - tool_cache_volume:/app/runtime_cache
-      - ./lettaaugment-source:/app:rw
+      - ./tool-selector-api:/app:rw
     depends_on:
       weaviate:
         condition: service_healthy
     networks:
       - letta-tools
 
-  sync-service:
-    image: ghcr.io/oculairmedia/letta-toolselector-sync-service:latest
-    container_name: weaviate-tools-sync
+  tool-sync:
+    image: ghcr.io/oculairmedia/letta-toolselector-sync:latest
+    container_name: letta-toolselector-sync
     command: python sync_service.py
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LETTA_API_URL=${LETTA_API_URL}
       - LETTA_PASSWORD=${LETTA_PASSWORD}
-      - API_URL=http://api-server:3001
+      - API_URL=http://tool-selector-api:3001
       - SYNC_INTERVAL=300
     volumes:
       - ./.env:/app/.env:ro
       - tool_cache_volume:/app/runtime_cache
-      - ./lettaaugment-source:/app:rw
+      - ./tool-selector-api:/app:rw
     restart: unless-stopped
     depends_on:
-      api-server:
+      tool-selector-api:
         condition: service_started
     networks:
       - letta-tools
 
   time-service:
-    image: ghcr.io/oculairmedia/letta-toolselector-api-server:latest
-    container_name: weaviate-tools-time
+    image: ghcr.io/oculairmedia/letta-toolselector-api:latest
+    container_name: letta-toolselector-time
     command: python time_memory_service.py
     environment:
       - WEAVIATE_URL=http://weaviate:8080/
@@ -139,9 +133,9 @@ services:
     networks:
       - letta-tools
 
-  mcp-server:
-    image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:latest
-    container_name: toolselector-mcp
+  tool-selector-mcp:
+    image: ghcr.io/oculairmedia/letta-toolselector-mcp:latest
+    container_name: letta-toolselector-mcp
     ports:
       - 3020:3020
     environment:

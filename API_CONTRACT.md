@@ -208,6 +208,6 @@ Tools are **never detached** if they match:
 
 ## References
 
-- **Implementation**: `/opt/stacks/lettatoolsselector/lettaaugment-source/api_server.py`
+- **Implementation**: `/opt/stacks/lettatoolsselector/tool-selector-api/api_server.py`
 - **Client**: `/opt/stacks/letta-webhook-receiver-new` (webhook receiver)
 - **Related**: See `LTSEL-9` in Huly for contract enforcement tracking

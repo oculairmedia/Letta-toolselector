@@ -92,7 +92,7 @@ These files are kept with `.deprecated` suffix for reference only.
 | Service | Container Name | Port | Description |
 |---------|---------------|------|-------------|
 | **reranker-ollama-adapter** | ollama-reranker-adapter | 8091 | Ollama-based reranking |
-| **dashboard-frontend** | letta-toolselector-frontend | - | Admin UI (if enabled) |
+| **dashboard-ui** | letta-toolselector-frontend | - | Admin UI (if enabled) |
 | **dashboard-backend** | letta-toolselector-dashboard-backend | - | Dashboard API (if enabled) |
 | **time-service** | weaviate-tools-time | - | Time-based memory updates |
 

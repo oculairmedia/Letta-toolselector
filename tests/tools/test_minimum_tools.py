@@ -7,8 +7,8 @@ import os
 import sys
 import logging
 
-# Add the lettaaugment-source directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'lettaaugment-source'))
+# Add the tool-selector-api directory to the path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tool-selector-api'))
 
 from api_server import _perform_tool_pruning
 

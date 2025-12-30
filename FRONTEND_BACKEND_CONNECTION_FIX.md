@@ -164,7 +164,7 @@ curl http://localhost:8030/api/v1/tools
 
 ### 4. Fix Frontend Proxy Configuration (Optional)
 
-**File**: `dashboard-frontend/package.json`
+**File**: `dashboard-ui/package.json`
 
 **Current**:
 ```json
@@ -181,7 +181,7 @@ curl http://localhost:8030/api/v1/tools
 ### 5. Restart Frontend with Correct Environment
 
 ```bash
-cd dashboard-frontend
+cd dashboard-ui
 PORT=8406 REACT_APP_API_BASE_URL=http://localhost:8030 npm start
 ```
 

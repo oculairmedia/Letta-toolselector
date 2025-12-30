@@ -18,7 +18,7 @@ from typing import List
 # Add parent directory to path for imports
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "lettaaugment-source"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "tool-selector-api"))
 
 from embedding_providers import (
     EmbeddingResult,

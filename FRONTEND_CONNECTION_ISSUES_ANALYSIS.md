@@ -7,8 +7,8 @@ The frontend dashboard is throwing `ERR_CONNECTION_REFUSED` errors when trying t
 ## Root Cause Analysis
 
 ### 1. Configuration Mismatch
-- **Frontend API Service**: Defaults to `http://localhost:8030` (line 19 in `dashboard-frontend/src/services/api.ts`)
-- **Frontend Proxy**: Configured to `http://192.168.50.90:8020` (line 52 in `dashboard-frontend/package.json`)
+- **Frontend API Service**: Defaults to `http://localhost:8030` (line 19 in `dashboard-ui/src/services/api.ts`)
+- **Frontend Proxy**: Configured to `http://192.168.50.90:8020` (line 52 in `dashboard-ui/package.json`)
 - **Backend Configuration**: Configured to run on port `8030` (line 14 in `dashboard-backend/config/settings.py`)
 - **Actual Error**: Frontend trying to connect to `localhost:8020`
 
@@ -17,7 +17,7 @@ The frontend dashboard is throwing `ERR_CONNECTION_REFUSED` errors when trying t
 - Dashboard backend needs to be started on port 8030
 
 ### 3. Port Assignment Confusion
-- **Port 8020**: Reserved for main LDTS API server (`lettaaugment-source/api_server.py`)
+- **Port 8020**: Reserved for main LDTS API server (`tool-selector-api/api_server.py`)
 - **Port 8030**: Reserved for dashboard backend
 - **Port 3000**: Frontend development server
 - **Port 3020**: MCP server
@@ -25,7 +25,7 @@ The frontend dashboard is throwing `ERR_CONNECTION_REFUSED` errors when trying t
 ## Current Configuration Files
 
 ### Frontend API Configuration
-**File**: `dashboard-frontend/src/services/api.ts` (lines 18-26)
+**File**: `dashboard-ui/src/services/api.ts` (lines 18-26)
 ```typescript
 const baseURL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8030';
 this.client = axios.create({
@@ -38,7 +38,7 @@ this.client = axios.create({
 ```
 
 ### Frontend Proxy Configuration
-**File**: `dashboard-frontend/package.json` (line 52)
+**File**: `dashboard-ui/package.json` (line 52)
 ```json
 "proxy": "http://192.168.50.90:8020"
 ```
@@ -69,13 +69,13 @@ This should start the server on `http://localhost:8030`
 Choose one of these approaches:
 
 #### Option A: Update Frontend Proxy (Recommended)
-**File**: `dashboard-frontend/package.json`
+**File**: `dashboard-ui/package.json`
 ```json
 "proxy": "http://localhost:8030"
 ```
 
 #### Option B: Set Environment Variable
-Create `dashboard-frontend/.env`:
+Create `dashboard-ui/.env`:
 ```bash
 REACT_APP_API_BASE_URL=http://localhost:8030
 ```
@@ -89,7 +89,7 @@ PORT: int = 8020
 ### Step 4: Restart Frontend
 After making configuration changes:
 ```bash
-cd dashboard-frontend
+cd dashboard-ui
 npm start
 ```
 

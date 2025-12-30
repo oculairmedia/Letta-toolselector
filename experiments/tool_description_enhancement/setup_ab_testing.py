@@ -15,7 +15,7 @@ from pathlib import Path
 import logging
 
 # Add the parent directories to Python path for imports
-sys.path.append(str(Path(__file__).parent.parent.parent / "lettaaugment-source"))
+sys.path.append(str(Path(__file__).parent.parent.parent / "tool-selector-api"))
 
 from upload_tools_to_weaviate import EnhancedToolUploader, get_or_create_tool_schema
 import weaviate

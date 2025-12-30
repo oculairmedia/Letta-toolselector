@@ -13,8 +13,8 @@ import json
 from typing import Dict, List, Tuple
 from dataclasses import dataclass
 
-# Add the lettaaugment-source directory to the path
-sys.path.append('/opt/stacks/lettatoolsselector/lettaaugment-source')
+# Add the tool-selector-api directory to the path
+sys.path.append('/opt/stacks/lettatoolsselector/tool-selector-api')
 
 os.environ.setdefault('USE_QWEN3_FORMAT', 'true')
 

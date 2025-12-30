@@ -337,7 +337,7 @@ curl http://localhost:8020/api/v1/cost-control/status
 
 ### Python Testing Scripts
 
-The system includes several Python testing utilities located in `/opt/stacks/lettatoolsselector/lettaaugment-source/`:
+The system includes several Python testing utilities located in `/opt/stacks/lettatoolsselector/tool-selector-api/`:
 
 ```bash
 # Test API connection

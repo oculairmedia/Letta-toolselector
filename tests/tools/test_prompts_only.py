@@ -6,8 +6,8 @@ Test just the specialized embedding prompts without Weaviate dependencies.
 import sys
 import os
 
-# Add the lettaaugment-source directory to the path
-sys.path.append('/opt/stacks/lettatoolsselector/lettaaugment-source')
+# Add the tool-selector-api directory to the path
+sys.path.append('/opt/stacks/lettatoolsselector/tool-selector-api')
 
 from specialized_embedding import (
     SpecializedEmbeddingPrompter, 

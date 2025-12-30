@@ -6,7 +6,7 @@ import os
 import sys
 
 # Add the source directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'lettaaugment-source'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tool-selector-api'))
 
 def test_never_detach_config():
     """Test that the never-detach configuration loads correctly."""
@@ -21,7 +21,7 @@ def test_never_detach_config():
         import importlib.util
         spec = importlib.util.spec_from_file_location(
             "api_server", 
-            os.path.join(os.path.dirname(__file__), 'lettaaugment-source', 'api_server.py')
+            os.path.join(os.path.dirname(__file__), 'tool-selector-api', 'api_server.py')
         )
         api_server = importlib.util.module_from_spec(spec)
         

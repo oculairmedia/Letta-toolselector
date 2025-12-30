@@ -1,6 +1,6 @@
 # Embeddings Usage in Letta Tools Selector
 
-This document explains how embeddings are created, stored, queried, and consumed across this project. It focuses on the Python "lettaaugment-source" service that indexes and searches tools using Weaviate, plus fallbacks and related configs used by the agent management flows.
+This document explains how embeddings are created, stored, queried, and consumed across this project. It focuses on the Python "tool-selector-api" service that indexes and searches tools using Weaviate, plus fallbacks and related configs used by the agent management flows.
 
 ## High-level overview
 - Vector DB: Weaviate (v4 client) hosts a Tool collection with text fields vectorized by OpenAI’s text embedding models.
@@ -11,23 +11,23 @@ This document explains how embeddings are created, stored, queried, and consumed
 - Agent-level config: Separate from Weaviate usage, when creating agents, the project configures the agent’s own embedding provider/model (Google AI text-embedding-004) — this is for the agent platform and is independent of the Weaviate store.
 
 ## Key files and responsibilities
-- lettaaugment-source/init_weaviate_schema.py
+- tool-selector-api/init_weaviate_schema.py
   - Defines a Tool collection with OpenAI vectorizer text2vec-openai set to model "text-embedding-3-small".
-- lettaaugment-source/upload_tools_to_weaviate.py
+- tool-selector-api/upload_tools_to_weaviate.py
   - Creates/ensures the Tool collection and uploads tool objects (batch). Uses text2vec-openai via Configure.Vectorizer.
-- lettaaugment-source/weaviate_tool_search.py
+- tool-selector-api/weaviate_tool_search.py
   - Initializes Weaviate client.
   - search_tools(): performs hybrid search over the Tool collection with query expansion, returning results and scores.
   - get_embedding_for_text(): tries to obtain a vector for arbitrary text via a Weaviate GraphQL nearText trick; falls back to direct OpenAI embeddings API.
   - get_tool_embedding_by_id(): fetches the stored vector for a tool (include_vector=True) with GraphQL fallback.
-- lettaaugment-source/fallback_embedding.py
+- tool-selector-api/fallback_embedding.py
   - Minimal direct call to OpenAI Embeddings API (text-embedding-3-small) as a fallback utility.
-- lettaaugment-source/api_server.py
+- tool-selector-api/api_server.py
   - Quart API that calls search_tools() in /api/v1/tools/attach and manages tool attaching/pruning flows.
   - Contains cosine_similarity() helper suitable for vector comparisons.
-- lettaaugment-source/tool_finder_agent.py
+- tool-selector-api/tool_finder_agent.py
   - When creating an agent, sets embedding_config to Google AI text-embedding-004 (separate from Weaviate/openai vector store usage).
-- lettaaugment-source/test_*.py (embedding-related tests)
+- tool-selector-api/test_*.py (embedding-related tests)
   - test_embedding_local.py, debug_existing_embeddings.py, etc. provide diagnostics for GraphQL nearText and direct OpenAI fallbacks.
 
 ## Data model and vectorization
@@ -64,7 +64,7 @@ Implications:
 - QWEN3_USE_INSTRUCTION_FORMAT allows disabling instruction wrapping while still using the Qwen3 provider (default: true).
 
 ## Ingestion workflow (embeddings at write time)
-File: lettaaugment-source/upload_tools_to_weaviate.py
+File: tool-selector-api/upload_tools_to_weaviate.py
 
 - Connects to Weaviate with OpenAI API key in headers.
 - Ensures Tool collection (see mismatch note above) and uses client.collections.create(... vectorizer_config=Configure.Vectorizer.text2vec_openai(...)).
@@ -74,7 +74,7 @@ File: lettaaugment-source/upload_tools_to_weaviate.py
 - Embeddings are not computed client-side; the Weaviate vectorizer module computes/stores vectors for the configured properties automatically upon insert.
 
 ## Query workflow (embeddings at read time)
-File: lettaaugment-source/weaviate_tool_search.py
+File: tool-selector-api/weaviate_tool_search.py
 
 - format_query_for_qwen3(): trims whitespace/punctuation and removes filler that can pollute last-token pooling.
 - enhance_query_for_embedding(): produces the Qwen3 instruction block ("Instruct: ...
@@ -103,7 +103,7 @@ Why hybrid search?
   - If not present or invalid, it falls back to a GraphQL query requesting _additional.vector for the Tool with that UUID.
 
 ## API server usage of embeddings
-File: lettaaugment-source/api_server.py
+File: tool-selector-api/api_server.py
 
 - /api/v1/tools/attach uses search_tools() under the hood to find relevant tools for an agent and then manages attachments/detachments via Letta API.
 - cosine_similarity(vec1, vec2) is provided for vector comparisons; while not heavily used in the shown sections, it supports any future logic needing explicit similarity on vectors retrieved by the helpers above.
@@ -118,7 +118,7 @@ File: lettaaugment-source/api_server.py
   - test_embedding_local.py: tests local Weaviate access (localhost), checks GraphQL nearText vector extraction, and direct OpenAI embedding.
 
 ## Agent-level embeddings (separate from Weaviate)
-File: lettaaugment-source/tool_finder_agent.py
+File: tool-selector-api/tool_finder_agent.py
 
 - When creating an agent via make_api_request("POST", "agents", data=agent_data), the payload includes:
   - embedding_config.embedding_endpoint_type: "google_ai"
@@ -144,13 +144,13 @@ File: lettaaugment-source/tool_finder_agent.py
 - GraphQL nearText for ad-hoc embedding is brittle across versions; rely on it opportunistically and keep the direct OpenAI fallback available.
 
 ## Quick references (functions and where)
-- Initialize client (Weaviate): lettaaugment-source/weaviate_tool_search.py:init_client()
-- Hybrid search: lettaaugment-source/weaviate_tool_search.py:search_tools()
-- Ad-hoc text embedding: lettaaugment-source/weaviate_tool_search.py:get_embedding_for_text(); lettaaugment-source/fallback_embedding.py:get_embedding_for_text_direct()
-- Object vector fetch: lettaaugment-source/weaviate_tool_search.py:get_tool_embedding_by_id()
-- Schema creation (OpenAI text-embedding-3-small): lettaaugment-source/init_weaviate_schema.py
-- Schema creation (ada-002): lettaaugment-source/upload_tools_to_weaviate.py:get_or_create_tool_schema()
-- API attach/search entrypoint: lettaaugment-source/api_server.py:/api/v1/tools/attach
+- Initialize client (Weaviate): tool-selector-api/weaviate_tool_search.py:init_client()
+- Hybrid search: tool-selector-api/weaviate_tool_search.py:search_tools()
+- Ad-hoc text embedding: tool-selector-api/weaviate_tool_search.py:get_embedding_for_text(); tool-selector-api/fallback_embedding.py:get_embedding_for_text_direct()
+- Object vector fetch: tool-selector-api/weaviate_tool_search.py:get_tool_embedding_by_id()
+- Schema creation (OpenAI text-embedding-3-small): tool-selector-api/init_weaviate_schema.py
+- Schema creation (ada-002): tool-selector-api/upload_tools_to_weaviate.py:get_or_create_tool_schema()
+- API attach/search entrypoint: tool-selector-api/api_server.py:/api/v1/tools/attach
 - Node MCP launcher: src/index.js (delegates to find_tools.py -> API server)
 
 ## Minimal setup checklist

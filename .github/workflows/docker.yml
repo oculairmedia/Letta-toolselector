@@ -21,14 +21,15 @@ jobs:
       packages: write
     strategy:
       matrix:
-        service: [mcp-server, api-server, sync-service, frontend, dashboard-backend]
+        service: [tool-selector-mcp, tool-selector-api, tool-sync, dashboard-ui, dashboard-api, reranker]
     
     outputs:
-      image-digest-mcp-server: ${{ steps.build-mcp-server.outputs.digest }}
-      image-digest-api-server: ${{ steps.build-api-server.outputs.digest }}
-      image-digest-sync-service: ${{ steps.build-sync-service.outputs.digest }}
-      image-digest-frontend: ${{ steps.build-frontend.outputs.digest }}
-      image-digest-dashboard-backend: ${{ steps.build-dashboard-backend.outputs.digest }}
+      image-digest-tool-selector-mcp: ${{ steps.build-tool-selector-mcp.outputs.digest }}
+      image-digest-tool-selector-api: ${{ steps.build-tool-selector-api.outputs.digest }}
+      image-digest-tool-sync: ${{ steps.build-tool-sync.outputs.digest }}
+      image-digest-dashboard-ui: ${{ steps.build-dashboard-ui.outputs.digest }}
+      image-digest-dashboard-api: ${{ steps.build-dashboard-api.outputs.digest }}
+      image-digest-reranker: ${{ steps.build-reranker.outputs.digest }}
 
     steps:
       - name: Checkout code
@@ -65,9 +66,9 @@ jobs:
         run: echo "date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
 
       # Build MCP Server
-      - name: Build and push MCP Server
-        if: matrix.service == 'mcp-server'
-        id: build-mcp-server
+      - name: Build and push Tool Selector MCP
+        if: matrix.service == 'tool-selector-mcp'
+        id: build-tool-selector-mcp
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -76,52 +77,43 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          # Temporarily disable cache due to GitHub issues
-          # cache-from: type=gha
-          # cache-to: type=gha,mode=max
           build-args: |
-            SERVICE=mcp-server
+            SERVICE=tool-selector-mcp
 
       # Build API Server
-      - name: Build and push API Server
-        if: matrix.service == 'api-server'
-        id: build-api-server
+      - name: Build and push Tool Selector API
+        if: matrix.service == 'tool-selector-api'
+        id: build-tool-selector-api
         uses: docker/build-push-action@v5
         with:
-          context: ./lettaaugment-source
-          file: ./lettaaugment-source/Dockerfile
+          context: ./tool-selector-api
+          file: ./tool-selector-api/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          # Temporarily disable cache due to GitHub issues
-          # cache-from: type=gha
-          # cache-to: type=gha,mode=max
 
       # Build Sync Service
-      - name: Build and push Sync Service
-        if: matrix.service == 'sync-service'
-        id: build-sync-service
+      - name: Build and push Tool Sync
+        if: matrix.service == 'tool-sync'
+        id: build-tool-sync
         uses: docker/build-push-action@v5
         with:
-          context: ./lettaaugment-source
-          file: ./lettaaugment-source/Dockerfile.sync
+          context: ./tool-selector-api
+          file: ./tool-selector-api/Dockerfile.sync
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          # Temporarily disable cache due to GitHub issues
-          # cache-from: type=gha
-          # cache-to: type=gha,mode=max
 
-      # Build Frontend
-      - name: Build and push Frontend
-        if: matrix.service == 'frontend'
-        id: build-frontend
+      # Build Dashboard UI
+      - name: Build and push Dashboard UI
+        if: matrix.service == 'dashboard-ui'
+        id: build-dashboard-ui
         uses: docker/build-push-action@v5
         with:
-          context: ./dashboard-frontend
-          file: ./dashboard-frontend/Dockerfile
+          context: ./dashboard-ui
+          file: ./dashboard-ui/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -132,9 +124,9 @@ jobs:
             REACT_APP_BUILD_DATE=${{ steps.date.outputs.date }}
             REACT_APP_COMMIT_SHA=${{ github.sha }}
 
-      # Build Dashboard Backend
-      - name: Verify dashboard backend files before build
-        if: matrix.service == 'dashboard-backend'
+      # Build Dashboard API
+      - name: Verify dashboard API files before build
+        if: matrix.service == 'dashboard-api'
         run: |
           echo "Checking dashboard-backend files:"
           ls -la dashboard-backend/
@@ -143,9 +135,9 @@ jobs:
           echo "Checking main.py imports:"
           grep -n "missing_endpoints" dashboard-backend/main.py || echo "missing_endpoints not found in main.py"
 
-      - name: Build and push Dashboard Backend
-        if: matrix.service == 'dashboard-backend'
-        id: build-dashboard-backend
+      - name: Build and push Dashboard API
+        if: matrix.service == 'dashboard-api'
+        id: build-dashboard-api
         uses: docker/build-push-action@v5
         with:
           context: ./dashboard-backend
@@ -154,23 +146,33 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          no-cache: true  # Force complete rebuild to ensure API changes are included
-          # Temporarily disable cache due to GitHub issues
-          # cache-from: type=gha
-          # cache-to: type=gha,mode=max
+          no-cache: true
+
+      # Build Reranker
+      - name: Build and push Reranker
+        if: matrix.service == 'reranker'
+        id: build-reranker
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.reranker
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64
 
   # Job 2: Security Scanning for Images (Optional)
   docker-security:
     runs-on: ubuntu-latest
     needs: docker-build
-    continue-on-error: true  # Don't fail the pipeline if security scanning fails
+    continue-on-error: true
     strategy:
       matrix:
-        service: [mcp-server, api-server, sync-service, frontend, dashboard-backend]
+        service: [tool-selector-mcp, tool-selector-api, tool-sync, dashboard-ui, dashboard-api, reranker]
     permissions:
       contents: read
-      packages: read  # Required to access container images
-      security-events: write  # Required for SARIF upload
+      packages: read
+      security-events: write
     steps:
       - name: Log in to Container Registry
         uses: docker/login-action@v3
@@ -182,14 +184,13 @@ jobs:
       - name: Sanitize branch name for Docker tag
         id: sanitize
         run: |
-          # Replace forward slashes with dashes for valid Docker tags
           SANITIZED_REF=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
           echo "tag=${SANITIZED_REF}" >> $GITHUB_OUTPUT
           echo "Sanitized tag: ${SANITIZED_REF}"
       
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
-        continue-on-error: true  # Don't fail if individual scan fails
+        continue-on-error: true
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ steps.sanitize.outputs.tag }}
           format: 'sarif'
@@ -203,16 +204,16 @@ jobs:
         run: |
           if [ -f "trivy-image-${{ matrix.service }}.sarif" ]; then
             echo "sarif-exists=true" >> $GITHUB_OUTPUT
-            echo "✅ SARIF file exists for ${{ matrix.service }}"
+            echo "SARIF file exists for ${{ matrix.service }}"
           else
             echo "sarif-exists=false" >> $GITHUB_OUTPUT
-            echo "❌ SARIF file missing for ${{ matrix.service }}"
+            echo "SARIF file missing for ${{ matrix.service }}"
           fi
 
       - name: Upload Trivy scan results
         if: steps.check-sarif.outputs.sarif-exists == 'true'
         uses: github/codeql-action/upload-sarif@v3
-        continue-on-error: true  # Don't fail if upload fails
+        continue-on-error: true
         with:
           sarif_file: 'trivy-image-${{ matrix.service }}.sarif'
           category: 'trivy-${{ matrix.service }}'
@@ -225,7 +226,7 @@ jobs:
   # Job 3: Deploy to Staging (on develop branch)
   deploy-staging:
     runs-on: ubuntu-latest
-    needs: [docker-build]  # Removed dependency on docker-security and integration tests
+    needs: [docker-build]
     if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
     environment:
       name: staging
@@ -234,15 +235,13 @@ jobs:
     steps:
       - name: Deploy to staging
         run: |
-          echo "🚀 Deploying to staging environment"
+          echo "Deploying to staging environment"
           echo "Images built successfully"
-          # Add your deployment commands here
-          # e.g., kubectl, docker-compose, etc.
 
   # Job 4: Deploy to Production (on main branch or tags)
   deploy-production:
     runs-on: ubuntu-latest
-    needs: [docker-build]  # Removed dependency on docker-security and integration tests
+    needs: [docker-build]
     if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && github.event_name == 'push'
     environment:
       name: production
@@ -251,24 +250,23 @@ jobs:
     steps:
       - name: Deploy to production
         run: |
-          echo "🚀 Deploying to production environment"
+          echo "Deploying to production environment"
           echo "Version: ${{ github.ref_name }}"
-          # Add your deployment commands here
           
       - name: Create deployment summary
         run: |
-          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **Environment**: Production" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Services Deployed**: MCP Server, API Server, Sync Service, Frontend, Dashboard Backend" >> $GITHUB_STEP_SUMMARY
+          echo "- **Services Deployed**: Tool Selector MCP, Tool Selector API, Tool Sync, Dashboard UI, Dashboard API, Reranker" >> $GITHUB_STEP_SUMMARY
           echo "- **Registry**: ${{ env.REGISTRY }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Frontend URL**: http://192.168.50.90:8406" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dashboard URL**: http://192.168.50.90:8406" >> $GITHUB_STEP_SUMMARY
 
   # Job 5: Cleanup old images (disabled due to GitHub API limitations)
   cleanup:
     runs-on: ubuntu-latest
     needs: [deploy-staging, deploy-production]
-    if: false  # Temporarily disabled - GitHub Container Registry cleanup requires special permissions
+    if: false
     permissions:
       contents: read
       packages: write
@@ -278,11 +276,12 @@ jobs:
         continue-on-error: true
         with:
           image-names: |
-            letta-toolselector-mcp-server
-            letta-toolselector-api-server
-            letta-toolselector-sync-service
-            letta-toolselector-frontend
-            letta-toolselector-dashboard-backend
+            letta-toolselector-tool-selector-mcp
+            letta-toolselector-tool-selector-api
+            letta-toolselector-tool-sync
+            letta-toolselector-dashboard-ui
+            letta-toolselector-dashboard-api
+            letta-toolselector-reranker
           cut-off: 30 days ago UTC
           account-type: org
           org-name: ${{ github.repository_owner }}
@@ -291,6 +290,5 @@ jobs:
 
       - name: Cleanup disabled notice
         run: |
-          echo "🧹 Container cleanup is temporarily disabled"
+          echo "Container cleanup is temporarily disabled"
           echo "Manual cleanup may be required for old container images"
-          echo "This prevents build failures while maintaining successful deployments"

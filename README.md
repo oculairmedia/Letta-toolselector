@@ -151,8 +151,8 @@ services:
     volumes:
       - ./.env:/app/.env:ro
       - tool_cache_volume:/app/runtime_cache
-      - ./lettaaugment-source/api_server.py:/app/api_server.py:ro
-      - ./lettaaugment-source/weaviate_tool_search.py:/app/weaviate_tool_search.py:ro
+      - ./tool-selector-api/api_server.py:/app/api_server.py:ro
+      - ./tool-selector-api/weaviate_tool_search.py:/app/weaviate_tool_search.py:ro
 ```
 
 2. Restart the service:

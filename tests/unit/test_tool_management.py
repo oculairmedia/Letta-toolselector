@@ -22,7 +22,7 @@ from typing import Dict, Any, List
 
 # Add project root to Python path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lettaaugment-source"))
+sys.path.insert(0, str(PROJECT_ROOT / "tool-selector-api"))
 
 # Import modules
 import tool_manager

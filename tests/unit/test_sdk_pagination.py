@@ -10,7 +10,7 @@ import sys
 import os
 
 # Add source to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../lettaaugment-source'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../tool-selector-api'))
 
 
 class TestSDKPagination:

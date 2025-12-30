@@ -28,9 +28,9 @@ services:
     networks:
       - letta-tools
 
-  api-server:
-    image: ghcr.io/oculairmedia/letta-toolselector-api-server:latest
-    container_name: weaviate-tools-api
+  tool-selector-api:
+    image: ghcr.io/oculairmedia/letta-toolselector-api:latest
+    container_name: letta-toolselector-api
     ports:
       - 8020:3001
     environment:
@@ -47,7 +47,6 @@ services:
       - EXCLUDE_LETTA_CORE_TOOLS=${EXCLUDE_LETTA_CORE_TOOLS:-true}
       - EXCLUDE_OFFICIAL_TOOLS=${EXCLUDE_OFFICIAL_TOOLS:-true}
       - MANAGE_ONLY_MCP_TOOLS=${MANAGE_ONLY_MCP_TOOLS:-true}
-      # Embedding Provider Configuration
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-ollama}
       - OLLAMA_EMBEDDING_HOST=${OLLAMA_EMBEDDING_HOST:-192.168.50.80}
       - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-dengcao/Qwen3-Embedding-4B:Q4_K_M}
@@ -57,16 +56,16 @@ services:
     volumes:
       - ./.env:/app/.env:ro
       - tool_cache_volume:/app/runtime_cache
-      - ./lettaaugment-source:/app:rw
+      - ./tool-selector-api:/app:rw
     depends_on:
       weaviate:
         condition: service_healthy
     networks:
       - letta-tools
 
-  mcp-server:
-    image: ghcr.io/oculairmedia/letta-toolselector-mcp-server:latest
-    container_name: toolselector-mcp
+  tool-selector-mcp:
+    image: ghcr.io/oculairmedia/letta-toolselector-mcp:latest
+    container_name: letta-toolselector-mcp
     ports:
       - 3020:3020
     environment:
@@ -74,7 +73,7 @@ services:
       - NODE_ENV=development
       - LETTA_API_URL=${LETTA_API_URL}
       - LETTA_PASSWORD=${LETTA_PASSWORD}
-      - WORKER_SERVICE_URL=http://worker-service:3021
+      - WORKER_SERVICE_URL=http://task-worker:3021
     restart: unless-stopped
     healthcheck:
       test:
@@ -87,12 +86,12 @@ services:
       retries: 3
       start_period: 10s
     depends_on:
-      worker-service:
+      task-worker:
         condition: service_healthy
     networks:
       - letta-tools
 
-  worker-service:
+  task-worker:
     build:
       context: .
       dockerfile: worker-service/Dockerfile
@@ -127,24 +126,24 @@ services:
       - letta-tools
 
   # Development frontend with hot reload
-  frontend-dev:
+  dashboard-ui-dev:
     build:
-      context: ./dashboard-frontend
+      context: ./dashboard-ui
       dockerfile: Dockerfile.dev
-    container_name: letta-toolselector-frontend-dev
+    container_name: letta-toolselector-dashboard-ui-dev
     ports:
       - 8406:3000
     environment:
       - REACT_APP_API_BASE_URL=http://localhost:8020
       - REACT_APP_VERSION=development
-      - CHOKIDAR_USEPOLLING=true # For hot reload in Docker
+      - CHOKIDAR_USEPOLLING=true
     volumes:
-      - ./dashboard-frontend:/app
-      - /app/node_modules # Prevent overwriting node_modules
+      - ./dashboard-ui:/app
+      - /app/node_modules
     stdin_open: true
     tty: true
     depends_on:
-      api-server:
+      tool-selector-api:
         condition: service_started
     networks:
       - letta-tools

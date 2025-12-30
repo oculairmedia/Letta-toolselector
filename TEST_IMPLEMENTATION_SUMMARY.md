@@ -311,7 +311,7 @@ Successfully implemented comprehensive unit testing infrastructure for the Letta
 
 ### For Developers
 1. Run tests before committing: `pytest tests/unit/`
-2. Check coverage: `pytest --cov=lettaaugment-source`
+2. Check coverage: `pytest --cov=tool-selector-api`
 3. Add tests for new features
 4. Maintain 80%+ coverage for new code
 

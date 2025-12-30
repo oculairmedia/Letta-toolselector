@@ -144,7 +144,7 @@ curl -X POST http://localhost:8020/api/v1/tools/prune \
 
 ```bash
 cd /opt/stacks/lettatoolsselector
-python lettaaugment-source/detach_mcp_tools.py \
+python tool-selector-api/detach_mcp_tools.py \
   --agent-id agent-uuid-here \
   --keep-count 10
 ```

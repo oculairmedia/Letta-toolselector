@@ -59,8 +59,8 @@ setup_venv.bat && start_server.bat
 
 # Setup (Linux/macOS)
 python -m venv venv && source venv/bin/activate
-pip install -r lettaaugment-source/requirements.txt
-cd lettaaugment-source && python api_server.py
+pip install -r tool-selector-api/requirements.txt
+cd tool-selector-api && python api_server.py
 ```
 
 ### Testing
@@ -186,7 +186,7 @@ python upload_tools_to_weaviate.py    # Upload tools with embeddings
 When Weaviate is empty (after container restart or data loss), use this command to re-sync all tools with Ollama embeddings:
 
 ```bash
-cd /opt/stacks/lettatoolsselector/lettaaugment-source
+cd /opt/stacks/lettatoolsselector/tool-selector-api
 
 # Export all required environment variables and run the upload script
 export EMBEDDING_PROVIDER=ollama && \
@@ -214,7 +214,7 @@ The API server supports two modes for communicating with the Letta API:
 1. **aiohttp mode** (default): Direct HTTP calls using aiohttp
 2. **SDK mode**: Uses the official `letta-client` SDK (v1.3.1+)
 
-Enable SDK mode with `USE_LETTA_SDK=true`. The SDK client wrapper is in `lettaaugment-source/letta_sdk_client.py`.
+Enable SDK mode with `USE_LETTA_SDK=true`. The SDK client wrapper is in `tool-selector-api/letta_sdk_client.py`.
 
 Migrated functions (support both modes):
 - `detach_tool()` - Detach tools from agents

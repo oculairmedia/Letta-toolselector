@@ -51,7 +51,7 @@ docker-compose ps
 docker-compose -f compose.dev.yaml up -d
 
 # The frontend will have hot reload enabled
-# Changes to dashboard-frontend/ will auto-refresh
+# Changes to dashboard-ui/ will auto-refresh
 ```
 
 ## Service URLs
@@ -186,7 +186,7 @@ curl -X POST http://localhost:8080/v1/graphql \
   -d '{"query": "{ Aggregate { Tool { meta { count } } } }"}'
 
 # Run manual sync
-python lettaaugment-source/upload_tools_to_weaviate.py
+python tool-selector-api/upload_tools_to_weaviate.py
 ```
 
 **MCP tools not attaching:**

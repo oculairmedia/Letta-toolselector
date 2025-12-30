@@ -21,7 +21,7 @@ from pathlib import Path
 
 # Import existing LDTS services
 import sys
-sys.path.append(str(Path(__file__).parent.parent / "lettaaugment-source"))
+sys.path.append(str(Path(__file__).parent.parent / "tool-selector-api"))
 
 from api_server import app as existing_app
 from weaviate_tool_search_with_reranking import WeaviateToolSearch

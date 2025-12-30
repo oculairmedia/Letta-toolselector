@@ -13,7 +13,7 @@ from typing import List, Dict, Any
 # Import the necessary functions from api_server
 # Note: You may need to adjust imports based on your project structure
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../lettaaugment-source'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../tool-selector-api'))
 
 from api_server import fetch_agent_tools, _is_letta_core_tool
 

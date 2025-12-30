@@ -19,7 +19,7 @@ This document outlines the migration strategy for the Letta Tool Selector to use
    - No access to `x-agent-id` header in tool handlers
 
 3. **Backend Services**
-   - Python API server (`lettaaugment-source/api_server.py`) expects `agent_id` parameter
+   - Python API server (`tool-selector-api/api_server.py`) expects `agent_id` parameter
    - Tool management functions require agent ID for tool attachment/detachment
    - All downstream services are parameter-based
 

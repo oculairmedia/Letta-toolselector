@@ -12,7 +12,7 @@ from unittest.mock import Mock, AsyncMock, patch
 
 # Add project root to Python path
 PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lettaaugment-source"))
+sys.path.insert(0, str(PROJECT_ROOT / "tool-selector-api"))
 sys.path.insert(0, str(PROJECT_ROOT / "worker-service"))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 

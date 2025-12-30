@@ -17,7 +17,7 @@ from unittest.mock import Mock, patch
 # Add parent directory to path for imports
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "lettaaugment-source"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "tool-selector-api"))
 
 from bm25_vector_overrides import (
     VectorDistanceMetric,

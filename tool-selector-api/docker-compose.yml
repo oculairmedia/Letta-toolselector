@@ -24,9 +24,9 @@ services:
     networks:
       - letta-tools
 
-  api-server:
-    image: oculair/lettaaugment:latest
-    container_name: weaviate-tools-api
+  tool-selector-api:
+    image: oculair/letta-toolselector-api:latest
+    container_name: letta-toolselector-api
     ports:
       - "8020:3001"
     environment:
@@ -40,42 +40,36 @@ services:
     restart: unless-stopped
     volumes:
       - ./.env:/app/.env:ro
-      - tool_cache_volume:/app/runtime_cache # Mount shared volume to the correct path
-    # healthcheck:
-    #   test: ["CMD", "python", "-c", "import socket; s = socket.socket(); s.settimeout(3); s.connect(('localhost', 3001)); s.close()"]
-    #   interval: 30s
-    #   timeout: 10s
-    #   retries: 5
-    #   start_period: 120s
+      - tool_cache_volume:/app/runtime_cache
     depends_on:
       weaviate:
         condition: service_healthy
     networks:
       - letta-tools
 
-  sync-service:
-    image: oculair/lettaaugment:latest
-    container_name: weaviate-tools-sync
+  tool-sync:
+    image: oculair/letta-toolselector-api:latest
+    container_name: letta-toolselector-sync
     command: python sync_service.py
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LETTA_API_URL=${LETTA_API_URL}
       - LETTA_PASSWORD=${LETTA_PASSWORD}
-      - API_URL=http://api-server:3001
+      - API_URL=http://tool-selector-api:3001
       - SYNC_INTERVAL=300
     volumes:
       - ./.env:/app/.env:ro
-      - tool_cache_volume:/app/runtime_cache # CORRECTED PATH
+      - tool_cache_volume:/app/runtime_cache
     restart: unless-stopped
     depends_on:
-      api-server:
+      tool-selector-api:
         condition: service_started
     networks:
       - letta-tools
 
   time-service:
-    image: oculair/lettaaugment:latest
-    container_name: weaviate-tools-time
+    image: oculair/letta-toolselector-api:latest
+    container_name: letta-toolselector-time
     command: python time_memory_service.py
     environment:
       - WEAVIATE_URL=http://weaviate:8080/
@@ -99,4 +93,4 @@ networks:
 
 volumes:
   weaviate_data:
-  tool_cache_volume: # Define the shared volume
+  tool_cache_volume:

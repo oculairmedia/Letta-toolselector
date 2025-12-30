@@ -10,8 +10,8 @@ import time
 import requests
 from typing import List, Dict, Any
 
-# Add lettaaugment-source to path
-sys.path.append('/opt/stacks/lettatoolsselector/lettaaugment-source')
+# Add tool-selector-api to path
+sys.path.append('/opt/stacks/lettatoolsselector/tool-selector-api')
 
 def test_adapter_health():
     """Test if the Ollama reranker adapter is healthy"""

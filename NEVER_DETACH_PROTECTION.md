@@ -69,7 +69,7 @@ for tool in mcp_tools_on_agent_list:
 
 ## Files Modified
 
-- `/opt/stacks/lettatoolsselector/lettaaugment-source/api_server.py`: Main implementation
+- `/opt/stacks/lettatoolsselector/tool-selector-api/api_server.py`: Main implementation
   - Added `NEVER_DETACH_TOOLS` environment variable
   - Enhanced tool categorization logic
   - Added protection safeguards

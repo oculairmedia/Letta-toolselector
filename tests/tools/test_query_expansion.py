@@ -13,7 +13,7 @@ import sys
 import os
 
 # Add the source directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../lettaaugment-source'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../tool-selector-api'))
 
 import pytest
 from query_expansion import (

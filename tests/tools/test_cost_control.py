@@ -10,7 +10,7 @@ from pathlib import Path
 from datetime import datetime
 
 # Add the source directory to Python path
-sys.path.insert(0, str(Path(__file__).parent / 'lettaaugment-source'))
+sys.path.insert(0, str(Path(__file__).parent / 'tool-selector-api'))
 
 from cost_control_manager import (
     CostControlManager, CostCategory, BudgetPeriod, AlertLevel,

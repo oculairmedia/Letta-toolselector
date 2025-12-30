@@ -12,7 +12,7 @@ import sys
 import os
 
 # Add existing LDTS source to path
-LDTS_SOURCE_PATH = Path(__file__).parent.parent / "lettaaugment-source"
+LDTS_SOURCE_PATH = Path(__file__).parent.parent / "tool-selector-api"
 sys.path.append(str(LDTS_SOURCE_PATH))
 
 logger = logging.getLogger(__name__)

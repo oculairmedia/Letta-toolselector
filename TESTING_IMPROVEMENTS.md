@@ -88,7 +88,7 @@ Started unit test suite with:
              python-version: '3.11'
          - name: Install dependencies
            run: |
-             pip install -r lettaaugment-source/requirements.txt
+             pip install -r tool-selector-api/requirements.txt
              pip install pytest pytest-cov pytest-asyncio
          - name: Run unit tests
            run: pytest tests/unit/ -v --cov
@@ -138,7 +138,7 @@ pytest tests/unit/ -v -m unit
 
 ### Run with Coverage
 ```bash
-pytest tests/ --cov=lettaaugment-source --cov-report=html
+pytest tests/ --cov=tool-selector-api --cov-report=html
 ```
 
 ### Run Specific Test Categories

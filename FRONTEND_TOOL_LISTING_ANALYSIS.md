@@ -103,7 +103,7 @@ print(f'LDTS_API_URL: {settings.LDTS_API_URL}')
 
 ### LDTS API Server Details
 - **Endpoint**: `/api/v1/tools` (GET)
-- **Implementation**: `lettaaugment-source/api_server.py` lines 657-667
+- **Implementation**: `tool-selector-api/api_server.py` lines 657-667
 - **Data Source**: Tool cache file `/app/runtime_cache/tool_cache.json`
 - **Cache Size**: 180 tools loaded in memory
 - **Response Format**: Direct JSON array of tools
@@ -117,7 +117,7 @@ print(f'LDTS_API_URL: {settings.LDTS_API_URL}')
 
 ### Frontend Details
 - **Component**: `ToolBrowser.tsx`
-- **API Service**: `dashboard-frontend/src/services/api.ts`
+- **API Service**: `dashboard-ui/src/services/api.ts`
 - **Hook**: `useBrowseTools` in `useApi.ts`
 - **Error Handling**: Alert component shows API errors
 
@@ -135,9 +135,9 @@ print(f'LDTS_API_URL: {settings.LDTS_API_URL}')
 - `dashboard-backend/config/settings.py` - Configuration management
 - `dashboard-backend/app/routers/tools.py` - Tool browsing endpoints
 - `dashboard-backend/app/services/ldts_client.py` - LDTS API client
-- `dashboard-frontend/src/components/ToolBrowser/ToolBrowser.tsx` - Frontend component
-- `dashboard-frontend/src/services/api.ts` - API service layer
-- `lettaaugment-source/api_server.py` - LDTS API server implementation
+- `dashboard-ui/src/components/ToolBrowser/ToolBrowser.tsx` - Frontend component
+- `dashboard-ui/src/services/api.ts` - API service layer
+- `tool-selector-api/api_server.py` - LDTS API server implementation
 - `compose.yaml` - Docker configuration
 
 ### Error Handling Locations

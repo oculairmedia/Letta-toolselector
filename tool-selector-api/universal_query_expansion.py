@@ -769,7 +769,7 @@ if __name__ == "__main__":
     for path in ['/app/runtime_cache/tool_cache.json', 
                  './runtime_cache/tool_cache.json',
                  '../runtime_cache/tool_cache.json',
-                 '/opt/stacks/lettatoolsselector/lettaaugment-source/runtime_cache/tool_cache.json']:
+                 '/opt/stacks/lettatoolsselector/tool-selector-api/runtime_cache/tool_cache.json']:
         if os.path.exists(path):
             cache_path = path
             break

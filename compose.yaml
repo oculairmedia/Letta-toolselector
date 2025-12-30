@@ -101,6 +101,16 @@ services:
       - LETTA_DIRECT_MESSAGE_URL=${LETTA_DIRECT_MESSAGE_URL:-http://192.168.50.90:8283}
       - MATRIX_BRIDGE_WEBHOOK_URL=${MATRIX_BRIDGE_WEBHOOK_URL:-}
     restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:3001/api/health
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     volumes:
       - ./.env:/app/.env:ro
       - tool_cache_volume:/app/runtime_cache

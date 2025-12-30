@@ -59,4 +59,4 @@ USER app
 EXPOSE 3001
 
 # Use hypercorn to run the ASGI app
-CMD ["hypercorn", "api_server:app", "--bind", "0.0.0.0:3001"]
+CMD ["hypercorn", "main:app", "--bind", "0.0.0.0:3001"]

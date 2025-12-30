@@ -140,14 +140,14 @@ class TestDropRateCalculation:
         min_mcp = 7
         drop_rate = 0.8  # Would keep only 2 tools
         
-        # Calculate tools to keep (round to avoid floating point issues like 1-0.8=0.19999...)
-        keep_percentage = round(1 - drop_rate, 10)
+        # Calculate tools to keep
+        keep_percentage = 1 - drop_rate
         proposed_keep = math.floor(current_mcp * keep_percentage)  # 2
         
         # Enforce minimum
         actual_keep = max(proposed_keep, min_mcp)
         
-        assert proposed_keep == 2, f"Drop rate suggests keeping 2, got {proposed_keep}"
+        assert proposed_keep == 2, "Drop rate suggests keeping 2"
         assert actual_keep == 7, "Minimum enforcement raises to 7"
     
     def test_zero_drop_rate(self):

@@ -42,10 +42,9 @@ class Settings:
     
     # Reranking Configuration
     ENABLE_RERANKING: bool = True
-    RERANKER_URL: Optional[str] = "http://100.81.139.20:11435/rerank"  # vLLM reranker (faster & better scores)
-    RERANKER_MODEL: str = "qwen3-reranker-4b"
+    RERANKER_URL: Optional[str] = "http://localhost:11434"  # Ollama default
+    RERANKER_MODEL: str = "bge-reranker-large"
     RERANKER_TIMEOUT: int = 30
-    RERANKER_PROVIDER: str = "vllm"  # vllm (recommended) or ollama
     
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-here")

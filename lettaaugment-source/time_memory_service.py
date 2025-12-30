@@ -19,8 +19,8 @@ load_dotenv()
 
 class TimeMemoryService:
     def __init__(self):
-        # Get base URL - respect configured protocol (http or https)
-        base_url = os.getenv('LETTA_API_URL', 'https://letta2.oculair.ca/v1')
+        # Ensure the base URL includes /v1
+        base_url = os.getenv('LETTA_API_URL', 'https://letta2.oculair.ca/v1').replace('http://', 'https://')
         if not base_url.endswith('/v1'):
              # Add /v1 if it's missing, handling potential trailing slash
             base_url = base_url.rstrip('/') + '/v1'

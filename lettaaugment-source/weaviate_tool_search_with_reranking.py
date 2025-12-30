@@ -17,26 +17,11 @@ from specialized_embedding import (
     format_query_for_qwen3,
 )
 from qwen3_reranker_utils import DEFAULT_RERANK_INSTRUCTION
-from weaviate_client_manager import get_client_manager
 
 # Import query expansion modules for multifunctional tool discovery
 # We support two modes: universal (schema-based) and legacy (hardcoded)
 QUERY_EXPANSION_AVAILABLE = False
 UNIVERSAL_EXPANSION_AVAILABLE = False
-INTENT_CLASSIFIER_AVAILABLE = False
-
-# Try intent classifier first (newest, best understanding)
-try:
-    from query_intent_classifier import (
-        classify_query,
-        QueryIntent,
-        QueryComplexity,
-        ActionType,
-    )
-    INTENT_CLASSIFIER_AVAILABLE = True
-    print("Query intent classifier loaded (structured intent parsing)")
-except ImportError as e:
-    print(f"Query intent classifier not available: {e}")
 
 # Try universal expansion first (preferred)
 try:
@@ -93,48 +78,11 @@ if not QUERY_EXPANSION_AVAILABLE:
 
 
 # Environment variable to enable/disable query expansion
-# DEFAULT: false - Query expansion dilutes the original query signal.
-# With 75% vector search, embeddings already handle synonyms naturally.
-# Expansion mainly hurts the 25% BM25 component by adding noise.
-# Only enable if you have specific cases where exact keyword matching fails.
-ENABLE_QUERY_EXPANSION = os.getenv("ENABLE_QUERY_EXPANSION", "false").lower() == "true"
+ENABLE_QUERY_EXPANSION = os.getenv("ENABLE_QUERY_EXPANSION", "true").lower() == "true"
 # Environment variable to prefer universal expansion over legacy
 USE_UNIVERSAL_EXPANSION = os.getenv("USE_UNIVERSAL_EXPANSION", "true").lower() == "true"
 # Environment variable to enable reranking by default for all searches
-# NOTE: Disabled by default because qwen3-reranker demotes exact matches (e.g., "matrix message" 
-# incorrectly ranks letta_agent_advanced higher than matrix_messaging). The hybrid search with 
-# BM25 field boosting provides better results for service-specific queries.
-ENABLE_RERANKING_BY_DEFAULT = os.getenv("ENABLE_RERANKING_BY_DEFAULT", "false").lower() == "true"
-
-# Reranker configuration - supports both vLLM (recommended) and Ollama adapter
-# RERANKER_PROVIDER: "vllm" (default, faster & better scores) or "ollama"
-RERANKER_PROVIDER = os.getenv("RERANKER_PROVIDER", "vllm").lower()
-# For vLLM: http://100.81.139.20:11435/rerank (native cross-encoder, ~5x faster)
-# For Ollama adapter: http://ollama-reranker-adapter:8080/rerank (generative approach)
-RERANKER_URL = os.getenv("RERANKER_URL", "http://100.81.139.20:11435/rerank")
-RERANKER_MODEL = os.getenv("RERANKER_MODEL", "qwen3-reranker-4b")
-RERANKER_TIMEOUT = float(os.getenv("RERANKER_TIMEOUT", "30.0"))
-
-# Persistent HTTP client for reranker (avoids TCP connection overhead per request)
-import httpx
-_reranker_client: httpx.Client = None
-
-def get_reranker_client() -> httpx.Client:
-    """Get or create persistent HTTP client for reranker calls."""
-    global _reranker_client
-    if _reranker_client is None:
-        _reranker_client = httpx.Client(
-            timeout=RERANKER_TIMEOUT,
-            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
-        )
-    return _reranker_client
-
-def close_reranker_client():
-    """Close the reranker client. Call on app shutdown."""
-    global _reranker_client
-    if _reranker_client is not None:
-        _reranker_client.close()
-        _reranker_client = None
+ENABLE_RERANKING_BY_DEFAULT = os.getenv("ENABLE_RERANKING_BY_DEFAULT", "true").lower() == "true"
 
 def init_client():
     """Initialize Weaviate client using v4 API."""
@@ -207,6 +155,8 @@ def search_tools_with_reranking(
     Returns:
         List of tools with scores
     """
+    client = None
+    
     # Check if reranking is enabled globally
     enable_reranking = os.getenv("ENABLE_RERANKING", "false").lower() == "true"
     use_reranking = use_reranking and enable_reranking
@@ -217,29 +167,6 @@ def search_tools_with_reranking(
     # Apply query expansion for better multifunctional tool discovery
     original_query = query
     expansion_metadata = None
-    intent_metadata = None
-    
-    # Step 1: Classify query intent (structured understanding)
-    # NOTE: We do NOT inject keywords into the query - that dilutes the original signal.
-    # Instead, intent is used for:
-    # - Understanding what user wants (logging/debugging)
-    # - Informing reranker with context
-    # - Post-search filtering or explanation
-    if INTENT_CLASSIFIER_AVAILABLE:
-        try:
-            intent_metadata = classify_query(query)
-            if intent_metadata.primary_action:
-                print(f"Intent classification: '{original_query}'")
-                print(f"  Primary action: {intent_metadata.primary_action}")
-                print(f"  Complexity: {intent_metadata.complexity.value}")
-                print(f"  Entities: {[e.entity_type for e in intent_metadata.entities]}")
-                print(f"  Domains: {intent_metadata.detected_domains}")
-                # Intent metadata is preserved but NOT used to modify query
-                # This prevents query dilution while still providing structured understanding
-        except Exception as e:
-            print(f"Intent classification failed: {e}")
-    
-    # Step 2: Apply query expansion (legacy or universal)
     if use_expansion and QUERY_EXPANSION_AVAILABLE:
         # Prefer universal expansion (schema-based, dynamic)
         if UNIVERSAL_EXPANSION_AVAILABLE and USE_UNIVERSAL_EXPANSION:
@@ -266,234 +193,197 @@ def search_tools_with_reranking(
         rerank_top_k = int(os.getenv("RERANK_TOP_K", str(limit)))
     
     try:
-        # Use connection pool for better performance (avoids 50-200ms connection overhead per search)
-        manager = get_client_manager()
-        with manager.get_client() as client:
-            try:
-                # Get the Tool collection
-                collection = client.collections.get("Tool")
-                
-                # Prepare query for Qwen3 embeddings without contamination
-                cleaned_query = format_query_for_qwen3(query)
-                hybrid_query = cleaned_query
-                if is_qwen3_format_enabled():
-                    hybrid_query = get_detailed_instruct(get_search_instruction(), cleaned_query)
+        client = init_client()
+        
+        try:
+            # Get the Tool collection
+            collection = client.collections.get("Tool")
+            
+            # Prepare query for Qwen3 embeddings without contamination
+            cleaned_query = format_query_for_qwen3(query)
+            hybrid_query = cleaned_query
+            if is_qwen3_format_enabled():
+                hybrid_query = get_detailed_instruct(get_search_instruction(), cleaned_query)
 
-                # Build base query
-                if use_reranking:
-                    print(f"Using client-side reranking: retrieving {rerank_initial_limit} candidates for top-{limit} results")
-                    
-                    # Get initial results without Weaviate reranking to avoid panics
-                    # BM25 field boosting:
-                    #   - action_entities^3: Highest boost for action-entity pairs (e.g., "create issue")
-                    #   - name^2: Tool name is important for exact matches
-                    #   - semantic_keywords^2: Enriched keywords from LLM analysis
-                    #   - enhanced_description^1.5: LLM-enriched description
-                    #   - description^1: Original description (baseline)
-                    #   - tags: Categorical tags
-                    result = collection.query.hybrid(
-                        query=hybrid_query,
-                        alpha=0.75,  # 75% vector search, 25% keyword search
-                        limit=rerank_initial_limit,  # Get more candidates for reranking
-                        fusion_type=HybridFusion.RELATIVE_SCORE,
-                        query_properties=[
-                            "action_entities^3",      # Highest: "create issue", "delete file"
-                            "name^2",                 # Tool name
-                            "semantic_keywords^2",    # Enriched keywords
-                            "use_cases^1.5",          # Natural language scenarios
-                            "server_domain^1.5",      # MCP server domain context
-                            "enhanced_description^1.5",  # LLM description
-                            "description",            # Original description
-                            "tags"                    # Category tags
-                        ],
-                        return_metadata=MetadataQuery(score=True)
-                    )
-                    
-                    # Apply client-side reranking
-                    if result and hasattr(result, 'objects') and result.objects:
-                        try:
-                            # Prepare documents for reranking with improved format
-                            documents = []
-                            for obj in result.objects:
-                                name = obj.properties.get('name', '')
-                                description = obj.properties.get('description', '')
-                                tags = obj.properties.get('tags', [])
-                                mcp_server = obj.properties.get('mcp_server_name', '')
-                                
-                                # Extract service name from tags (e.g., "mcp:huly" -> "huly")
-                                service = mcp_server
-                                if not service and tags:
-                                    for tag in tags:
-                                        if tag.startswith('mcp:'):
-                                            service = tag[4:]  # Remove "mcp:" prefix
-                                            break
-                                
-                                # Extract action keywords from tool name (e.g., "huly_create_issue" -> ["create", "issue"])
-                                name_parts = name.lower().replace('_', ' ').replace('-', ' ').split()
-                                action_keywords = [p for p in name_parts if p in [
-                                    'create', 'read', 'update', 'delete', 'list', 'search', 'get', 'set',
-                                    'add', 'remove', 'edit', 'manage', 'find', 'query', 'sync', 'upload',
-                                    'download', 'export', 'import', 'send', 'receive', 'start', 'stop'
-                                ]]
-                                
-                                # Build improved document format for reranker
-                                doc_parts = [f"Tool Name: {name}"]
-                                if service:
-                                    doc_parts.append(f"Service: {service}")
-                                if action_keywords:
-                                    doc_parts.append(f"Actions: {', '.join(action_keywords)}")
-                                if description:
-                                    # Truncate description to first 500 chars for reranker efficiency
-                                    desc_truncated = description[:500] + ('...' if len(description) > 500 else '')
-                                    doc_parts.append(f"Description: {desc_truncated}")
-                                
-                                doc_text = '\n'.join(doc_parts)
-                                documents.append(doc_text.strip())
+            # Build base query
+            if use_reranking:
+                print(f"Using client-side reranking: retrieving {rerank_initial_limit} candidates for top-{limit} results")
+                
+                # Get initial results without Weaviate reranking to avoid panics
+                result = collection.query.hybrid(
+                    query=hybrid_query,
+                    alpha=0.75,  # 75% vector search, 25% keyword search
+                    limit=rerank_initial_limit,  # Get more candidates for reranking
+                    fusion_type=HybridFusion.RELATIVE_SCORE,
+                    query_properties=["name^2", "enhanced_description^2", "description^1.5", "tags"],
+                    return_metadata=MetadataQuery(score=True)
+                )
+                
+                # Apply client-side reranking
+                if result and hasattr(result, 'objects') and result.objects:
+                    try:
+                        # Prepare documents for reranking with improved format
+                        documents = []
+                        for obj in result.objects:
+                            name = obj.properties.get('name', '')
+                            description = obj.properties.get('description', '')
+                            tags = obj.properties.get('tags', [])
+                            mcp_server = obj.properties.get('mcp_server_name', '')
                             
-                            if documents:
-                                # Call reranker using persistent client (avoids TCP overhead)
-                                client = get_reranker_client()
-                                
-                                # Build payload based on provider
-                                if RERANKER_PROVIDER == "vllm":
-                                    # vLLM format: /v1/rerank endpoint
-                                    # Embed instruction in query since vLLM doesn't have separate instruction field
-                                    instructed_query = f"{DEFAULT_RERANK_INSTRUCTION}\n\nQuery: {cleaned_query}"
-                                    payload = {
-                                        "model": RERANKER_MODEL,
-                                        "query": instructed_query,
-                                        "documents": documents,
-                                        "top_k": min(limit, len(documents)),
-                                    }
-                                else:
-                                    # Ollama adapter format (default)
-                                    payload = {
-                                        "query": cleaned_query,
-                                        "documents": documents,
-                                        "k": min(limit, len(documents)),
-                                        "instruction": DEFAULT_RERANK_INSTRUCTION,
-                                    }
-                                
-                                response = client.post(RERANKER_URL, json=payload)
-                                if response.status_code == 200:
-                                    rerank_data = response.json()
-                                    rerank_results = rerank_data.get('results', [])
-                                    
-                                    # Create mapping from rerank indices to original objects with scores
-                                    scored_objects = []
-                                    for rerank_result in rerank_results:
-                                        original_idx = rerank_result['index']
-                                        if original_idx < len(result.objects):
-                                            obj = result.objects[original_idx]
-                                            score = rerank_result['relevance_score']
-                                            scored_objects.append((score, obj))
-                                    
-                                    # Sort by rerank score and take top-k  
-                                    scored_objects.sort(key=lambda x: x[0], reverse=True)
-                                    
-                                    # Store rerank scores on the objects for later use
-                                    for score, obj in scored_objects[:limit]:
-                                        if not hasattr(obj, 'rerank_score'):
-                                            obj.rerank_score = score
-                                    
-                                    result.objects = [obj for _, obj in scored_objects[:limit]]
-                                    
-                                    print(f"Client-side reranking completed: {len(scored_objects)} results reranked")
-                                else:
-                                    print(f"Reranker request failed: {response.status_code}, falling back to original order")
-                                    result.objects = result.objects[:limit]
-                        except Exception as e:
-                            print(f"Client-side reranking failed: {e}, falling back to original order")
-                            result.objects = result.objects[:limit]
-                    else:
-                        print("No results to rerank, proceeding with standard search")
-                        use_reranking = False  # Fall back to standard search
+                            # Extract service name from tags (e.g., "mcp:huly" -> "huly")
+                            service = mcp_server
+                            if not service and tags:
+                                for tag in tags:
+                                    if tag.startswith('mcp:'):
+                                        service = tag[4:]  # Remove "mcp:" prefix
+                                        break
+                            
+                            # Extract action keywords from tool name (e.g., "huly_create_issue" -> ["create", "issue"])
+                            name_parts = name.lower().replace('_', ' ').replace('-', ' ').split()
+                            action_keywords = [p for p in name_parts if p in [
+                                'create', 'read', 'update', 'delete', 'list', 'search', 'get', 'set',
+                                'add', 'remove', 'edit', 'manage', 'find', 'query', 'sync', 'upload',
+                                'download', 'export', 'import', 'send', 'receive', 'start', 'stop'
+                            ]]
+                            
+                            # Build improved document format for reranker
+                            doc_parts = [f"Tool Name: {name}"]
+                            if service:
+                                doc_parts.append(f"Service: {service}")
+                            if action_keywords:
+                                doc_parts.append(f"Actions: {', '.join(action_keywords)}")
+                            if description:
+                                # Truncate description to first 500 chars for reranker efficiency
+                                desc_truncated = description[:500] + ('...' if len(description) > 500 else '')
+                                doc_parts.append(f"Description: {desc_truncated}")
+                            
+                            doc_text = '\n'.join(doc_parts)
+                            documents.append(doc_text.strip())
                         
+                        if documents:
+                            # Call our reranker adapter with task-specific instruction
+                            import httpx
+                            reranker_url = "http://ollama-reranker-adapter:8080/rerank"
+
+                            payload = {
+                                "query": cleaned_query,
+                                "documents": documents,
+                                "k": min(limit, len(documents)),
+                                "instruction": DEFAULT_RERANK_INSTRUCTION,
+                            }
+                            
+                            response = httpx.post(reranker_url, json=payload, timeout=30.0)
+                            if response.status_code == 200:
+                                rerank_data = response.json()
+                                rerank_results = rerank_data.get('results', [])
+                                
+                                # Create mapping from rerank indices to original objects with scores
+                                scored_objects = []
+                                for rerank_result in rerank_results:
+                                    original_idx = rerank_result['index']
+                                    if original_idx < len(result.objects):
+                                        obj = result.objects[original_idx]
+                                        score = rerank_result['relevance_score']
+                                        scored_objects.append((score, obj))
+                                
+                                # Sort by rerank score and take top-k  
+                                scored_objects.sort(key=lambda x: x[0], reverse=True)
+                                
+                                # Store rerank scores on the objects for later use
+                                for score, obj in scored_objects[:limit]:
+                                    if not hasattr(obj, 'rerank_score'):
+                                        obj.rerank_score = score
+                                
+                                result.objects = [obj for _, obj in scored_objects[:limit]]
+                                
+                                print(f"Client-side reranking completed: {len(scored_objects)} results reranked")
+                            else:
+                                print(f"Reranker request failed: {response.status_code}, falling back to original order")
+                                result.objects = result.objects[:limit]
+                    except Exception as e:
+                        print(f"Client-side reranking failed: {e}, falling back to original order")
+                        result.objects = result.objects[:limit]
                 else:
-                    print(f"Standard search without reranking for {limit} results")
+                    print("No results to rerank, proceeding with standard search")
+                    use_reranking = False  # Fall back to standard search
                     
-                    # Standard hybrid search without reranking
-                    # Uses same field boosting as reranking path for consistency
-                    result = collection.query.hybrid(
-                        query=hybrid_query,
-                        alpha=0.75,
-                        limit=limit,
-                        fusion_type=HybridFusion.RELATIVE_SCORE,
-                        query_properties=[
-                            "action_entities^3",      # Highest: "create issue", "delete file"
-                            "name^2",                 # Tool name
-                            "semantic_keywords^2",    # Enriched keywords
-                            "use_cases^1.5",          # Natural language scenarios
-                            "server_domain^1.5",      # MCP server domain context
-                            "enhanced_description^1.5",  # LLM description
-                            "description",            # Original description
-                            "tags"                    # Category tags
-                        ],
-                        return_metadata=MetadataQuery(score=True)
-                    )
+            else:
+                print(f"Standard search without reranking for {limit} results")
+                
+                # Standard hybrid search without reranking
+                result = collection.query.hybrid(
+                    query=hybrid_query,
+                    alpha=0.75,
+                    limit=limit,
+                    fusion_type=HybridFusion.RELATIVE_SCORE,
+                    query_properties=["name^2", "enhanced_description^2", "description^1.5", "tags"],
+                    return_metadata=MetadataQuery(score=True)
+                )
 
-                # Process results
-                tools = []
-                if result and hasattr(result, 'objects'):
-                    for obj in result.objects:
-                        tool_data = obj.properties
+            # Process results
+            tools = []
+            if result and hasattr(result, 'objects'):
+                for obj in result.objects:
+                    tool_data = obj.properties
+                    
+                    # Enhanced descriptions are now included in the search and available in results
+                    
+                    # Handle scoring
+                    if hasattr(obj, 'rerank_score'):
+                        # Client-side reranking was used
+                        tool_data["rerank_score"] = obj.rerank_score
+                        tool_data["score"] = obj.rerank_score  # Also set score for compatibility
+                        score = obj.rerank_score
+                    elif hasattr(obj, 'metadata') and obj.metadata is not None:
+                        # Standard Weaviate scoring
+                        score = getattr(obj.metadata, 'score', 0.5)
                         
-                        # Enhanced descriptions are now included in the search and available in results
-                        
-                        # Handle scoring
-                        if hasattr(obj, 'rerank_score'):
-                            # Client-side reranking was used
-                            tool_data["rerank_score"] = obj.rerank_score
-                            tool_data["score"] = obj.rerank_score  # Also set score for compatibility
-                            score = obj.rerank_score
-                        elif hasattr(obj, 'metadata') and obj.metadata is not None:
-                            # Standard Weaviate scoring
-                            score = getattr(obj.metadata, 'score', 0.5)
-                            
-                            tool_data["distance"] = 1 - (score if score is not None else 0.5)
-                            tool_data["score"] = score if score is not None else 0.5
-                        else:
-                            tool_data["distance"] = 0.5
-                            tool_data["score"] = 0.5
-                        
-                        tools.append(tool_data)
-                
-                if use_reranking:
-                    print(f"Reranking complete: returned {len(tools)} tools")
-                
-                return tools
-                
-            except Exception as e:
-                print(f"Error in collection query: {e}")
-                # Fallback to non-reranked search if reranking fails
-                if use_reranking:
-                    print("Falling back to standard search without reranking")
-                    return search_tools_with_reranking(
-                        query=query,
-                        limit=limit,
-                        use_reranking=False
-                    )
-                return []
+                        tool_data["distance"] = 1 - (score if score is not None else 0.5)
+                        tool_data["score"] = score if score is not None else 0.5
+                    else:
+                        tool_data["distance"] = 0.5
+                        tool_data["score"] = 0.5
+                    
+                    tools.append(tool_data)
+            
+            if use_reranking:
+                print(f"Reranking complete: returned {len(tools)} tools")
+            
+            return tools
+            
+        except Exception as e:
+            print(f"Error in collection query: {e}")
+            # Fallback to non-reranked search if reranking fails
+            if use_reranking:
+                print("Falling back to standard search without reranking")
+                return search_tools_with_reranking(
+                    query=query,
+                    limit=limit,
+                    use_reranking=False
+                )
+            return []
             
     except Exception as e:
         print(f"Error in search_tools_with_reranking: {e}")
         return []
-    # Note: No need to close client - connection pool manages lifecycle
+        
+    finally:
+        if client:
+            try:
+                client.close()
+            except Exception as e:
+                print(f"Error closing client: {e}")
 
 def search_tools(query: str, limit: int = 10, reranker_config: Optional[Dict[str, Any]] = None) -> list:
     """
     Backward-compatible wrapper that uses reranking if enabled.
     Maintains the original API signature while adding reranking capabilities.
     
-    Reranking is DISABLED by default via ENABLE_RERANKING_BY_DEFAULT env var (default: false).
-    The qwen3-reranker model was found to demote exact matches (e.g., "matrix message" ranked
-    letta_agent_advanced higher than matrix_messaging). Hybrid search with BM25 field boosting
-    provides better results for service-specific queries.
-    
-    Can be overridden by passing reranker_config={'enabled': True}.
+    Reranking is enabled by default via ENABLE_RERANKING_BY_DEFAULT env var (default: true).
+    Can be overridden by passing reranker_config={'enabled': False}.
     """
     # Determine if reranking should be used
-    # Default to ENABLE_RERANKING_BY_DEFAULT env var (false by default - reranker demotes exact matches)
+    # Default to ENABLE_RERANKING_BY_DEFAULT env var (true by default)
     use_reranking = ENABLE_RERANKING_BY_DEFAULT
     
     # Allow explicit override via reranker_config

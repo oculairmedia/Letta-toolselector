@@ -61,7 +61,8 @@ class LettaSDKClient:
         if self._base_url.endswith('/v1'):
             self._base_url = self._base_url[:-3]
         
-        # Note: Don't force HTTPS - allow HTTP for local proxies
+        # Ensure HTTPS
+        self._base_url = self._base_url.replace('http://', 'https://')
         
         # Initialize SDK client with custom auth header
         # The Letta server uses X-BARE-PASSWORD header format

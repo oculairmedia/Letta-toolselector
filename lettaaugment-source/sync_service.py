@@ -16,9 +16,6 @@ import weaviate.classes.query as wq
 from embedding_config import OPENAI_EMBEDDING_MODEL
 from fetch_all_tools import fetch_all_tools_async
 
-# Enrichment integration - enabled via ENABLE_AUTO_ENRICHMENT env var
-ENABLE_AUTO_ENRICHMENT = os.getenv("ENABLE_AUTO_ENRICHMENT", "false").lower() == "true"
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -297,22 +294,6 @@ async def sync_tools(): # Make async
                         failed_count += 1
                         logger.error(f"Error adding new tool {tool_name} to batch: {e_add}")
             logger.info(f"Finished adding new tools. Added: {added_count}, Failed: {failed_count}")
-            
-            # --- Trigger Enrichment for New Tools ---
-            if ENABLE_AUTO_ENRICHMENT and added_count > 0:
-                logger.info(f"Auto-enrichment enabled, triggering enrichment for {added_count} new tools...")
-                try:
-                    from enrichment_service import run_enrichment_cycle
-                    # Run enrichment asynchronously (non-blocking)
-                    enrichment_stats = await run_enrichment_cycle(force_all=False)
-                    logger.info(
-                        f"Enrichment completed: {enrichment_stats.get('tools_enriched', 0)} tools enriched, "
-                        f"{enrichment_stats.get('servers_profiled', 0)} servers profiled"
-                    )
-                except ImportError:
-                    logger.warning("enrichment_service not available, skipping auto-enrichment")
-                except Exception as e_enrich:
-                    logger.error(f"Error during auto-enrichment: {e_enrich}")
         else:
             logger.info("No new tools found in Letta to add to Weaviate.")
 

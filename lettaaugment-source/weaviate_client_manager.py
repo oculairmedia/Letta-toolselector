@@ -76,12 +76,6 @@ class ConnectionConfig:
     recovery_timeout: float = 60.0
     success_threshold: int = 3
     
-    # Connection acquisition settings
-    acquire_timeout: float = 5.0  # Max time to wait for a connection
-    
-    # Connection acquisition settings
-    acquire_timeout: float = 5.0  # Max time to wait for a connection
-    
     # Additional headers
     headers: Dict[str, str] = field(default_factory=dict)
     
@@ -141,10 +135,6 @@ class ConnectionMetrics:
     last_health_check: Optional[datetime] = None
     uptime_start: datetime = field(default_factory=datetime.utcnow)
     circuit_breaker_trips: int = 0
-    # Connection wait metrics
-    acquire_waits: int = 0  # Number of times callers had to wait
-    acquire_timeouts: int = 0  # Number of timeout failures
-    average_wait_time: float = 0.0  # Average wait time in seconds
     
     def uptime(self) -> timedelta:
         """Calculate uptime"""
@@ -306,8 +296,7 @@ class WeaviateConnectionPool:
             config.success_threshold
         )
         self.metrics = ConnectionMetrics()
-        self._condition = threading.Condition()  # Condition for wait/notify on connections
-        self._lock = self._condition  # Alias for backward compatibility
+        self._lock = threading.Lock()
         self._health_check_thread: Optional[threading.Thread] = None
         self._shutdown = False
         
@@ -412,88 +401,34 @@ class WeaviateConnectionPool:
             if connection:
                 self._release_connection(connection)
     
-    def _acquire_connection(self, timeout: Optional[float] = None) -> WeaviateConnection:
-        """Acquire a connection from the pool with optional wait timeout.
-        
-        Args:
-            timeout: Max seconds to wait for a connection. Defaults to config.acquire_timeout.
-                    Set to 0 for no waiting (immediate fail if none available).
-        
-        Returns:
-            WeaviateConnection: An available connection from the pool.
+    def _acquire_connection(self) -> WeaviateConnection:
+        """Acquire a connection from the pool"""
+        with self._lock:
+            # Find an available healthy connection
+            for connection in self.connections:
+                if connection.connection_id not in self.active_connections and connection.is_healthy():
+                    self.active_connections[connection.connection_id] = connection
+                    connection.last_used = datetime.utcnow()
+                    return connection
             
-        Raises:
-            TimeoutError: If no connection becomes available within timeout.
-        """
-        if timeout is None:
-            timeout = self.config.acquire_timeout
+            # Create new connection if under max limit
+            if len(self.connections) < self.config.max_connections:
+                connection_id = f"demand-{int(time.time())}-{len(self.connections)}"
+                connection = self._create_connection(connection_id)
+                if connection.connect():
+                    self.connections.append(connection)
+                    self.active_connections[connection.connection_id] = connection
+                    self.metrics.total_connections += 1
+                    return connection
             
-        start_time = time.time()
-        waited = False
-        
-        with self._condition:
-            while True:
-                # Find an available healthy connection
-                for connection in self.connections:
-                    if connection.connection_id not in self.active_connections and connection.is_healthy():
-                        self.active_connections[connection.connection_id] = connection
-                        connection.last_used = datetime.utcnow()
-                        
-                        # Update wait metrics if we had to wait
-                        if waited:
-                            wait_time = time.time() - start_time
-                            self._update_wait_time(wait_time)
-                        
-                        return connection
-                
-                # Create new connection if under max limit
-                if len(self.connections) < self.config.max_connections:
-                    connection_id = f"demand-{int(time.time())}-{len(self.connections)}"
-                    connection = self._create_connection(connection_id)
-                    if connection.connect():
-                        self.connections.append(connection)
-                        self.active_connections[connection.connection_id] = connection
-                        self.metrics.total_connections += 1
-                        return connection
-                
-                # Check if we've exceeded timeout
-                elapsed = time.time() - start_time
-                remaining = timeout - elapsed
-                
-                if remaining <= 0:
-                    self.metrics.acquire_timeouts += 1
-                    raise TimeoutError(
-                        f"No connection available after {timeout:.2f}s "
-                        f"(pool: {len(self.connections)}/{self.config.max_connections}, "
-                        f"active: {len(self.active_connections)})"
-                    )
-                
-                # Wait for a connection to be released
-                if not waited:
-                    waited = True
-                    self.metrics.acquire_waits += 1
-                    logger.debug("Waiting for available connection (timeout=%.2fs)", remaining)
-                
-                # Wait with remaining timeout - will be notified when connection released
-                self._condition.wait(timeout=min(remaining, 0.5))  # Wake every 0.5s max to recheck
+            # Wait for connection to become available (simplified)
+            raise Exception("No connections available in pool")
     
     def _release_connection(self, connection: WeaviateConnection):
-        """Release a connection back to the pool and notify waiters"""
-        with self._condition:
+        """Release a connection back to the pool"""
+        with self._lock:
             if connection.connection_id in self.active_connections:
                 del self.active_connections[connection.connection_id]
-            # Notify one waiting thread that a connection is available
-            self._condition.notify()
-    
-    def _update_wait_time(self, wait_time: float):
-        """Update average wait time metric"""
-        if self.metrics.average_wait_time == 0:
-            self.metrics.average_wait_time = wait_time
-        else:
-            # Exponential moving average
-            self.metrics.average_wait_time = (
-                0.9 * self.metrics.average_wait_time + 0.1 * wait_time
-            )
     
     def _update_response_time(self, response_time: float):
         """Update average response time"""
@@ -519,11 +454,7 @@ class WeaviateConnectionPool:
             "uptime": str(self.metrics.uptime()),
             "circuit_breaker_state": self.circuit_breaker.state.value,
             "circuit_breaker_trips": self.metrics.circuit_breaker_trips,
-            "last_health_check": self.metrics.last_health_check.isoformat() if self.metrics.last_health_check else None,
-            # Wait metrics
-            "acquire_waits": self.metrics.acquire_waits,
-            "acquire_timeouts": self.metrics.acquire_timeouts,
-            "average_wait_time": self.metrics.average_wait_time
+            "last_health_check": self.metrics.last_health_check.isoformat() if self.metrics.last_health_check else None
         }
     
     def close(self):

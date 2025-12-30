@@ -1,0 +1,22 @@
+# Prometheus configuration for Tool Selector monitoring
+# 
+# Usage:
+#   1. Update the target addresses to match your deployment
+#   2. Mount this file to /etc/prometheus/prometheus.yml in Prometheus container
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Tool Selector API metrics
+  - job_name: 'tool-selector'
+    static_configs:
+      - targets: ['lettaaugment:5001']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

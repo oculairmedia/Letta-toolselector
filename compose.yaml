@@ -104,9 +104,9 @@ services:
     healthcheck:
       test:
         - CMD
-        - curl
-        - -f
-        - http://localhost:3001/api/health
+        - python3
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:3001/api/health', timeout=5)"
       interval: 30s
       timeout: 10s
       retries: 3

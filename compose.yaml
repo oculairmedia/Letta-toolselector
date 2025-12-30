@@ -63,7 +63,7 @@ services:
       - letta-tools
 
   tool-selector-api:
-    image: ghcr.io/oculairmedia/letta-toolselector-api:main
+    image: ghcr.io/oculairmedia/letta-toolselector-tool-selector-api:main
     container_name: letta-toolselector-api
     ports:
       - 8020:3001
@@ -112,7 +112,7 @@ services:
       - letta-tools
 
   tool-sync:
-    image: ghcr.io/oculairmedia/letta-toolselector-sync:main
+    image: ghcr.io/oculairmedia/letta-toolselector-tool-sync:main
     container_name: letta-toolselector-sync
     command: python sync_service.py
     environment:
@@ -138,7 +138,7 @@ services:
       - letta-tools
 
   semantic-enrichment:
-    image: ghcr.io/oculairmedia/letta-toolselector-sync:main
+    image: ghcr.io/oculairmedia/letta-toolselector-tool-sync:main
     container_name: letta-toolselector-enrichment
     command: python enrichment_service.py
     profiles:
@@ -203,7 +203,7 @@ services:
     restart: unless-stopped
 
   time-service:
-    image: ghcr.io/oculairmedia/letta-toolselector-api:main
+    image: ghcr.io/oculairmedia/letta-toolselector-tool-selector-api:main
     container_name: letta-toolselector-time
     command: python time_memory_service.py
     environment:
@@ -224,7 +224,7 @@ services:
       - letta-tools
 
   tool-selector-mcp:
-    image: ghcr.io/oculairmedia/letta-toolselector-mcp:main
+    image: ghcr.io/oculairmedia/letta-toolselector-tool-selector-mcp:main
     container_name: letta-toolselector-mcp
     ports:
       - 3020:3020

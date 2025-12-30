@@ -6,9 +6,7 @@ import sys
 
 # Environment configuration
 LETTA_URL = os.environ.get('LETTA_API_URL', 'https://letta.oculair.ca/v1')
-# Ensure it's always HTTPS
-if LETTA_URL.startswith('http://'):
-    LETTA_URL = LETTA_URL.replace('http://', 'https://', 1)
+# Only add /v1 suffix if missing - respect HTTP/HTTPS as configured
 if not LETTA_URL.endswith('/v1'):
     LETTA_URL = LETTA_URL.rstrip('/') + '/v1'
 

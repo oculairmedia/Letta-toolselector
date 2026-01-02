@@ -148,9 +148,8 @@ def _register_lifecycle_hooks(app: Quart, config: AppConfig, services: ServiceCo
         os.makedirs(config.cache.cache_dir, exist_ok=True)
         logger.info(f"Cache directory: {config.cache.cache_dir}")
         
-        # Register blueprints if factory-based registration is enabled
-        if app.config.get('USE_FACTORY_BLUEPRINTS', False):
-            await _register_blueprints(app, config, services)
+        # Register blueprints (always enabled in factory mode)
+        await _register_blueprints(app, config, services)
         
         logger.info("Application startup complete")
     
@@ -307,6 +306,25 @@ async def _register_blueprints(app: Quart, config: AppConfig, services: ServiceC
     # Configure services layer
     configure_search_service(search_tools)
     tool_cache_service = get_tool_cache_service(cache_dir)
+    
+    # 0. Health routes (must be first for monitoring)
+    try:
+        from routes import health as health_routes, health_bp
+        
+        async def get_health_status():
+            """Return health status for the application."""
+            from quart import jsonify
+            return jsonify({
+                "status": "healthy",
+                "weaviate": services.weaviate_client is not None,
+                "cache_dir": cache_dir
+            })
+        
+        health_routes.configure(get_health_status_func=get_health_status)
+        app.register_blueprint(health_bp)
+        logger.info("Health routes blueprint registered")
+    except Exception as e:
+        logger.error(f"Failed to register health blueprint: {e}")
     
     # 1. Search routes
     try:
@@ -521,6 +539,21 @@ async def _register_blueprints(app: Quart, config: AppConfig, services: ServiceC
     except Exception as e:
         logger.error(f"Failed to register enrichment blueprint: {e}")
     
+    # Webhook routes (for Letta tool events)
+    try:
+        from routes import webhook as webhook_routes
+        from routes.webhook import webhook_bp
+        webhook_routes.configure(
+            webhook_secret=os.getenv("LETTA_WEBHOOK_SECRET"),
+            weaviate_client=services.weaviate_client,
+            cache_dir=cache_dir
+        )
+        app.register_blueprint(webhook_bp)
+        logger.info("Webhook routes blueprint registered")
+    except Exception as e:
+        logger.error(f"Failed to register webhook blueprint: {e}")
+    
+
     # Load initial cache
     await read_tool_cache(force_reload=True)
     await read_mcp_servers_cache()

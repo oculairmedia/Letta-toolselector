@@ -1,9 +1,7 @@
 services:
   weaviate:
     image: semitechnologies/weaviate:1.25.0
-    ports:
-      - 8080:8080
-      - 50051:50051
+    network_mode: host
     environment:
       QUERY_DEFAULTS_LIMIT: 15
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
@@ -15,8 +13,6 @@ services:
       # Ollama configuration for text2vec-ollama module
       OLLAMA_API_ENDPOINT: http://192.168.50.80:11434
       TEXT2VEC_OLLAMA_API_ENDPOINT: http://192.168.50.80:11434
-      # Point to our Ollama reranker adapter
-      RERANKER_INFERENCE_API: http://reranker:8080
     volumes:
       - weaviate_data:/var/lib/weaviate
     healthcheck:
@@ -29,38 +25,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 40s
-    depends_on:
-      reranker:
-        condition: service_healthy
-    networks:
-      - letta-tools
-
-  reranker:
-    image: ghcr.io/oculairmedia/letta-toolselector-reranker:main
-    container_name: letta-toolselector-reranker
-    ports:
-      - 8091:8080
-    environment:
-      - OLLAMA_BASE_URL=http://192.168.50.80:11434
-      - OLLAMA_MODEL=dengcao/Qwen3-Reranker-4B:Q5_K_M
-      - BATCH_SIZE=10
-      - TIMEOUT_SECONDS=30
-      - LOG_LEVEL=INFO
-      - ENABLE_CACHE=true
-      - CACHE_TTL=300
-    restart: unless-stopped
-    healthcheck:
-      test:
-        - CMD
-        - curl
-        - -f
-        - http://localhost:8080/health
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    networks:
-      - letta-tools
 
   tool-selector-api:
     image: ghcr.io/oculairmedia/letta-toolselector-tool-selector-api:main
@@ -71,7 +35,11 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LETTA_API_URL=${LETTA_API_URL}
       - LETTA_PASSWORD=${LETTA_PASSWORD}
-      - WEAVIATE_URL=http://weaviate:8080/
+      - WEAVIATE_URL=http://192.168.50.90:8092/
+      - WEAVIATE_HTTP_HOST=192.168.50.90
+      - WEAVIATE_HTTP_PORT=8092
+      - WEAVIATE_GRPC_HOST=192.168.50.90
+      - WEAVIATE_GRPC_PORT=50052
       - WEAVIATE_API_KEY=${WEAVIATE_API_KEY}
       - PORT=3001
       - DEFAULT_DROP_RATE=${DEFAULT_DROP_RATE:-0.6}
@@ -97,7 +65,6 @@ services:
       - RERANKER_URL=${RERANKER_URL:-http://100.81.139.20:11435/v1/rerank}
       - RERANKER_TIMEOUT=${RERANKER_TIMEOUT:-30.0}
       - RERANKER_TEMPERATURE=${RERANKER_TEMPERATURE:-0.1}
-      - OLLAMA_RERANKER_BASE_URL=${OLLAMA_RERANKER_BASE_URL:-http://reranker:8080}
       - LETTA_DIRECT_MESSAGE_URL=${LETTA_DIRECT_MESSAGE_URL:-http://192.168.50.90:8283}
       - MATRIX_BRIDGE_WEBHOOK_URL=${MATRIX_BRIDGE_WEBHOOK_URL:-}
     restart: unless-stopped
@@ -115,9 +82,6 @@ services:
       - ./.env:/app/.env:ro
       - tool_cache_volume:/app/runtime_cache
       - ./tool-selector-api:/app:rw
-    depends_on:
-      weaviate:
-        condition: service_healthy
     networks:
       - letta-tools
 
@@ -159,8 +123,8 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-dummy}
       - ENRICHMENT_CACHE_DIR=/app/enrichment_cache
       - ENRICHMENT_INTERVAL=${ENRICHMENT_INTERVAL:-3600}
-      - WEAVIATE_HTTP_HOST=weaviate
-      - WEAVIATE_HTTP_PORT=8080
+      - WEAVIATE_HTTP_HOST=192.168.50.90
+      - WEAVIATE_HTTP_PORT=8092
       - WEAVIATE_GRPC_PORT=50051
     volumes:
       - ./.env:/app/.env:ro
@@ -168,9 +132,6 @@ services:
       - enrichment_cache_volume:/app/enrichment_cache
       - ./tool-selector-api:/app:rw
     restart: unless-stopped
-    depends_on:
-      weaviate:
-        condition: service_healthy
     networks:
       - letta-tools
 
@@ -217,7 +178,11 @@ services:
     container_name: letta-toolselector-time
     command: python time_memory_service.py
     environment:
-      - WEAVIATE_URL=http://weaviate:8080/
+      - WEAVIATE_URL=http://192.168.50.90:8092/
+      - WEAVIATE_HTTP_HOST=192.168.50.90
+      - WEAVIATE_HTTP_PORT=8092
+      - WEAVIATE_GRPC_HOST=192.168.50.90
+      - WEAVIATE_GRPC_PORT=50052
       - WEAVIATE_API_KEY=${WEAVIATE_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LETTA_API_URL=http://192.168.50.90:8283/v1
@@ -227,9 +192,6 @@ services:
       - ./.env:/app/.env:ro
       - ./tool-selector-api/time_memory_service.py:/app/time_memory_service.py:ro
     restart: unless-stopped
-    depends_on:
-      weaviate:
-        condition: service_healthy
     networks:
       - letta-tools
 
@@ -276,7 +238,7 @@ services:
     environment:
       - LDTS_API_URL=http://192.168.50.90:8020
       - LDTS_MCP_URL=http://tool-selector-mcp:3020/mcp
-      - WEAVIATE_URL=http://weaviate:8080
+      - WEAVIATE_URL=http://192.168.50.90:8092
       - LETTA_API_URL=${LETTA_API_URL}
       - LETTA_PASSWORD=${LETTA_PASSWORD}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -303,8 +265,6 @@ services:
       task-worker:
         condition: service_healthy
       tool-selector-mcp:
-        condition: service_healthy
-      weaviate:
         condition: service_healthy
     networks:
       - letta-tools

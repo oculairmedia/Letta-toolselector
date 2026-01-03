@@ -1,7 +1,30 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cd /opt/stacks/lettatoolsselector && docker-compose ps)"
+      "Bash(cd /opt/stacks/lettatoolsselector && docker-compose ps)",
+      "Bash(grep:*)",
+      "Bash(head:*)",
+      "Bash(sed -n '129,280p' /opt/stacks/lettatoolsselector/tool-selector-api/sync_service.py)",
+      "Bash(cat:*)",
+      "Bash(sed -n '535,560p' /opt/stacks/lettatoolsselector/tool-selector-api/app_factory.py)",
+      "Bash(sed -i '/# Load initial cache/i\\\n    # Webhook routes (for Letta tool events)\\\n    try:\\\n        from routes import webhook as webhook_routes\\\n        from routes.webhook import webhook_bp\\\n        webhook_routes.configure(\\\n            webhook_secret=os.getenv(\"LETTA_WEBHOOK_SECRET\"),\\\n            weaviate_client=services.weaviate_client,\\\n            cache_dir=cache_dir\\\n        )\\\n        app.register_blueprint(webhook_bp)\\\n        logger.info(\"Webhook routes blueprint registered\")\\\n    except Exception as e:\\\n        logger.error(f\"Failed to register webhook blueprint: {e}\")\\\n    \\\n' /opt/stacks/lettatoolsselector/tool-selector-api/app_factory.py\necho \"Updated app_factory.py with webhook blueprint\")",
+      "Bash(sed -n '540,570p' /opt/stacks/lettatoolsselector/tool-selector-api/app_factory.py)",
+      "Bash(git status:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(echo:*)",
+      "Bash(tail:*)",
+      "Bash(# Check webhook health now\ncurl -s \"http://192.168.50.90:8020/webhook/health\" | jq .)",
+      "Bash(cd /opt/stacks/lettatoolsselector && source /opt/stacks/letta/.env && LETTA_PASSWORD=\"$LETTA_PASSWORD\" ./scripts/test_webhook_e2e.sh)",
+      "Bash(# Check if tools are in cache\ncurl -s \"http://192.168.50.90:8020/api/tools\" | jq 'length')",
+      "Bash(# Check health endpoint\ncurl -s \"http://192.168.50.90:8020/health\")",
+      "Bash(# Quick manual test\nsource /opt/stacks/letta/.env\n\n# Get baseline count\nBEFORE=$(curl -s \"http://192.168.50.90:8020/api/v1/tools\" | jq 'length')\necho \"Before: $BEFORE tools\"\n\n# Create tool\nTOOL_RESPONSE=$(curl -sL -X POST \"http://192.168.50.90:8283/v1/tools/\" \\\n  -H \"Content-Type: application/json\" \\\n  -H \"X-BARE-PASSWORD: password $LETTA_PASSWORD\" \\\n  -d '{\n    \"source_type\": \"python\",\n    \"source_code\": \"def final_webhook_test():\\n    \\\"\\\"\\\"Final test\\\"\\\"\\\"\\n    return \\\"success\\\"\"\n  }')\nTOOL_ID=$(echo \"$TOOL_RESPONSE\" | jq -r '.id')\necho \"Created: $TOOL_ID\"\n\n# Wait for webhook\nsleep 2\n\n# Check if tool is in Weaviate (search)\necho \"Searching for tool...\"\ncurl -s \"http://192.168.50.90:8020/api/v1/search?query=final_webhook_test&limit=3\" | jq '.[].name'\n\n# Delete\ncurl -sL -X DELETE \"http://192.168.50.90:8283/v1/tools/$TOOL_ID\" \\\n  -H \"X-BARE-PASSWORD: password $LETTA_PASSWORD\" > /dev/null\necho \"Deleted\"\n\nsleep 2\n\n# Verify deletion from Weaviate\necho \"After deletion:\"\ncurl -s \"http://192.168.50.90:8020/api/v1/search?query=final_webhook_test&limit=3\" | jq '.[].name // \"Not found\"')",
+      "Bash(# Check search endpoint format\ncurl -s \"http://192.168.50.90:8020/api/v1/search?query=test&limit=3\")",
+      "Bash(# Test the search endpoint (POST)\ncurl -s -X POST \"http://192.168.50.90:8020/api/v1/tools/search\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"query\": \"final_webhook\", \"limit\": 5}' | jq '.')",
+      "Bash(# Check Weaviate schema\ncurl -s \"http://192.168.50.90:8092/v1/schema\" | jq '.classes[].class')",
+      "Bash(# Check Tool collection\ncurl -s \"http://192.168.50.90:8092/v1/objects?class=Tool&limit=5\" | jq '.objects | length')",
+      "Bash(ls:*)",
+      "Bash(cd /opt/stacks/lettatoolsselector && git check-ignore -v scripts/test_webhook_e2e.sh tool-selector-api/tests/test_webhook.py compose.yaml 2>&1)"
     ]
   }
 }

@@ -197,7 +197,7 @@ class OllamaReranker:
             raise
 
 
-def create_reranker(config: RerankerConfig) -> RerankerClient:
+def create_reranker(config: RerankerConfig) -> Optional[RerankerClient]:
     """Factory function to create a reranker based on config."""
     if config.provider.lower() == "vllm":
         return VLLMReranker(
@@ -211,6 +211,11 @@ def create_reranker(config: RerankerConfig) -> RerankerClient:
             timeout=config.timeout,
             instruction=config.instruction
         )
+    elif config.provider.lower() == "litellm":
+        # LiteLLM reranking is handled directly in weaviate_tool_search_with_reranking.py
+        # via llm_rerank_tools() - no separate client needed here
+        logger.info("LiteLLM reranker configured (handled in search function, not search_service)")
+        return None
     else:
         raise ValueError(f"Unknown reranker provider: {config.provider}")
 

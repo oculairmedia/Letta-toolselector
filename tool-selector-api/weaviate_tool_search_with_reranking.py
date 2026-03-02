@@ -136,6 +136,111 @@ def close_reranker_client():
         _reranker_client.close()
         _reranker_client = None
 
+def llm_rerank_tools(query: str, documents: list, objects: list, limit: int) -> list:
+    """
+    Rerank tool candidates using an LLM chat completion via LiteLLM.
+    
+    Instead of cross-encoder similarity scoring, this sends the user's query
+    and candidate tools to an LLM which evaluates relevance based on intent
+    understanding. This fixes cases where embedding similarity misses user intent
+    (e.g., 'find my notes' not matching search_documents).
+    
+    Args:
+        query: The cleaned user query
+        documents: List of formatted tool description strings
+        objects: The original Weaviate result objects (same order as documents)
+        limit: Maximum number of tools to return
+    
+    Returns:
+        List of (score, object) tuples sorted by score descending,
+        or None if reranking fails (caller should fall back to original order).
+    """
+    try:
+        client = get_reranker_client()
+        
+        # Build tool list for the prompt
+        tool_descriptions = []
+        for i, doc in enumerate(documents):
+            tool_descriptions.append(f"[{i}] {doc}")
+        tool_list = "\n\n".join(tool_descriptions)
+        
+        prompt = (
+            "You are a tool relevance evaluator for an AI agent. "
+            "Given a user's message and candidate tools, score each tool's relevance.\n\n"
+            "RULES:\n"
+            "- If the user mentions a specific service (huly, bookstack, matrix, graphiti, etc.), "
+            "tools from that service MUST score 80-100.\n"
+            "- Match user intent (create, search, delete, manage, etc.) to tool purpose.\n"
+            "- Service + action match = 90-100 (e.g., 'create huly issue' -> huly_create_issue)\n"
+            "- Action match only (no service specified) = 50-70\n"
+            "- Loosely related = 20-40\n"
+            "- Irrelevant = 0-10\n\n"
+            f'User Message: "{query}"\n\n'
+            f"Candidate Tools:\n{tool_list}\n\n"
+            'Return JSON: {"ranked_tools": [{"index": <int>, "score": <int>}]}\n'
+            f"Only include tools with score > 10. Sort by score descending. Maximum {limit} tools."
+        )
+        
+        # Build OpenAI-compatible chat completion payload
+        payload = {
+            "model": RERANKER_MODEL,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": float(os.getenv("RERANKER_TEMPERATURE", "0.1")),
+            "max_tokens": 2048,
+            "response_format": {"type": "json_object"}
+        }
+        
+        # LiteLLM uses OpenAI-compatible /v1/chat/completions endpoint
+        base_url = RERANKER_URL.rstrip('/')
+        chat_url = f"{base_url}/v1/chat/completions"
+        
+        # Include LiteLLM API key if configured
+        litellm_api_key = os.getenv("LITELLM_API_KEY", "")
+        headers = {"Content-Type": "application/json"}
+        if litellm_api_key:
+            headers["Authorization"] = f"Bearer {litellm_api_key}"
+        
+        response = client.post(chat_url, json=payload, headers=headers)
+        
+        if response.status_code != 200:
+            print(f"LLM reranker request failed: {response.status_code} - {response.text[:500]}")
+            return None
+        
+        # Parse chat completion response
+        response_data = response.json()
+        content = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        
+        try:
+            ranking = json.loads(content)
+        except json.JSONDecodeError:
+            print(f"LLM reranker returned invalid JSON: {content[:300]}")
+            return None
+        
+        ranked_tools = ranking.get("ranked_tools", [])
+        if not ranked_tools:
+            print("LLM reranker returned empty ranked_tools")
+            return None
+        
+        # Build scored objects list
+        scored_objects = []
+        for entry in ranked_tools:
+            idx = entry.get("index", -1)
+            score = entry.get("score", 0)
+            if 0 <= idx < len(objects):
+                scored_objects.append((float(score), objects[idx]))
+        
+        # Sort by score descending
+        scored_objects.sort(key=lambda x: x[0], reverse=True)
+        
+        print(f"LLM reranking: {len(scored_objects)} tools scored from {len(documents)} candidates")
+        return scored_objects
+        
+    except Exception as e:
+        print(f"LLM reranking failed: {e}")
+        return None
+
 def init_client():
     """Initialize Weaviate client using v4 API."""
     load_dotenv()
@@ -297,14 +402,10 @@ def search_tools_with_reranking(
                         limit=rerank_initial_limit,  # Get more candidates for reranking
                         fusion_type=HybridFusion.RELATIVE_SCORE,
                         query_properties=[
-                            "action_entities^3",      # Highest: "create issue", "delete file"
-                            "name^2",                 # Tool name
-                            "semantic_keywords^2",    # Enriched keywords
-                            "use_cases^1.5",          # Natural language scenarios
-                            "server_domain^1.5",      # MCP server domain context
-                            "enhanced_description^1.5",  # LLM description
+                            "name^2",                 # Tool name - highest boost
                             "description",            # Original description
-                            "tags"                    # Category tags
+                            "tags",                   # Category tags
+                            "mcp_server_name"         # MCP server context
                         ],
                         return_metadata=MetadataQuery(score=True)
                     )
@@ -351,57 +452,71 @@ def search_tools_with_reranking(
                                 documents.append(doc_text.strip())
                             
                             if documents:
-                                # Call reranker using persistent client (avoids TCP overhead)
-                                client = get_reranker_client()
-                                
-                                # Build payload based on provider
-                                if RERANKER_PROVIDER == "vllm":
-                                    # vLLM format: /v1/rerank endpoint
-                                    # Embed instruction in query since vLLM doesn't have separate instruction field
-                                    instructed_query = f"{DEFAULT_RERANK_INSTRUCTION}\n\nQuery: {cleaned_query}"
-                                    payload = {
-                                        "model": RERANKER_MODEL,
-                                        "query": instructed_query,
-                                        "documents": documents,
-                                        "top_k": min(limit, len(documents)),
-                                    }
+                                if RERANKER_PROVIDER == "litellm":
+                                    # LLM intent-aware reranker via chat completion
+                                    scored_objects = llm_rerank_tools(
+                                        query=cleaned_query,
+                                        documents=documents,
+                                        objects=result.objects,
+                                        limit=limit
+                                    )
+                                    if scored_objects is not None:
+                                        for score, obj in scored_objects[:limit]:
+                                            if not hasattr(obj, 'rerank_score'):
+                                                obj.rerank_score = score
+                                        result.objects = [obj for _, obj in scored_objects[:limit]]
+                                        print(f"LLM reranking completed: {len(scored_objects)} results scored")
+                                    else:
+                                        print("LLM reranking failed, falling back to original order")
+                                        result.objects = result.objects[:limit]
                                 else:
-                                    # Ollama adapter format (default)
-                                    payload = {
-                                        "query": cleaned_query,
-                                        "documents": documents,
-                                        "k": min(limit, len(documents)),
-                                        "instruction": DEFAULT_RERANK_INSTRUCTION,
-                                    }
-                                
-                                response = client.post(RERANKER_URL, json=payload)
-                                if response.status_code == 200:
-                                    rerank_data = response.json()
-                                    rerank_results = rerank_data.get('results', [])
+                                    # Cross-encoder reranker (vLLM/Ollama)
+                                    client = get_reranker_client()
                                     
-                                    # Create mapping from rerank indices to original objects with scores
-                                    scored_objects = []
-                                    for rerank_result in rerank_results:
-                                        original_idx = rerank_result['index']
-                                        if original_idx < len(result.objects):
-                                            obj = result.objects[original_idx]
-                                            score = rerank_result['relevance_score']
-                                            scored_objects.append((score, obj))
+                                    # Build payload based on provider
+                                    if RERANKER_PROVIDER == "vllm":
+                                        # vLLM format: /v1/rerank endpoint
+                                        instructed_query = f"{DEFAULT_RERANK_INSTRUCTION}\n\nQuery: {cleaned_query}"
+                                        payload = {
+                                            "model": RERANKER_MODEL,
+                                            "query": instructed_query,
+                                            "documents": documents,
+                                            "top_k": min(limit, len(documents)),
+                                        }
+                                    else:
+                                        # Ollama adapter format (default)
+                                        payload = {
+                                            "query": cleaned_query,
+                                            "documents": documents,
+                                            "k": min(limit, len(documents)),
+                                            "instruction": DEFAULT_RERANK_INSTRUCTION,
+                                        }
                                     
-                                    # Sort by rerank score and take top-k  
-                                    scored_objects.sort(key=lambda x: x[0], reverse=True)
-                                    
-                                    # Store rerank scores on the objects for later use
-                                    for score, obj in scored_objects[:limit]:
-                                        if not hasattr(obj, 'rerank_score'):
-                                            obj.rerank_score = score
-                                    
-                                    result.objects = [obj for _, obj in scored_objects[:limit]]
-                                    
-                                    print(f"Client-side reranking completed: {len(scored_objects)} results reranked")
-                                else:
-                                    print(f"Reranker request failed: {response.status_code}, falling back to original order")
-                                    result.objects = result.objects[:limit]
+                                    response = client.post(RERANKER_URL, json=payload)
+                                    if response.status_code == 200:
+                                        rerank_data = response.json()
+                                        rerank_results = rerank_data.get('results', [])
+                                        
+                                        scored_objects = []
+                                        for rerank_result in rerank_results:
+                                            original_idx = rerank_result['index']
+                                            if original_idx < len(result.objects):
+                                                obj = result.objects[original_idx]
+                                                score = rerank_result['relevance_score']
+                                                scored_objects.append((score, obj))
+                                        
+                                        scored_objects.sort(key=lambda x: x[0], reverse=True)
+                                        
+                                        for score, obj in scored_objects[:limit]:
+                                            if not hasattr(obj, 'rerank_score'):
+                                                obj.rerank_score = score
+                                        
+                                        result.objects = [obj for _, obj in scored_objects[:limit]]
+                                        
+                                        print(f"Client-side reranking completed: {len(scored_objects)} results reranked")
+                                    else:
+                                        print(f"Reranker request failed: {response.status_code}, falling back to original order")
+                                        result.objects = result.objects[:limit]
                         except Exception as e:
                             print(f"Client-side reranking failed: {e}, falling back to original order")
                             result.objects = result.objects[:limit]
@@ -420,14 +535,10 @@ def search_tools_with_reranking(
                         limit=limit,
                         fusion_type=HybridFusion.RELATIVE_SCORE,
                         query_properties=[
-                            "action_entities^3",      # Highest: "create issue", "delete file"
-                            "name^2",                 # Tool name
-                            "semantic_keywords^2",    # Enriched keywords
-                            "use_cases^1.5",          # Natural language scenarios
-                            "server_domain^1.5",      # MCP server domain context
-                            "enhanced_description^1.5",  # LLM description
-                            "description",            # Original description
-                            "tags"                    # Category tags
+                            "name^2",
+                            "description",
+                            "tags",
+                            "mcp_server_name"
                         ],
                         return_metadata=MetadataQuery(score=True)
                     )
@@ -485,15 +596,14 @@ def search_tools(query: str, limit: int = 10, reranker_config: Optional[Dict[str
     Backward-compatible wrapper that uses reranking if enabled.
     Maintains the original API signature while adding reranking capabilities.
     
-    Reranking is DISABLED by default via ENABLE_RERANKING_BY_DEFAULT env var (default: false).
-    The qwen3-reranker model was found to demote exact matches (e.g., "matrix message" ranked
-    letta_agent_advanced higher than matrix_messaging). Hybrid search with BM25 field boosting
-    provides better results for service-specific queries.
+    Reranking is ENABLED by default via ENABLE_RERANKING_BY_DEFAULT env var.
+    Uses LLM-based intent-aware reranking (MiniMax M2.5 via LiteLLM) which
+    understands user intent rather than just embedding similarity. This replaced
+    the qwen3-reranker cross-encoder which demoted service-specific matches.
     
-    Can be overridden by passing reranker_config={'enabled': True}.
+    Can be overridden by passing reranker_config={'enabled': False}.
     """
-    # Determine if reranking should be used
-    # Default to ENABLE_RERANKING_BY_DEFAULT env var (false by default - reranker demotes exact matches)
+    # Default to ENABLE_RERANKING_BY_DEFAULT env var
     use_reranking = ENABLE_RERANKING_BY_DEFAULT
     
     # Allow explicit override via reranker_config

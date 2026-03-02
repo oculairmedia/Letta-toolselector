@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LettaConfig:
     """Configuration for Letta API connection."""
-    url: str = "https://letta2.oculair.ca/v1"
+    url: str = "http://192.168.50.90:8289/v1"
     api_key: Optional[str] = None
     use_sdk: bool = False
     direct_message_url: Optional[str] = None
@@ -79,7 +79,7 @@ class WeaviateConfig:
 class RerankerConfig:
     """Configuration for the reranker service."""
     enabled: bool = True
-    provider: str = "vllm"  # "vllm" or "ollama"
+    provider: str = "vllm"  # "vllm", "ollama", or "litellm"
     url: str = "http://100.81.139.20:11435/rerank"
     model: str = "qwen3-reranker-4b"
     timeout: float = 30.0
@@ -189,7 +189,7 @@ def load_config_from_env() -> AppConfig:
     never_detach_tools = [name.strip() for name in protected_tools_env.split(',') if name.strip()]
     
     # Build Letta config
-    raw_letta_url = os.getenv('LETTA_API_URL', 'https://letta2.oculair.ca/v1')
+    raw_letta_url = os.getenv('LETTA_API_URL', 'http://192.168.50.90:8289/v1')
     direct_url = os.getenv('LETTA_DIRECT_MESSAGE_URL') or os.getenv('LETTA_DIRECT_URL')
     
     letta_config = LettaConfig(

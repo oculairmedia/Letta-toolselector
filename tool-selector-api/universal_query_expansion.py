@@ -634,7 +634,7 @@ class UniversalQueryExpander:
         # 4a. Check if query mentions a known service/platform name
         query_lower = query.lower()
         known_services = {'huly', 'bookstack', 'photoprism', 'komodo', 'letta', 'matrix', 
-                         'payloadcms', 'cms', 'ghost', 'graphiti', 'opencode', 'vibekanban'}
+                         'payloadcms', 'cms', 'ghost', 'graphiti', 'opencode'}
         mentioned_service = None
         for service in known_services:
             if service in query_lower:

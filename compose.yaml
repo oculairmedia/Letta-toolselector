@@ -1,18 +1,36 @@
 services:
+  embedding-proxy:
+    build:
+      context: ./embedding-proxy
+    container_name: letta-toolselector-embedding-proxy
+    network_mode: host
+    environment:
+      - VLLM_EMBEDDING_URL=${VLLM_EMBEDDING_URL:-http://100.81.139.20:11450}
+      - VLLM_MODEL=${VLLM_EMBEDDING_MODEL:-qwen3-embedding}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8450/v1/models', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   weaviate:
     image: semitechnologies/weaviate:1.25.0
+    init: true
     network_mode: host
+    command: ["--host", "0.0.0.0", "--port", "8091", "--scheme", "http"]
+    depends_on:
+      embedding-proxy:
+        condition: service_started
     environment:
       QUERY_DEFAULTS_LIMIT: 15
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
       PERSISTENCE_DATA_PATH: /var/lib/weaviate
-      DEFAULT_VECTORIZER_MODULE: text2vec-ollama
-      ENABLE_MODULES: text2vec-ollama,text2vec-openai,reranker-transformers
+      DEFAULT_VECTORIZER_MODULE: text2vec-openai
+      ENABLE_MODULES: text2vec-openai,text2vec-ollama
       CLUSTER_HOSTNAME: node1
       READINESS_MAX_WAIT_SECS: 300
-      # Ollama configuration for text2vec-ollama module
-      OLLAMA_API_ENDPOINT: http://192.168.50.80:11434
-      TEXT2VEC_OLLAMA_API_ENDPOINT: http://192.168.50.80:11434
+      OPENAI_APIKEY: ${OPENAI_API_KEY:-dummy}
     volumes:
       - weaviate_data:/var/lib/weaviate
     healthcheck:
@@ -20,11 +38,17 @@ services:
         - CMD
         - sh
         - -c
-        - nc -z localhost 8080 || exit 1
+        - nc -z localhost 8091 || exit 1
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    stop_grace_period: 120s
 
   tool-selector-api:
     image: ghcr.io/oculairmedia/letta-toolselector-tool-selector-api:main
@@ -35,11 +59,11 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LETTA_API_URL=${LETTA_API_URL}
       - LETTA_PASSWORD=${LETTA_PASSWORD}
-      - WEAVIATE_URL=http://192.168.50.90:8092/
+      - WEAVIATE_URL=http://192.168.50.90:8091/
       - WEAVIATE_HTTP_HOST=192.168.50.90
-      - WEAVIATE_HTTP_PORT=8092
+      - WEAVIATE_HTTP_PORT=8091
       - WEAVIATE_GRPC_HOST=192.168.50.90
-      - WEAVIATE_GRPC_PORT=50052
+      - WEAVIATE_GRPC_PORT=50051
       - WEAVIATE_API_KEY=${WEAVIATE_API_KEY}
       - PORT=3001
       - DEFAULT_DROP_RATE=${DEFAULT_DROP_RATE:-0.6}
@@ -49,13 +73,12 @@ services:
       - EXCLUDE_LETTA_CORE_TOOLS=${EXCLUDE_LETTA_CORE_TOOLS:-true}
       - EXCLUDE_OFFICIAL_TOOLS=${EXCLUDE_OFFICIAL_TOOLS:-true}
       - MANAGE_ONLY_MCP_TOOLS=${MANAGE_ONLY_MCP_TOOLS:-true}
-      - NEVER_DETACH_TOOLS=${NEVER_DETACH_TOOLS:-find_tools,Read,Write,Edit,Glob,Grep,Bash,BashOutput,KillBash,TodoWrite,Skill,AskUserQuestion,memory,memory_apply_patch,conversation_search,archival_memory_search,archival_memory_insert,find_agents,matrix_messaging,matrix_agent_message}
+      - NEVER_DETACH_TOOLS=${NEVER_DETACH_TOOLS:-find_tools,Read,Write,Edit,Glob,Grep,Bash,BashOutput,KillBash,TodoWrite,Skill,AskUserQuestion,memory,memory_apply_patch,conversation_search,archival_memory_search,archival_memory_insert,find_agents,matrix_messaging,matrix_agent_message,get_entity_neighbors,search_recent_context}
       - PROTECTED_TOOLS=${PROTECTED_TOOLS:-find_tools,Read,Write,Edit,Glob,Grep,Bash,BashOutput,KillBash,TodoWrite,Skill,AskUserQuestion,memory,memory_apply_patch,conversation_search,archival_memory_search,archival_memory_insert,find_agents,matrix_messaging,matrix_agent_message}
-      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-ollama}
-      - OLLAMA_EMBEDDING_HOST=${OLLAMA_EMBEDDING_HOST:-192.168.50.80}
-      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-dengcao/Qwen3-Embedding-4B:Q4_K_M}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-vllm}
+      - VLLM_EMBEDDING_BASE_URL=${VLLM_EMBEDDING_BASE_URL:-http://100.81.139.20:11450}
+      - VLLM_EMBEDDING_MODEL=${VLLM_EMBEDDING_MODEL:-qwen3-embedding}
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-2560}
-      - USE_OLLAMA_EMBEDDINGS=${USE_OLLAMA_EMBEDDINGS:-true}
       - ENABLE_RERANKING=${ENABLE_RERANKING:-false}
       - ENABLE_RERANKING_BY_DEFAULT=${ENABLE_RERANKING_BY_DEFAULT:-false}
       - RERANK_INITIAL_LIMIT=${RERANK_INITIAL_LIMIT:-50}
@@ -99,6 +122,11 @@ services:
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://192.168.50.90:8082/v1}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-dummy}
       - ENRICHMENT_CACHE_DIR=/app/enrichment_cache
+      - WEAVIATE_HTTP_HOST=192.168.50.90
+      - WEAVIATE_HTTP_PORT=8091
+      - WEAVIATE_GRPC_PORT=50051
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-vllm}
+      - VLLM_EMBEDDING_PROXY_URL=${VLLM_EMBEDDING_PROXY_URL:-http://localhost:8450}
     volumes:
       - ./.env:/app/.env:ro
       - tool_cache_volume:/app/runtime_cache
@@ -124,7 +152,7 @@ services:
       - ENRICHMENT_CACHE_DIR=/app/enrichment_cache
       - ENRICHMENT_INTERVAL=${ENRICHMENT_INTERVAL:-3600}
       - WEAVIATE_HTTP_HOST=192.168.50.90
-      - WEAVIATE_HTTP_PORT=8092
+      - WEAVIATE_HTTP_PORT=8091
       - WEAVIATE_GRPC_PORT=50051
     volumes:
       - ./.env:/app/.env:ro
@@ -178,11 +206,11 @@ services:
     container_name: letta-toolselector-time
     command: python time_memory_service.py
     environment:
-      - WEAVIATE_URL=http://192.168.50.90:8092/
+      - WEAVIATE_URL=http://192.168.50.90:8091/
       - WEAVIATE_HTTP_HOST=192.168.50.90
-      - WEAVIATE_HTTP_PORT=8092
+      - WEAVIATE_HTTP_PORT=8091
       - WEAVIATE_GRPC_HOST=192.168.50.90
-      - WEAVIATE_GRPC_PORT=50052
+      - WEAVIATE_GRPC_PORT=50051
       - WEAVIATE_API_KEY=${WEAVIATE_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LETTA_API_URL=http://192.168.50.90:8283/v1
@@ -212,11 +240,11 @@ services:
       - WORKER_REQUEST_TIMEOUT_MS=${WORKER_REQUEST_TIMEOUT_MS:-15000}
     restart: unless-stopped
     labels:
-      - homepage.group=MCP Services
-      - homepage.name=Letta Toolselector MCP
-      - homepage.icon=
-      - homepage.href=http://192.168.50.90:3020/mcp
-      - homepage.description=mcp server for the letta toolselector
+       - homepage.group=Letta Ecosystem
+       - homepage.name=Letta Toolselector MCP
+       - homepage.icon=mdi-tools
+       - homepage.href=http://192.168.50.90:3020/mcp
+       - homepage.description=mcp server for the letta toolselector
     healthcheck:
       test:
         - CMD
@@ -238,17 +266,17 @@ services:
     environment:
       - LDTS_API_URL=http://192.168.50.90:8020
       - LDTS_MCP_URL=http://tool-selector-mcp:3020/mcp
-      - WEAVIATE_URL=http://192.168.50.90:8092
+      - WEAVIATE_URL=http://192.168.50.90:8091
       - LETTA_API_URL=${LETTA_API_URL}
       - LETTA_PASSWORD=${LETTA_PASSWORD}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     restart: unless-stopped
     labels:
-      - homepage.group=LDTS Services
-      - homepage.name=Dashboard Backend
-      - homepage.icon=api
-      - homepage.href=http://192.168.50.90:8030/api/v1/docs
-      - homepage.description=LDTS Dashboard Backend API
+       - homepage.group=Letta Ecosystem
+       - homepage.name=Dashboard Backend
+       - homepage.icon=mdi-api
+       - homepage.href=http://192.168.50.90:8030/api/v1/docs
+       - homepage.description=LDTS Dashboard Backend API
     healthcheck:
       test:
         - CMD
@@ -281,11 +309,11 @@ services:
       - REACT_APP_COMMIT_SHA=${COMMIT_SHA}
     restart: unless-stopped
     labels:
-      - homepage.group=LDTS Services
-      - homepage.name=LDTS Dashboard
-      - homepage.icon=dashboard
-      - homepage.href=http://192.168.50.90:8406
-      - homepage.description=Letta Dynamic Tool Selection Dashboard
+       - homepage.group=Letta Ecosystem
+       - homepage.name=LDTS Dashboard
+       - homepage.icon=mdi-view-dashboard
+       - homepage.href=http://192.168.50.90:8406
+       - homepage.description=Letta Dynamic Tool Selection Dashboard
     healthcheck:
       test:
         - CMD
@@ -300,7 +328,9 @@ services:
       dashboard-api:
         condition: service_healthy
     networks:
-      - letta-tools
+      letta-tools:
+        aliases:
+          - dashboard-backend
 
 networks:
   letta-tools:

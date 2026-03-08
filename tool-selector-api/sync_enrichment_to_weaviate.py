@@ -67,6 +67,14 @@ def ensure_schema_has_enrichment_fields(client) -> bool:
     
     new_props = []
     
+    if "enhanced_description" not in existing_props:
+        new_props.append(Property(
+            name="enhanced_description",
+            data_type=DataType.TEXT,
+            description="Enhanced tool description with specialized prompting for better embeddings",
+            vectorize_property_name=False
+        ))
+    
     if "action_entities" not in existing_props:
         new_props.append(Property(
             name="action_entities",

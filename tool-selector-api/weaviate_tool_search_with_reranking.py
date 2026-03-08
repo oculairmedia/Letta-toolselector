@@ -389,26 +389,25 @@ def search_tools_with_reranking(
                     print(f"Using client-side reranking: retrieving {rerank_initial_limit} candidates for top-{limit} results")
                     
                     # Get initial results without Weaviate reranking to avoid panics
-                    # BM25 field boosting:
-                    #   - action_entities^3: Highest boost for action-entity pairs (e.g., "create issue")
-                    #   - name^2: Tool name is important for exact matches
-                    #   - semantic_keywords^2: Enriched keywords from LLM analysis
-                    #   - enhanced_description^1.5: LLM-enriched description
-                    #   - description^1: Original description (baseline)
+                    # BM25 field boosting weights:
+                    #   - name^2: Tool name boost for exact matches
+                    #   - enhanced_description^2: LLM-enriched description (requires schema property)
+                    #   - description: Original description (baseline)
                     #   - tags: Categorical tags
+                    #   - mcp_server_name: Server name for source matching
+                    # Note: TEXT_ARRAY fields (action_entities, semantic_keywords) cannot be used
+                    #   in query_properties for BM25 boosting — Weaviate limitation.
                     result = collection.query.hybrid(
                         query=hybrid_query,
                         alpha=0.75,  # 75% vector search, 25% keyword search
                         limit=rerank_initial_limit,  # Get more candidates for reranking
                         fusion_type=HybridFusion.RELATIVE_SCORE,
                         query_properties=[
-                            "action_entities^3",      # Highest: action-entity pairs (e.g. "create issue")
-                            "name^2",                 # High: exact tool name match
-                            "semantic_keywords^2",    # High: enriched search terms
-                            "enhanced_description^1.5", # Medium: LLM-enriched description
-                            "description",            # Baseline: original description
-                            "tags",                   # Category tags
-                            "mcp_server_name"         # MCP server context
+                            "name^2",
+                            "enhanced_description^2",
+                            "description",
+                            "tags",
+                            "mcp_server_name"
                         ],
                         return_metadata=MetadataQuery(score=True)
                     )
@@ -538,10 +537,8 @@ def search_tools_with_reranking(
                         limit=limit,
                         fusion_type=HybridFusion.RELATIVE_SCORE,
                         query_properties=[
-                            "action_entities^3",
                             "name^2",
-                            "semantic_keywords^2",
-                            "enhanced_description^1.5",
+                            "enhanced_description^2",
                             "description",
                             "tags",
                             "mcp_server_name"

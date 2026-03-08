@@ -120,7 +120,7 @@ async def fetch_agent_tools(agent_id: str) -> List[Dict[str, Any]]:
         raise ConnectionError("HTTP session not available")
     
     try:
-        url = f"{_letta_url}/agents/{agent_id}/tools"
+        url = f"{_letta_url}/agents/{agent_id}/tools?limit=100"
         async with _http_session.get(url, headers=_headers) as response:
             response.raise_for_status()
             return await response.json()

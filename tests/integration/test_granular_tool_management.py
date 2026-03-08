@@ -581,18 +581,13 @@ class TestGranularToolManagement:
         )
 
         # Verify find_tools is attached before pruning
-        # NOTE: The direct-attach route reports success even when the Letta API
-        # doesn't actually attach the tool (pre-existing issue with the attach
-        # endpoint). Skip gracefully if the tool isn't actually on the agent.
         before_tools = await self._get_attached_tool_names(
             http_client, worker_base_url, test_agent_id
         )
-        if "find_tools" not in before_tools:
-            pytest.skip(
-                "find_tools not actually attached to agent via Letta API "
-                "(direct-attach API reports success but Letta didn't persist it). "
-                "This is a known pre-existing issue with the attach pipeline."
-            )
+        assert "find_tools" in before_tools, (
+            f"find_tools not attached before pruning test — cannot validate pin survival. "
+            f"Tools: {before_tools}"
+        )
 
         # Trigger a semantic search that could cause pruning
         await self._worker_post(

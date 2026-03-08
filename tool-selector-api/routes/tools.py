@@ -11,11 +11,17 @@ Routes:
 - POST /api/v1/tools/prune - Prune excess tools from an agent
 - POST /api/v1/tools/sync - Sync tool cache
 - POST /api/v1/tools/refresh - Refresh tool cache
+- GET /api/v1/tools/lookup - Direct tool lookup by name/ID with fuzzy matching
+- POST /api/v1/tools/direct-attach - Direct attach tools by name/ID
+- POST /api/v1/tools/direct-detach - Direct detach tools by name/ID
+- GET /api/v1/tools/agent/<agent_id> - List agent tools with categorization
+- GET /api/v1/tools/inspect/<tool_name_or_id> - Inspect tool metadata and schema
 """
 
 import os
 import asyncio
 import time
+import difflib
 from quart import Blueprint, request, jsonify
 import logging
 from typing import Optional, Callable, List, Dict, Any
@@ -30,6 +36,7 @@ except ImportError:
 
 from services.tool_cache import ToolCacheService, get_tool_cache_service
 from services.tool_search import ToolSearchService
+from models import ToolLimitsConfig
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +64,9 @@ _emit_pruning_event_func: Optional[Callable] = None
 _audit_action_class: Optional[Any] = None
 _audit_source_class: Optional[Any] = None
 
+# Pin service (injected via configure)
+_pin_service: Optional[Any] = None
+_tool_config: Optional[Any] = None
 
 def configure(
     manage_only_mcp_tools: bool = True,
@@ -73,7 +83,9 @@ def configure(
     emit_batch_event_func: Optional[Callable] = None,
     emit_pruning_event_func: Optional[Callable] = None,
     audit_action_class: Optional[Any] = None,
-    audit_source_class: Optional[Any] = None
+    audit_source_class: Optional[Any] = None,
+    pin_service: Optional[Any] = None,
+    tool_config: Optional[Any] = None
 ):
     """
     Configure the tools blueprint with required dependencies.
@@ -102,6 +114,7 @@ def configure(
     global _get_weaviate_client_func, _is_letta_core_tool_func
     global _emit_batch_event_func, _emit_pruning_event_func
     global _audit_action_class, _audit_source_class
+    global _pin_service, _tool_config
     
     _manage_only_mcp_tools = manage_only_mcp_tools
     _default_min_score = default_min_score
@@ -118,6 +131,8 @@ def configure(
     _emit_pruning_event_func = emit_pruning_event_func
     _audit_action_class = audit_action_class
     _audit_source_class = audit_source_class
+    _pin_service = pin_service
+    _tool_config = tool_config
     
     logger.info(f"Tools blueprint configured (manage_only_mcp={manage_only_mcp_tools})")
 
@@ -823,3 +838,695 @@ async def refresh_tools():
     except Exception as e:
         logger.error(f"Error refreshing tool index: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# =============================================================================
+# Fuzzy Matching Helper
+# =============================================================================
+
+def fuzzy_match_tools(query: str, tool_names: List[str], limit: int = 5) -> List[Dict[str, Any]]:
+    """
+    Find fuzzy matches for a tool name query.
+    
+    Uses a weighted combination of:
+    1. Prefix matching (highest priority)
+    2. Substring matching
+    3. difflib close matches (Levenshtein-like distance)
+    
+    Operates on tool_names list — O(n) but cache is small (~200-500 tools).
+    Uses only stdlib (difflib.get_close_matches), no new dependencies.
+    
+    Args:
+        query: Tool name query string
+        tool_names: List of known tool names to match against
+        limit: Maximum number of suggestions to return (default 5)
+    
+    Returns:
+        List of dicts with 'name' and 'score' keys, sorted by score descending
+    """
+    if not query or not tool_names:
+        return []
+    
+    query_lower = query.lower()
+    scored: Dict[str, float] = {}
+    
+    # 1. Prefix match (highest weight — user typed the beginning)
+    for name in tool_names:
+        name_lower = name.lower()
+        if name_lower.startswith(query_lower):
+            # Shorter names that match = closer match
+            score = 0.95 - (len(name) - len(query)) * 0.005
+            scored[name] = max(scored.get(name, 0), score)
+    
+    # 2. Substring match (query appears somewhere in the name)
+    for name in tool_names:
+        name_lower = name.lower()
+        if query_lower in name_lower and name not in scored:
+            pos = name_lower.index(query_lower)
+            coverage = len(query) / len(name)
+            score = 0.70 + coverage * 0.15 - pos * 0.003
+            scored[name] = max(scored.get(name, 0), score)
+    
+    # 3. difflib close matches (handles typos / transpositions)
+    close = difflib.get_close_matches(
+        query_lower,
+        [n.lower() for n in tool_names],
+        n=limit * 2,
+        cutoff=0.4
+    )
+    name_lookup = {n.lower(): n for n in tool_names}
+    for match in close:
+        original_name = name_lookup.get(match, match)
+        if original_name not in scored:
+            ratio = difflib.SequenceMatcher(None, query_lower, match).ratio()
+            scored[original_name] = max(scored.get(original_name, 0), ratio * 0.80)
+    
+    results = [
+        {"name": name, "score": round(score, 2)}
+        for name, score in sorted(scored.items(), key=lambda x: x[1], reverse=True)
+    ]
+    return results[:limit]
+
+
+def _get_suggestions(query: str) -> List[Dict[str, Any]]:
+    """Get fuzzy suggestions for a tool name query using the tool cache."""
+    cache_service = get_tool_cache_service()
+    all_names = [t.get('name', '') for t in cache_service.get_cached_tools() if t.get('name')]
+    return fuzzy_match_tools(query, all_names)
+
+
+def _build_tool_response(tool: Dict[str, Any]) -> Dict[str, Any]:
+    """Build a standardized tool response dict from a cache entry."""
+    return {
+        "id": tool.get('id') or tool.get('tool_id'),
+        "name": tool.get('name', ''),
+        "description": tool.get('description', ''),
+        "tool_type": tool.get('tool_type', ''),
+        "source_type": tool.get('source_type', ''),
+        "json_schema": tool.get('json_schema'),
+        "tags": tool.get('tags', []),
+        "module": tool.get('module', ''),
+        "server_name": tool.get('mcp_server_name', '')
+    }
+
+
+async def _ensure_cache_loaded():
+    """Ensure the tool cache is loaded (handles cold start)."""
+    cache_service = get_tool_cache_service()
+    tools = cache_service.get_cached_tools()
+    if not tools:
+        logger.info("Tool cache empty, triggering load...")
+        await cache_service.read_tool_cache(force_reload=True)
+
+
+# =============================================================================
+# Direct Tool Management Endpoints
+# =============================================================================
+
+@tools_bp.route('/api/v1/tools/lookup', methods=['GET'])
+async def lookup_tool():
+    """
+    Look up a tool by exact name, ID, or fuzzy match.
+    
+    Query params:
+        tool_name (str, optional): Tool name to match
+        tool_id (str, optional): Exact tool ID
+        fuzzy (bool, optional, default false): Enable fuzzy/prefix matching
+    """
+    logger.debug("Received request for /api/v1/tools/lookup")
+    
+    try:
+        tool_name = request.args.get('tool_name')
+        tool_id = request.args.get('tool_id')
+        fuzzy = request.args.get('fuzzy', 'false').lower() == 'true'
+        
+        if not tool_name and not tool_id:
+            return jsonify({"error": "At least one of tool_name or tool_id is required"}), 400
+        
+        await _ensure_cache_loaded()
+        cache_service = get_tool_cache_service()
+        
+        # Exact match by ID
+        if tool_id:
+            tool = cache_service.get_tool_by_id(tool_id)
+            if tool:
+                return jsonify({"success": True, "tool": _build_tool_response(tool)})
+            # ID not found
+            return jsonify({
+                "success": False,
+                "error": "Tool not found",
+                "tool_not_found": True,
+                "searched_by": "id",
+                "value": tool_id,
+                "suggestions": []
+            }), 404
+        
+        # Exact match by name
+        tool = cache_service.get_tool_by_name(tool_name) if tool_name else None
+        if tool:
+            return jsonify({"success": True, "tool": _build_tool_response(tool)})
+        
+        # Not found — compute suggestions
+        suggestions = _get_suggestions(tool_name) if tool_name else []
+        
+        if fuzzy and suggestions:
+            # Fuzzy mode: return suggestions as the successful result
+            return jsonify({
+                "success": True,
+                "exact_match": None,
+                "suggestions": suggestions
+            })
+        
+        # 404 with suggestions (PM requirement: ALWAYS include suggestions)
+        return jsonify({
+            "success": False,
+            "error": "Tool not found",
+            "tool_not_found": True,
+            "searched_by": "name",
+            "value": tool_name,
+            "suggestions": suggestions
+        }), 404
+    
+    except Exception as e:
+        logger.error(f"Error during tool lookup: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
+@tools_bp.route('/api/v1/tools/direct-attach', methods=['POST'])
+async def direct_attach_tools():
+    """
+    Attach specific tools to an agent by name or ID.
+    
+    Bypasses semantic search entirely. Supports single and bulk operations.
+    DOES NOT trigger auto-pruning.
+    """
+    logger.debug("Received request for /api/v1/tools/direct-attach")
+    
+    if not _tool_manager:
+        return jsonify({"error": "Tool attachment not configured - missing tool_manager"}), 503
+    
+    try:
+        data = await request.get_json()
+        if not data:
+            return jsonify({"error": "Request body must be JSON"}), 400
+        
+        agent_id = data.get('agent_id')
+        if not agent_id:
+            return jsonify({"error": "agent_id is required"}), 400
+        
+        tools_input = data.get('tools', [])
+        pin = data.get('pin', False)
+        
+        # Normalize single tool to list
+        if isinstance(tools_input, dict):
+            tools_input = [tools_input]
+        
+        if not tools_input:
+            return jsonify({"error": "tools array is required and cannot be empty"}), 400
+        
+        await _ensure_cache_loaded()
+        cache_service = get_tool_cache_service()
+        
+        # Fetch current agent tools for "already attached" detection
+        current_tools = await _tool_manager.fetch_agent_tools(agent_id)
+        current_tool_ids = {
+            (t.get('id') or t.get('tool_id'))
+            for t in current_tools
+            if t.get('id') or t.get('tool_id')
+        }
+        
+        attached = []
+        failed = []
+        pinned_names = []
+        
+        async def _resolve_and_attach(item: Dict[str, Any]):
+            """Resolve a tool by name/ID and attach it."""
+            name = item.get('name')
+            tid = item.get('tool_id') or item.get('id')
+            
+            # Resolve tool from cache
+            tool = None
+            if tid:
+                tool = cache_service.get_tool_by_id(tid)
+            if not tool and name:
+                tool = cache_service.get_tool_by_name(name)
+            
+            if not tool:
+                query = name or tid or 'unknown'
+                # TODO: Also provide suggestions for ID-based lookups (e.g. typo'd tool IDs). Low priority. (PM feedback)
+                suggestions = _get_suggestions(query) if name else []
+                return {
+                    "name": name or tid,
+                    "error": "Tool not found in cache",
+                    "tool_not_found": True,
+                    "suggestions": suggestions
+                }
+            
+            resolved_id = tool.get('id') or tool.get('tool_id')
+            resolved_name = tool.get('name', '')
+            
+            # Already attached?
+            if resolved_id in current_tool_ids:
+                return {
+                    "tool_id": resolved_id,
+                    "name": resolved_name,
+                    "status": "already_attached"
+                }
+            
+            # Attach
+            result = await _tool_manager.attach_tool(agent_id, tool)
+            if result.get('success'):
+                return {
+                    "tool_id": resolved_id,
+                    "name": resolved_name,
+                    "status": "attached"
+                }
+            else:
+                return {
+                    "tool_id": resolved_id,
+                    "name": resolved_name,
+                    "error": result.get('error', 'Attachment failed')
+                }
+        
+        # Process all tools in parallel
+        tasks = [_resolve_and_attach(item) for item in tools_input]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                failed.append({
+                    "name": tools_input[i].get('name') or tools_input[i].get('tool_id', 'unknown'),
+                    "error": str(result)
+                })
+            elif isinstance(result, dict) and 'error' in result:
+                failed.append(result)
+            elif isinstance(result, dict):
+                attached.append(result)
+        
+        # Pin tools if requested
+        if pin and _pin_service and attached:
+            ids_to_pin = [
+                r['tool_id'] for r in attached
+                if r.get('status') in ('attached', 'already_attached') and r.get('tool_id')
+            ]
+            if ids_to_pin:
+                await _pin_service.pin_tools(agent_id, ids_to_pin)
+                pinned_names = [r['name'] for r in attached if r.get('tool_id') in ids_to_pin]
+        
+        total_attached = sum(1 for r in attached if r.get('status') == 'attached')
+        
+        return jsonify({
+            "success": True,
+            "message": f"Attached {total_attached} tools",
+            "details": {
+                "attached": attached,
+                "failed": failed,
+                "pinned": pinned_names
+            }
+        })
+    
+    except Exception as e:
+        logger.error(f"Error during direct attach: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
+@tools_bp.route('/api/v1/tools/direct-detach', methods=['POST'])
+async def direct_detach_tools():
+    """
+    Detach specific tools from an agent by name or ID.
+    
+    Respects protected (NEVER_DETACH_TOOLS) and pinned tools.
+    Supports single and bulk operations.
+    """
+    logger.debug("Received request for /api/v1/tools/direct-detach")
+    
+    if not _tool_manager:
+        return jsonify({"error": "Tool detachment not configured - missing tool_manager"}), 503
+    
+    try:
+        data = await request.get_json()
+        if not data:
+            return jsonify({"error": "Request body must be JSON"}), 400
+        
+        agent_id = data.get('agent_id')
+        if not agent_id:
+            return jsonify({"error": "agent_id is required"}), 400
+        
+        tools_input = data.get('tools', [])
+        force_unpin = data.get('unpin', False)
+        
+        # Normalize single tool to list
+        if isinstance(tools_input, dict):
+            tools_input = [tools_input]
+        
+        if not tools_input:
+            return jsonify({"error": "tools array is required and cannot be empty"}), 400
+        
+        await _ensure_cache_loaded()
+        cache_service = get_tool_cache_service()
+        
+        # Fetch current agent tools
+        current_tools = await _tool_manager.fetch_agent_tools(agent_id)
+        current_tool_map = {}
+        for t in current_tools:
+            tid = t.get('id') or t.get('tool_id')
+            if tid:
+                current_tool_map[tid] = t
+                name = t.get('name', '')
+                if name:
+                    current_tool_map[name] = t
+        
+        # Get pinned tools for this agent
+        pinned_ids = set()
+        if _pin_service:
+            pinned_ids = set(await _pin_service.get_pinned_tools(agent_id))
+        
+        # Get protected tool checker
+        # ToolLimitsConfig imported at module level
+        config = _tool_config if _tool_config else ToolLimitsConfig.from_env()
+        
+        detached = []
+        refused = []
+        failed = []
+        
+        async def _resolve_and_detach(item: Dict[str, Any]):
+            """Resolve a tool by name/ID and detach it."""
+            name = item.get('name')
+            tid = item.get('tool_id') or item.get('id')
+            
+            # Resolve from cache first (for metadata)
+            tool = None
+            if tid:
+                tool = cache_service.get_tool_by_id(tid)
+            if not tool and name:
+                tool = cache_service.get_tool_by_name(name)
+            
+            if not tool:
+                # Try resolving from current agent tools directly
+                lookup_key = name or tid
+                if lookup_key and lookup_key in current_tool_map:
+                    tool = current_tool_map[lookup_key]
+            
+            if not tool:
+                query = name or tid or 'unknown'
+                suggestions = _get_suggestions(query) if name else []
+                return 'failed', {
+                    "name": name or tid,
+                    "error": "Tool not found in cache",
+                    "tool_not_found": True,
+                    "suggestions": suggestions
+                }
+            
+            resolved_id = tool.get('id') or tool.get('tool_id')
+            resolved_name = tool.get('name', '')
+            
+            # Check if attached to agent
+            if resolved_id not in current_tool_map:
+                return 'failed', {
+                    "name": resolved_name,
+                    "error": "Tool not attached to agent"
+                }
+            
+            # Check protected tools (global)
+            if config.should_protect_tool(resolved_name):
+                return 'refused', {
+                    "name": resolved_name,
+                    "reason": "Protected tool - cannot detach"
+                }
+            
+            # Check pinned tools (per-agent)
+            if resolved_id in pinned_ids and not force_unpin:
+                return 'refused', {
+                    "name": resolved_name,
+                    "reason": "Pinned tool - use unpin=true to force detach"
+                }
+            
+            # Unpin if force_unpin is set
+            if resolved_id in pinned_ids and force_unpin and _pin_service:
+                await _pin_service.unpin_tools(agent_id, [resolved_id])
+            
+            # Detach
+            result = await _tool_manager.detach_tool(agent_id, resolved_id, resolved_name)
+            if result.get('success'):
+                return 'detached', {
+                    "tool_id": resolved_id,
+                    "name": resolved_name,
+                    "status": "detached"
+                }
+            else:
+                return 'failed', {
+                    "tool_id": resolved_id,
+                    "name": resolved_name,
+                    "error": result.get('error', 'Detachment failed')
+                }
+        
+        # Process all tools in parallel
+        tasks = [_resolve_and_detach(item) for item in tools_input]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                failed.append({
+                    "name": tools_input[i].get('name') or tools_input[i].get('tool_id', 'unknown'),
+                    "error": str(result)
+                })
+            elif isinstance(result, tuple):
+                category, detail = result
+                if category == 'detached':
+                    detached.append(detail)
+                elif category == 'refused':
+                    refused.append(detail)
+                else:
+                    failed.append(detail)
+        
+        total_detached = len(detached)
+        
+        return jsonify({
+            "success": True,
+            "message": f"Detached {total_detached} tools",
+            "details": {
+                "detached": detached,
+                "refused": refused,
+                "failed": failed
+            }
+        })
+    
+    except Exception as e:
+        logger.error(f"Error during direct detach: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
+@tools_bp.route('/api/v1/tools/agent/<agent_id>', methods=['GET'])
+async def list_agent_tools(agent_id: str):
+    """
+    List all tools currently attached to an agent, categorized by type.
+    
+    Query params:
+        filter (str, optional): 'all' (default), 'mcp', 'core'
+        include_schema (bool, optional, default false): Include JSON schemas
+    """
+    logger.debug("Received request for /api/v1/tools/agent/%s", agent_id)
+    
+    if not _tool_manager:
+        return jsonify({"error": "Tool listing not configured - missing tool_manager"}), 503
+    
+    try:
+        if not agent_id:
+            return jsonify({"error": "agent_id is required"}), 400
+        
+        tool_filter = request.args.get('filter', 'all')
+        include_schema = request.args.get('include_schema', 'false').lower() == 'true'
+        
+        # Fetch current agent tools
+        agent_tools = await _tool_manager.fetch_agent_tools(agent_id)
+        
+        # Get pin and protection info
+        pinned_ids = set()
+        if _pin_service:
+            pinned_ids = set(await _pin_service.get_pinned_tools(agent_id))
+        
+        # ToolLimitsConfig imported at module level
+        config = _tool_config if _tool_config else ToolLimitsConfig.from_env()
+        
+        core_count = 0
+        mcp_count = 0
+        pinned_count = 0
+        protected_count = 0
+        tools_list = []
+        
+        for tool in agent_tools:
+            tool_id = tool.get('id') or tool.get('tool_id')
+            tool_name = tool.get('name', '')
+            is_core = _is_letta_core_tool(tool)
+            is_mcp = (
+                tool.get('tool_type') == 'external_mcp' or
+                (not is_core and tool.get('tool_type') == 'custom')
+            )
+            is_pinned = tool_id in pinned_ids
+            is_protected = config.should_protect_tool(tool_name)
+            
+            if is_core:
+                core_count += 1
+            else:
+                mcp_count += 1
+            if is_pinned:
+                pinned_count += 1
+            if is_protected:
+                protected_count += 1
+            
+            # Apply filter
+            if tool_filter == 'mcp' and not is_mcp:
+                continue
+            if tool_filter == 'core' and not is_core:
+                continue
+            
+            tool_entry = {
+                "tool_id": tool_id,
+                "name": tool_name,
+                "tool_type": tool.get('tool_type', ''),
+                "source_type": tool.get('source_type', ''),
+                "description": tool.get('description', ''),
+                "is_pinned": is_pinned,
+                "is_protected": is_protected
+            }
+            
+            if include_schema:
+                tool_entry["json_schema"] = tool.get('json_schema')
+            
+            tools_list.append(tool_entry)
+        
+        return jsonify({
+            "success": True,
+            "agent_id": agent_id,
+            "tool_count": len(tools_list),
+            "summary": {
+                "core_tools": core_count,
+                "mcp_tools": mcp_count,
+                "pinned_tools": pinned_count,
+                "protected_tools": protected_count
+            },
+            "tools": tools_list
+        })
+    
+    except Exception as e:
+        logger.error(f"Error listing agent tools: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
+@tools_bp.route('/api/v1/tools/inspect/<path:tool_name_or_id>', methods=['GET'])
+async def inspect_tool(tool_name_or_id: str):
+    """
+    Inspect full metadata and schema for a tool before attaching.
+    
+    The path parameter accepts either a tool name or tool ID.
+    Resolution order: try ID first (UUIDs are unambiguous), then name.
+    """
+    logger.debug("Received request for /api/v1/tools/inspect/%s", tool_name_or_id)
+    
+    try:
+        await _ensure_cache_loaded()
+        cache_service = get_tool_cache_service()
+        
+        # Try ID first (UUIDs are unambiguous)
+        tool = cache_service.get_tool_by_id(tool_name_or_id)
+        if not tool:
+            tool = cache_service.get_tool_by_name(tool_name_or_id)
+        
+        if not tool:
+            suggestions = _get_suggestions(tool_name_or_id)
+            return jsonify({
+                "success": False,
+                "error": "Tool not found",
+                "tool_not_found": True,
+                "searched_by": "name_or_id",
+                "value": tool_name_or_id,
+                "suggestions": suggestions
+            }), 404
+        
+        tool_name = tool.get('name', '')
+        server_name = tool.get('mcp_server_name', '')
+        json_schema = tool.get('json_schema', {})
+        
+        # Build parameters_summary from json_schema
+        params_summary = _build_params_summary(json_schema)
+        
+        # Find related tools (same MCP server prefix)
+        related = _find_related_tools(tool_name, server_name, cache_service)
+        
+        # Check protection status
+        # ToolLimitsConfig imported at module level
+        config = _tool_config if _tool_config else ToolLimitsConfig.from_env()
+        is_protected = config.should_protect_tool(tool_name)
+        
+        return jsonify({
+            "success": True,
+            "tool": {
+                "id": tool.get('id') or tool.get('tool_id'),
+                "name": tool_name,
+                "description": tool.get('description', ''),
+                "tool_type": tool.get('tool_type', ''),
+                "source_type": tool.get('source_type', ''),
+                "server_name": server_name,
+                "json_schema": json_schema,
+                "parameters_summary": params_summary,
+                "tags": tool.get('tags', []),
+                "related_tools": related,
+                "is_protected": is_protected
+            }
+        })
+    
+    except Exception as e:
+        logger.error(f"Error inspecting tool: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
+def _build_params_summary(json_schema: Dict[str, Any]) -> str:
+    """
+    Build a human-readable one-liner summary of tool parameters from JSON schema.
+    
+    Example output: "shelf_id (int, required), name (string, required), html (string, optional)"
+    """
+    if not json_schema:
+        return ""
+    
+    properties = json_schema.get('properties', {})
+    required_fields = set(json_schema.get('required', []))
+    
+    if not properties:
+        return ""
+    
+    parts = []
+    for param_name, param_info in properties.items():
+        param_type = param_info.get('type', 'any')
+        is_required = param_name in required_fields
+        req_label = 'required' if is_required else 'optional'
+        parts.append(f"{param_name} ({param_type}, {req_label})")
+    
+    return ', '.join(parts)
+
+
+def _find_related_tools(
+    tool_name: str,
+    server_name: str,
+    cache_service: ToolCacheService,
+    limit: int = 5
+) -> List[str]:
+    """
+    Find related tools from the same MCP server.
+    
+    Uses server_name prefix matching. Returns up to `limit` tool names,
+    excluding the tool itself.
+    """
+    if not server_name:
+        return []
+    
+    related = []
+    for t in cache_service.get_cached_tools():
+        t_name = t.get('name', '')
+        t_server = t.get('mcp_server_name', '')
+        if t_server == server_name and t_name != tool_name:
+            related.append(t_name)
+            if len(related) >= limit:
+                break
+    
+    return related

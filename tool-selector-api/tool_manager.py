@@ -39,7 +39,7 @@ _use_letta_sdk: bool = False
 _get_letta_sdk_client = None  # Callable to get SDK client
 _search_tools_func: Optional[Callable[..., List[Dict[str, Any]]]] = None  # Search callback
 _tool_config: Optional[ToolLimitsConfig] = None  # Tool limits configuration
-
+_pin_service: Optional[Any] = None  # Pin service for per-agent pinning
 
 def configure(
     http_session: Optional[aiohttp.ClientSession] = None,
@@ -48,7 +48,8 @@ def configure(
     use_letta_sdk: bool = False,
     get_letta_sdk_client_func=None,
     search_tools_func: Optional[Callable[..., List[Dict[str, Any]]]] = None,
-    tool_config: Optional[ToolLimitsConfig] = None
+    tool_config: Optional[ToolLimitsConfig] = None,
+    pin_service: Optional[Any] = None
 ):
     """
     Configure the tool manager with required dependencies.
@@ -63,7 +64,7 @@ def configure(
         tool_config: Tool limits configuration (ToolLimitsConfig)
     """
     global _http_session, _letta_url, _headers, _use_letta_sdk, _get_letta_sdk_client
-    global _search_tools_func, _tool_config
+    global _search_tools_func, _tool_config, _pin_service
     
     _http_session = http_session
     _letta_url = letta_url
@@ -72,7 +73,7 @@ def configure(
     _get_letta_sdk_client = get_letta_sdk_client_func
     _search_tools_func = search_tools_func
     _tool_config = tool_config
-
+    _pin_service = pin_service
 
 def get_tool_config() -> ToolLimitsConfig:
     """Get current tool limits configuration, falling back to env vars if not set."""
@@ -704,6 +705,20 @@ async def perform_tool_pruning(
             if config.should_protect_tool(tool_name):
                 final_mcp_tool_ids_to_keep.add(tool.get('id'))
                 logger.warning(f"Never-detach tool '{tool_name}' found in MCP list - protecting from pruning")
+        
+        # Protect pinned tools from pruning (per-agent pins)
+        if _pin_service:
+            try:
+                pinned_ids = await _pin_service.get_pinned_tools(agent_id)
+                pinned_in_mcp = [pid for pid in pinned_ids if pid in current_mcp_tool_ids]
+                for pid in pinned_in_mcp:
+                    if pid not in final_mcp_tool_ids_to_keep:
+                        final_mcp_tool_ids_to_keep.add(pid)
+                        logger.info(f"Pinned tool {pid} protected from pruning")
+                if pinned_in_mcp:
+                    logger.info(f"Protected {len(pinned_in_mcp)} pinned MCP tools from pruning")
+            except Exception as pin_err:
+                logger.warning(f"Failed to check pinned tools during pruning: {pin_err}")
         
         logger.info(f"After adding explicitly requested-to-keep MCP tools (if on agent): {len(final_mcp_tool_ids_to_keep)}. Set: {final_mcp_tool_ids_to_keep}")
 

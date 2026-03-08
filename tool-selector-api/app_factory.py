@@ -190,6 +190,17 @@ async def _configure_services(config: AppConfig, services: ServiceContainer):
     if config.letta.api_key:
         headers["Authorization"] = f"Bearer {config.letta.api_key}"
     
+    # Configure pin_service
+    pin_service = None
+    try:
+        from services import pin_service as pin_svc
+        pin_svc.configure(cache_dir=config.cache.cache_dir)
+        pin_service = pin_svc
+        services.pin_service = pin_svc  # type: ignore[attr-defined]
+        logger.info("Pin service configured")
+    except Exception as e:
+        logger.error(f"Failed to configure pin_service: {e}")
+    
     # Configure tool_manager
     try:
         import tool_manager
@@ -209,13 +220,14 @@ async def _configure_services(config: AppConfig, services: ServiceContainer):
             headers=headers,
             use_letta_sdk=config.letta.use_sdk,
             get_letta_sdk_client_func=services.letta_sdk_client_func,
-            tool_config=tool_config
+            tool_config=tool_config,
+            pin_service=pin_service
         )
         services.tool_manager = tool_manager
+        services.tool_config = tool_config  # type: ignore[attr-defined]
         logger.info("Tool manager configured")
     except Exception as e:
         logger.error(f"Failed to configure tool_manager: {e}")
-    
     # Configure agent_service
     try:
         import agent_service
@@ -464,7 +476,9 @@ async def _register_blueprints(app: Quart, config: AppConfig, services: ServiceC
             emit_batch_event_func=emit_batch_event,
             emit_pruning_event_func=emit_pruning_event,
             audit_action_class=AuditAction,
-            audit_source_class=AuditSource
+            audit_source_class=AuditSource,
+            pin_service=getattr(services, 'pin_service', None),
+            tool_config=getattr(services, 'tool_config', None)
         )
         app.register_blueprint(tools_bp)
         logger.info("Tools routes blueprint registered")

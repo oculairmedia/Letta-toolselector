@@ -117,6 +117,7 @@ class ToolSelectorServer {
 
         this.setupHandlers();
         this.setupToolsList();
+        this.setupGranularTools();
     }
 
     setupToolsList() {
@@ -167,6 +168,134 @@ class ToolSelectorServer {
                 required: ['query'],
             },
             handler: async (args, context) => this.handleFindTools(args, context),
+        });
+    }
+
+    setupGranularTools() {
+        // attach_tool — directly attach tool(s) to an agent by name/ID
+        this.server.addTool({
+            name: 'attach_tool',
+            description: 'Directly attach one or more tools to an agent by exact name or ID. Does NOT trigger auto-pruning. Use pin=true to protect from future pruning.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    agent_id: {
+                        type: 'string',
+                        description: 'Your agent ID (optional if x-agent-id header is provided)',
+                    },
+                    tools: {
+                        type: 'array',
+                        description: 'Tools to attach — each item can have "name" or "tool_id"',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                name: { type: 'string', description: 'Tool name' },
+                                tool_id: { type: 'string', description: 'Tool ID' },
+                            },
+                        },
+                    },
+                    tool_name: {
+                        type: 'string',
+                        description: 'Single tool name to attach (shortcut — use instead of tools array for one tool)',
+                    },
+                    tool_id: {
+                        type: 'string',
+                        description: 'Single tool ID to attach (shortcut — use instead of tools array for one tool)',
+                    },
+                    pin: {
+                        type: 'boolean',
+                        description: 'Pin attached tools so they survive pruning cycles (default: false)',
+                        default: false,
+                    },
+                },
+                required: [],
+            },
+            handler: async (args, context) => this.handleAttachTool(args, context),
+        });
+
+        // detach_tool — directly detach tool(s) from an agent
+        this.server.addTool({
+            name: 'detach_tool',
+            description: 'Directly detach one or more tools from an agent by exact name or ID. Protected/core tools cannot be detached.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    agent_id: {
+                        type: 'string',
+                        description: 'Your agent ID (optional if x-agent-id header is provided)',
+                    },
+                    tools: {
+                        type: 'array',
+                        description: 'Tools to detach — each item can have "name" or "tool_id"',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                name: { type: 'string', description: 'Tool name' },
+                                tool_id: { type: 'string', description: 'Tool ID' },
+                            },
+                        },
+                    },
+                    tool_name: {
+                        type: 'string',
+                        description: 'Single tool name to detach (shortcut)',
+                    },
+                    tool_id: {
+                        type: 'string',
+                        description: 'Single tool ID to detach (shortcut)',
+                    },
+                    unpin: {
+                        type: 'boolean',
+                        description: 'Also unpin the tool if it was pinned (default: false)',
+                        default: false,
+                    },
+                },
+                required: [],
+            },
+            handler: async (args, context) => this.handleDetachTool(args, context),
+        });
+
+        // list_agent_tools — list tools currently attached to an agent
+        this.server.addTool({
+            name: 'list_agent_tools',
+            description: 'List all tools currently attached to an agent, categorized as core or MCP with pin/protection status.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    agent_id: {
+                        type: 'string',
+                        description: 'Your agent ID (optional if x-agent-id header is provided)',
+                    },
+                    filter: {
+                        type: 'string',
+                        description: 'Filter tools: "all", "core", or "mcp" (default: "all")',
+                        default: 'all',
+                    },
+                    include_schema: {
+                        type: 'boolean',
+                        description: 'Include full tool schemas in response (default: false)',
+                        default: false,
+                    },
+                },
+                required: [],
+            },
+            handler: async (args, context) => this.handleListAgentTools(args, context),
+        });
+
+        // inspect_tool — get full metadata/schema for a tool before attaching
+        this.server.addTool({
+            name: 'inspect_tool',
+            description: 'Inspect a tool\'s full metadata, parameters, schema, and related tools. Use before attaching to understand what a tool does.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    tool_name_or_id: {
+                        type: 'string',
+                        description: 'Tool name or ID to inspect',
+                    },
+                },
+                required: ['tool_name_or_id'],
+            },
+            handler: async (args, context) => this.handleInspectTool(args, context),
         });
     }
 
@@ -455,6 +584,121 @@ class ToolSelectorServer {
                 });
             });
         });
+    }
+
+    /**
+     * Build tools array from shortcut params or explicit array.
+     * Supports: { tools: [...] } OR { tool_name: 'x' } OR { tool_id: 'y' }
+     */
+    normalizeToolsParam(args) {
+        if (args.tools && Array.isArray(args.tools) && args.tools.length > 0) {
+            return args.tools;
+        }
+        const single = {};
+        if (args.tool_name) single.name = args.tool_name;
+        if (args.tool_id) single.tool_id = args.tool_id;
+        if (Object.keys(single).length > 0) return [single];
+        return [];
+    }
+
+    async callWorkerEndpoint(endpoint, payload) {
+        const available = await this.ensureWorkerAvailable();
+        if (!available) {
+            return {
+                content: [{ type: 'text', text: JSON.stringify({ status: 'error', message: 'Worker service unavailable' }) }],
+            };
+        }
+
+        try {
+            const response = await axios.post(
+                `${WORKER_SERVICE_URL}/${endpoint}`,
+                payload,
+                { timeout: WORKER_REQUEST_TIMEOUT_MS },
+            );
+            const serialized = this.serializeWorkerResult(response.data);
+            return {
+                content: [{ type: 'text', text: serialized || JSON.stringify({ status: 'error', message: 'Empty response' }) }],
+            };
+        } catch (error) {
+            // If the API returned a structured error (4xx), pass it through
+            if (axios.isAxiosError?.(error) && error.response?.data) {
+                return {
+                    content: [{ type: 'text', text: this.serializeWorkerResult(error.response.data) }],
+                };
+            }
+            return {
+                content: [{ type: 'text', text: `Error: ${this.describeAxiosError(error)}` }],
+            };
+        }
+    }
+
+    async handleAttachTool(args = {}, context = {}) {
+        try {
+            const headerAgentId = this.extractAgentIdFromContext(context);
+            const resolvedAgentId = this.validateAgentId(headerAgentId, args?.agent_id);
+            const tools = this.normalizeToolsParam(args);
+
+            if (tools.length === 0) {
+                return { content: [{ type: 'text', text: JSON.stringify({ status: 'error', message: 'No tools specified. Provide tools array, tool_name, or tool_id.' }) }] };
+            }
+
+            return this.callWorkerEndpoint('attach_tool', {
+                agent_id: resolvedAgentId,
+                tools,
+                pin: sanitizeBoolean(args.pin),
+            });
+        } catch (error) {
+            return { content: [{ type: 'text', text: `Error in attach_tool: ${error.message}` }] };
+        }
+    }
+
+    async handleDetachTool(args = {}, context = {}) {
+        try {
+            const headerAgentId = this.extractAgentIdFromContext(context);
+            const resolvedAgentId = this.validateAgentId(headerAgentId, args?.agent_id);
+            const tools = this.normalizeToolsParam(args);
+
+            if (tools.length === 0) {
+                return { content: [{ type: 'text', text: JSON.stringify({ status: 'error', message: 'No tools specified. Provide tools array, tool_name, or tool_id.' }) }] };
+            }
+
+            return this.callWorkerEndpoint('detach_tool', {
+                agent_id: resolvedAgentId,
+                tools,
+                unpin: sanitizeBoolean(args.unpin),
+            });
+        } catch (error) {
+            return { content: [{ type: 'text', text: `Error in detach_tool: ${error.message}` }] };
+        }
+    }
+
+    async handleListAgentTools(args = {}, context = {}) {
+        try {
+            const headerAgentId = this.extractAgentIdFromContext(context);
+            const resolvedAgentId = this.validateAgentId(headerAgentId, args?.agent_id);
+
+            return this.callWorkerEndpoint('list_agent_tools', {
+                agent_id: resolvedAgentId,
+                filter: args.filter || 'all',
+                include_schema: sanitizeBoolean(args.include_schema),
+            });
+        } catch (error) {
+            return { content: [{ type: 'text', text: `Error in list_agent_tools: ${error.message}` }] };
+        }
+    }
+
+    async handleInspectTool(args = {}, context = {}) {
+        try {
+            if (!args.tool_name_or_id) {
+                return { content: [{ type: 'text', text: JSON.stringify({ status: 'error', message: 'tool_name_or_id is required' }) }] };
+            }
+
+            return this.callWorkerEndpoint('inspect_tool', {
+                tool_name_or_id: args.tool_name_or_id,
+            });
+        } catch (error) {
+            return { content: [{ type: 'text', text: `Error in inspect_tool: ${error.message}` }] };
+        }
     }
 }
 

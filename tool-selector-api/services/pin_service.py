@@ -27,6 +27,7 @@ import os
 import json
 import logging
 import asyncio
+from collections import OrderedDict
 from typing import List, Set, Dict, Optional
 from datetime import datetime, timezone
 
@@ -40,8 +41,8 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 _cache_dir: Optional[str] = None
-# TODO: _locks dict grows unbounded as agents accumulate. Consider LRU eviction or weakref if scaling past ~100 agents. (PM feedback)
-_locks: Dict[str, asyncio.Lock] = {}
+_MAX_LOCKS: int = 200
+_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
 
 
 # ============================================================================
@@ -76,10 +77,15 @@ def _get_pin_file(agent_id: str) -> str:
 
 
 def _get_lock(agent_id: str) -> asyncio.Lock:
-    """Get or create a lock for an agent's pin file."""
-    if agent_id not in _locks:
-        _locks[agent_id] = asyncio.Lock()
-    return _locks[agent_id]
+    """Get or create a lock for an agent's pin file (LRU-bounded)."""
+    if agent_id in _locks:
+        _locks.move_to_end(agent_id)
+        return _locks[agent_id]
+    lock = asyncio.Lock()
+    _locks[agent_id] = lock
+    if len(_locks) > _MAX_LOCKS:
+        _locks.popitem(last=False)
+    return lock
 
 
 # ============================================================================

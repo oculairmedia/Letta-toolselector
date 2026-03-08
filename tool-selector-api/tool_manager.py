@@ -283,6 +283,18 @@ async def process_tools(
         if tool_id:
             keep_tool_ids.add(tool_id)
     
+    # Protect pinned tools from detachment (per-agent pins)
+    if _pin_service:
+        try:
+            pinned_ids = await _pin_service.get_pinned_tools(agent_id)
+            for pid in pinned_ids:
+                if pid and pid not in keep_tool_ids:
+                    keep_tool_ids.add(pid)
+                    logger.info(f"Pinned tool {pid} added to keep list in process_tools")
+            if pinned_ids:
+                logger.info(f"Protected {len(pinned_ids)} pinned tools from detachment in process_tools")
+        except Exception as pin_err:
+            logger.warning(f"Failed to check pinned tools in process_tools: {pin_err}")
     logger.debug("Tool IDs to keep: %s", keep_tool_ids)
     
     # Check session availability

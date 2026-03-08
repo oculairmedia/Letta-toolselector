@@ -402,8 +402,11 @@ def search_tools_with_reranking(
                         limit=rerank_initial_limit,  # Get more candidates for reranking
                         fusion_type=HybridFusion.RELATIVE_SCORE,
                         query_properties=[
-                            "name^2",                 # Tool name - highest boost
-                            "description",            # Original description
+                            "action_entities^3",      # Highest: action-entity pairs (e.g. "create issue")
+                            "name^2",                 # High: exact tool name match
+                            "semantic_keywords^2",    # High: enriched search terms
+                            "enhanced_description^1.5", # Medium: LLM-enriched description
+                            "description",            # Baseline: original description
                             "tags",                   # Category tags
                             "mcp_server_name"         # MCP server context
                         ],
@@ -535,7 +538,10 @@ def search_tools_with_reranking(
                         limit=limit,
                         fusion_type=HybridFusion.RELATIVE_SCORE,
                         query_properties=[
+                            "action_entities^3",
                             "name^2",
+                            "semantic_keywords^2",
+                            "enhanced_description^1.5",
                             "description",
                             "tags",
                             "mcp_server_name"

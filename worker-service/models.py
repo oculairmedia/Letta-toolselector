@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -50,3 +50,60 @@ class FindToolsResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     service: str
+
+
+# ── Granular tool management models ──────────────────────────────────────
+
+
+class ToolIdentifier(BaseModel):
+    """Identifies a tool by name or ID."""
+
+    name: Optional[str] = Field(default=None, description="Tool name")
+    tool_id: Optional[str] = Field(default=None, description="Tool ID")
+
+
+class LookupToolRequest(BaseModel):
+    """Request to look up a tool by name or ID."""
+
+    tool_name: Optional[str] = Field(default=None, description="Tool name to look up")
+    tool_id: Optional[str] = Field(default=None, description="Tool ID to look up")
+    fuzzy: bool = Field(default=False, description="Enable fuzzy matching")
+    limit: int = Field(default=5, ge=1, le=20, description="Max fuzzy results")
+
+
+class AttachToolRequest(BaseModel):
+    """Request to directly attach tool(s) to an agent."""
+
+    agent_id: str = Field(..., description="Agent ID to attach tools to")
+    tools: List[ToolIdentifier] = Field(..., description="Tools to attach")
+    pin: bool = Field(default=False, description="Pin tools to survive pruning")
+
+
+class DetachToolRequest(BaseModel):
+    """Request to directly detach tool(s) from an agent."""
+
+    agent_id: str = Field(..., description="Agent ID to detach tools from")
+    tools: List[ToolIdentifier] = Field(..., description="Tools to detach")
+    unpin: bool = Field(default=False, description="Also unpin if pinned")
+
+
+class ListAgentToolsRequest(BaseModel):
+    """Request to list tools attached to an agent."""
+
+    agent_id: str = Field(..., description="Agent ID")
+    filter: str = Field(default="all", description="Filter: all, core, mcp")
+    include_schema: bool = Field(default=False, description="Include tool schemas")
+
+
+class InspectToolRequest(BaseModel):
+    """Request to inspect a tool's full metadata."""
+
+    tool_name_or_id: str = Field(..., description="Tool name or ID to inspect")
+
+
+class GenericToolResponse(BaseModel):
+    """Generic pass-through response for granular tool operations."""
+
+    status: str
+    data: Optional[Any] = None
+    error: Optional[str] = None

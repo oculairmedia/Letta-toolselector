@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 _cache_dir: Optional[str] = None
+# TODO: _locks dict grows unbounded as agents accumulate. Consider LRU eviction or weakref if scaling past ~100 agents. (PM feedback)
 _locks: Dict[str, asyncio.Lock] = {}
 
 

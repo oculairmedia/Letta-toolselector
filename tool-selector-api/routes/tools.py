@@ -1073,6 +1073,7 @@ async def direct_attach_tools():
             
             if not tool:
                 query = name or tid or 'unknown'
+                # TODO: Also provide suggestions for ID-based lookups (e.g. typo'd tool IDs). Low priority. (PM feedback)
                 suggestions = _get_suggestions(query) if name else []
                 return {
                     "name": name or tid,

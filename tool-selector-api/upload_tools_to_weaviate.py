@@ -49,16 +49,26 @@ def get_or_create_tool_schema(client) -> Collection:
     # Always attempt to create after checking/deleting
     try:
         print(f"Attempting to create new '{collection_name}' schema...")
-        # Create the schema with Ollama vectorizer for automatic embedding generation
+        embedding_provider = os.getenv('EMBEDDING_PROVIDER', 'cohere').lower()
+        if embedding_provider == 'cohere':
+            vectorizer = weaviate.classes.config.Configure.Vectorizer.text2vec_cohere(
+                model=os.getenv('COHERE_EMBEDDING_MODEL', 'embed-v4.0'),
+            )
+        elif embedding_provider == 'ollama':
+            vectorizer = weaviate.classes.config.Configure.Vectorizer.text2vec_ollama(
+                api_endpoint=f"http://{os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80')}:11434",
+                model=os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
+                vectorize_collection_name=False
+            )
+        else:
+            vectorizer = weaviate.classes.config.Configure.Vectorizer.text2vec_openai(
+                model=os.getenv('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small'),
+            )
+
         collection = client.collections.create(
             name="Tool",
             description="A Letta tool with its metadata and description",
-            # Use Ollama vectorizer with Qwen3-Embedding-4B model from environment
-            vectorizer_config=weaviate.classes.config.Configure.Vectorizer.text2vec_ollama(
-                api_endpoint=f"http://{os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80')}:11434",
-                model=os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
-                vectorize_collection_name=False  # Don't include collection name in embedding
-            ),
+            vectorizer_config=vectorizer,
             properties=[
                 weaviate.classes.config.Property(
                     name="tool_id",

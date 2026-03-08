@@ -19,6 +19,9 @@ from fetch_all_tools import fetch_all_tools_async
 # Enrichment integration - enabled via ENABLE_AUTO_ENRICHMENT env var
 ENABLE_AUTO_ENRICHMENT = os.getenv("ENABLE_AUTO_ENRICHMENT", "false").lower() == "true"
 
+# Max description length for embedding - Ollama models have limited context windows
+MAX_DESCRIPTION_LENGTH = int(os.getenv("MAX_DESCRIPTION_LENGTH", "2500"))
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -73,18 +76,27 @@ async def get_weaviate_tools(client): # Make async
 
 # --- Helper function to get or create schema ---
 def get_vectorizer_config():
-    """Get the appropriate vectorizer configuration based on environment settings."""
-    embedding_provider = os.getenv('EMBEDDING_PROVIDER', 'openai').lower()
+    embedding_provider = os.getenv('EMBEDDING_PROVIDER', 'cohere').lower()
     
-    if embedding_provider == 'ollama':
-        # Use Ollama vectorizer with proper endpoint configuration
+    if embedding_provider == 'cohere':
+        vectorizer_config = weaviate.classes.config.Configure.Vectorizer.text2vec_cohere(
+            model=os.getenv('COHERE_EMBEDDING_MODEL', 'embed-v4.0'),
+        )
+        logger.info("Using Cohere vectorizer")
+    elif embedding_provider == 'vllm':
+        base_url = os.getenv('VLLM_EMBEDDING_PROXY_URL', 'http://localhost:8450')
+        vectorizer_config = weaviate.classes.config.Configure.Vectorizer.text2vec_openai(
+            model='text-embedding-3-small',
+            base_url=base_url,
+        )
+        logger.info(f"Using vLLM vectorizer via proxy at {base_url}")
+    elif embedding_provider == 'ollama':
         vectorizer_config = weaviate.classes.config.Configure.Vectorizer.text2vec_ollama(
             api_endpoint=f"http://{os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80')}:11434",
             model=os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
         )
-        logger.info(f"Using Ollama vectorizer with endpoint: http://{os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80')}:11434")
+        logger.info("Using Ollama vectorizer")
     else:
-        # Default to OpenAI vectorizer
         vectorizer_config = weaviate.classes.config.Configure.Vectorizer.text2vec_openai(
             model=OPENAI_EMBEDDING_MODEL
         )
@@ -94,37 +106,38 @@ def get_vectorizer_config():
 
 async def get_or_create_tool_schema(client) -> weaviate.collections.Collection: # Make async
     """Get existing schema or create new one if it doesn't exist."""
-    try:
-        # Wrap synchronous calls for async context
-        collection = await asyncio.to_thread(client.collections.get, "Tool")
+    # Check if collection exists using proper API
+    exists = await asyncio.to_thread(client.collections.exists, "Tool")
+    
+    if exists:
         logger.info("Using existing Tool schema")
+        return await asyncio.to_thread(client.collections.get, "Tool")
+    
+    # Collection doesn't exist - create it with proper config
+    logger.info("Tool schema not found. Creating with vectorizer config...")
+    try:
+        collection = await asyncio.to_thread(
+            client.collections.create,
+            name="Tool",
+            description="A Letta tool with its metadata and description",
+            vectorizer_config=get_vectorizer_config(),
+            properties=[
+                weaviate.classes.config.Property(name="tool_id", data_type=weaviate.classes.config.DataType.TEXT),
+                weaviate.classes.config.Property(name="name", data_type=weaviate.classes.config.DataType.TEXT),
+                weaviate.classes.config.Property(name="description", data_type=weaviate.classes.config.DataType.TEXT, vectorize_property_name=False),
+                weaviate.classes.config.Property(name="source_type", data_type=weaviate.classes.config.DataType.TEXT),
+                weaviate.classes.config.Property(name="tool_type", data_type=weaviate.classes.config.DataType.TEXT),
+                weaviate.classes.config.Property(name="tags", data_type=weaviate.classes.config.DataType.TEXT_ARRAY),
+                weaviate.classes.config.Property(name="json_schema", data_type=weaviate.classes.config.DataType.TEXT, vectorize_property_name=False),
+                # Add field for originating MCP server name
+                weaviate.classes.config.Property(name="mcp_server_name", data_type=weaviate.classes.config.DataType.TEXT, skip_vectorization=True) # Optional, non-vectorized
+            ]
+        ) # End of args for client.collections.create
+        logger.info("Schema created successfully")
         return collection
-    except Exception as e_get: # Catch specific exception if possible, e.g., weaviate.exceptions.UnexpectedStatusCodeError
-        logger.warning(f"Tool schema not found (or error checking): {e_get}. Attempting creation.")
-        try:
-            # Wrap synchronous create call
-            collection = await asyncio.to_thread(
-                client.collections.create,
-                name="Tool",
-                description="A Letta tool with its metadata and description",
-                vectorizer_config=get_vectorizer_config(),
-                properties=[
-                    weaviate.classes.config.Property(name="tool_id", data_type=weaviate.classes.config.DataType.TEXT),
-                    weaviate.classes.config.Property(name="name", data_type=weaviate.classes.config.DataType.TEXT),
-                    weaviate.classes.config.Property(name="description", data_type=weaviate.classes.config.DataType.TEXT, vectorize_property_name=False),
-                    weaviate.classes.config.Property(name="source_type", data_type=weaviate.classes.config.DataType.TEXT),
-                    weaviate.classes.config.Property(name="tool_type", data_type=weaviate.classes.config.DataType.TEXT),
-                    weaviate.classes.config.Property(name="tags", data_type=weaviate.classes.config.DataType.TEXT_ARRAY),
-                    weaviate.classes.config.Property(name="json_schema", data_type=weaviate.classes.config.DataType.TEXT, vectorize_property_name=False),
-                    # Add field for originating MCP server name
-                    weaviate.classes.config.Property(name="mcp_server_name", data_type=weaviate.classes.config.DataType.TEXT, skip_vectorization=True) # Optional, non-vectorized
-                ]
-            ) # End of args for client.collections.create
-            logger.info("Schema created successfully")
-            return collection
-        except Exception as e_create:
-            logger.error(f"Failed to create Tool schema: {e_create}")
-            raise
+    except Exception as e_create:
+        logger.error(f"Failed to create Tool schema: {e_create}")
+        raise
 
 async def sync_tools(): # Make async
     """
@@ -174,7 +187,7 @@ async def sync_tools(): # Make async
         # --- Fetch MCP Servers ---
         logger.info("Fetching MCP servers from Letta API...")
         mcp_servers = []
-        letta_url_base = os.getenv('LETTA_API_URL', 'https://letta2.oculair.ca/v1').replace('http://', 'https://')
+        letta_url_base = os.getenv('LETTA_API_URL', 'http://192.168.50.90:8289/v1')
         if not letta_url_base.endswith('/v1'):
             letta_url_base = letta_url_base.rstrip('/') + '/v1'
         mcp_servers_url = f"{letta_url_base}/tools/mcp/servers"
@@ -198,11 +211,14 @@ async def sync_tools(): # Make async
 
 
         # --- Connect to Weaviate ---
-        logger.info("Connecting to local Weaviate...")
+        weaviate_host = os.getenv("WEAVIATE_HTTP_HOST", "192.168.50.90")
+        weaviate_port = int(os.getenv("WEAVIATE_HTTP_PORT", "8080"))
+        weaviate_grpc_port = int(os.getenv("WEAVIATE_GRPC_PORT", "50051"))
+        logger.info(f"Connecting to Weaviate at {weaviate_host}:{weaviate_port}...")
         weaviate_conn = weaviate.connect_to_local(
-            host="weaviate",  # Use the service name from docker-compose
-            port=8080,
-            grpc_port=50051,
+            host=weaviate_host,
+            port=weaviate_port,
+            grpc_port=weaviate_grpc_port,
             headers={"X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")},
             skip_init_checks=True  # Skip initialization checks
         )
@@ -272,30 +288,65 @@ async def sync_tools(): # Make async
             logger.info(f"Found {len(new_tool_names)} new tools to add to Weaviate.")
             added_count = 0
             failed_count = 0
-            with collection.batch.dynamic() as batch:
-                for tool_name in new_tool_names:
-                    tool = letta_tools_dict[tool_name]
-                    try:
-                        properties = {
-                            "tool_id": tool.get("id") or tool.get("tool_id", ""), # Use id or tool_id
-                            "name": tool["name"],
-                            "description": tool.get("description", ""),
-                            "source_type": tool.get("source_type", "python"),
-                            "tool_type": tool.get("tool_type", "external_mcp"),
-                            "tags": tool.get("tags", []),
-                            "json_schema": json.dumps(tool.get("json_schema", {})) if tool.get("json_schema") else "",
-                            # Add mcp_server_name if present in the fetched tool data
-                            "mcp_server_name": tool.get("mcp_server_name")
-                        }
-                        # Filter out None values before adding
-                        properties = {k: v for k, v in properties.items() if v is not None}
-
-                        batch.add_object(properties=properties)
-                        added_count += 1
-                        logger.debug(f"- Added new tool to batch: {tool_name}")
-                    except Exception as e_add:
-                        failed_count += 1
-                        logger.error(f"Error adding new tool {tool_name} to batch: {e_add}")
+            embedding_provider = os.getenv('EMBEDDING_PROVIDER', 'cohere').lower()
+            # Use smaller batches with delays for rate-limited providers (e.g. Cohere trial)
+            batch_size = 8 if embedding_provider == 'cohere' else 100
+            batch_delay = float(os.getenv('EMBEDDING_BATCH_DELAY_SECS', '15' if embedding_provider == 'cohere' else '0'))
+            new_tool_list = list(new_tool_names)
+            total_batches = (len(new_tool_list) + batch_size - 1) // batch_size
+            
+            for batch_idx in range(0, len(new_tool_list), batch_size):
+                batch_tools = new_tool_list[batch_idx:batch_idx + batch_size]
+                batch_num = (batch_idx // batch_size) + 1
+                logger.info(f"Inserting batch {batch_num}/{total_batches} ({len(batch_tools)} tools)...")
+                
+                with collection.batch.fixed_size(batch_size=batch_size) as batch:
+                    for tool_name in batch_tools:
+                        tool = letta_tools_dict[tool_name]
+                        try:
+                            description = tool.get("description", "")
+                            if len(description) > MAX_DESCRIPTION_LENGTH:
+                                description = description[:MAX_DESCRIPTION_LENGTH] + "..."
+                                logger.debug(f"Truncated description for {tool_name} from {len(tool.get('description', ''))} to {MAX_DESCRIPTION_LENGTH} chars")
+                            
+                            properties = {
+                                "tool_id": tool.get("id") or tool.get("tool_id", ""),
+                                "name": tool["name"],
+                                "description": description,
+                                "source_type": tool.get("source_type", "python"),
+                                "tool_type": tool.get("tool_type", "external_mcp"),
+                                "tags": tool.get("tags", []),
+                                "json_schema": json.dumps(tool.get("json_schema", {})) if tool.get("json_schema") else "",
+                                "mcp_server_name": tool.get("mcp_server_name")
+                            }
+                            # Filter out None values before adding
+                            properties = {k: v for k, v in properties.items() if v is not None}
+                            
+                            batch.add_object(properties=properties)
+                            added_count += 1
+                            logger.debug(f"- Added new tool to batch: {tool_name}")
+                        except Exception as e_add:
+                            failed_count += 1
+                            logger.error(f"Error adding new tool {tool_name} to batch: {e_add}")
+                
+                # Check for batch-level failures after each batch flush
+                try:
+                    batch_failures = collection.batch.failed_objects
+                    if batch_failures:
+                        fail_count = len(batch_failures)
+                        added_count -= fail_count
+                        failed_count += fail_count
+                        logger.error(f"Batch {batch_num}: {fail_count} objects failed at Weaviate level")
+                        for fo in batch_failures[:3]:  # Log first 3 errors
+                            logger.error(f"  Failed object: {fo}")
+                except Exception:
+                    pass  # failed_objects may not be available outside batch context
+                
+                # Rate limit delay between batches
+                if batch_delay > 0 and batch_idx + batch_size < len(new_tool_list):
+                    logger.info(f"Rate limit: waiting {batch_delay}s before next batch...")
+                    time.sleep(batch_delay)
+            
             logger.info(f"Finished adding new tools. Added: {added_count}, Failed: {failed_count}")
             
             # --- Trigger Enrichment for New Tools ---
@@ -421,9 +472,9 @@ def main():
             # Need to connect client temporarily to delete
             logger.info("Connecting to Weaviate for deletion...")
             client = weaviate.connect_to_local(
-                host="weaviate",  # Use the service name from docker-compose
-                port=8080,
-                grpc_port=50051,
+                host=os.getenv("WEAVIATE_HTTP_HOST", "192.168.50.90"),
+                port=int(os.getenv("WEAVIATE_HTTP_PORT", "8080")),
+                grpc_port=int(os.getenv("WEAVIATE_GRPC_PORT", "50051")),
                 headers={"X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")},
                 skip_init_checks=True  # Skip initialization checks
             )

@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from typing import List, Optional, Dict, Any
 import requests
 import json
+import re
 from specialized_embedding import (
     is_qwen3_format_enabled,
     get_search_instruction,
@@ -106,14 +107,14 @@ USE_UNIVERSAL_EXPANSION = os.getenv("USE_UNIVERSAL_EXPANSION", "true").lower() =
 # BM25 field boosting provides better results for service-specific queries.
 ENABLE_RERANKING_BY_DEFAULT = os.getenv("ENABLE_RERANKING_BY_DEFAULT", "false").lower() == "true"
 
-# Reranker configuration - supports both vLLM (recommended) and Ollama adapter
-# RERANKER_PROVIDER: "vllm" (default, faster & better scores) or "ollama"
-RERANKER_PROVIDER = os.getenv("RERANKER_PROVIDER", "vllm").lower()
-# For vLLM: http://100.81.139.20:11435/rerank (native cross-encoder, ~5x faster)
-# For Ollama adapter: http://ollama-reranker-adapter:8080/rerank (generative approach)
-RERANKER_URL = os.getenv("RERANKER_URL", "http://100.81.139.20:11435/rerank")
-RERANKER_MODEL = os.getenv("RERANKER_MODEL", "qwen3-reranker-4b")
+# Reranker configuration - supports vLLM, Cohere, LiteLLM, and Ollama
+# RERANKER_PROVIDER: "cohere" (recommended), "vllm", "litellm", or "ollama"
+RERANKER_PROVIDER = os.getenv("RERANKER_PROVIDER", "cohere").lower()
+RERANKER_URL = os.getenv("RERANKER_URL", "https://api.cohere.com/v2/rerank")
+RERANKER_MODEL = os.getenv("RERANKER_MODEL", "rerank-v3.5")
 RERANKER_TIMEOUT = float(os.getenv("RERANKER_TIMEOUT", "30.0"))
+COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
+EXPLICIT_SERVER_MATCH_BOOST = float(os.getenv("EXPLICIT_SERVER_MATCH_BOOST", "0.35"))
 
 # Persistent HTTP client for reranker (avoids TCP connection overhead per request)
 import httpx
@@ -135,6 +136,82 @@ def close_reranker_client():
     if _reranker_client is not None:
         _reranker_client.close()
         _reranker_client = None
+
+
+ABSENT_DOMAIN_SCORE_CEILING = float(os.getenv("ABSENT_DOMAIN_SCORE_CEILING", "0.15"))
+
+
+def _extract_server_tokens_from_tool(tool: Dict[str, Any]) -> set:
+    server_name = (tool.get("mcp_server_name") or "").strip().lower()
+    if not server_name:
+        tokens: set = set()
+    else:
+        normalized = server_name.replace("-", "_")
+        tokens = {normalized}
+        tokens.update(t for t in re.findall(r"[a-z0-9_]+", normalized) if t)
+
+    for tag in (tool.get("tags") or []):
+        if isinstance(tag, str) and tag.lower().startswith("mcp:"):
+            tagged = tag.split(":", 1)[1].strip().lower().replace("-", "_")
+            if tagged:
+                tokens.add(tagged)
+                tokens.update(t for t in re.findall(r"[a-z0-9_]+", tagged) if t)
+    return tokens
+
+
+def _prioritize_explicit_server_matches(query: str, tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not query or not tools:
+        return tools
+
+    query_tokens = set(re.findall(r"[a-z0-9_]+", query.lower()))
+    if not query_tokens:
+        return tools
+
+    all_result_server_tokens: set = set()
+    matched_indices: List[int] = []
+    for idx, tool in enumerate(tools):
+        tool_server_tokens = _extract_server_tokens_from_tool(tool)
+        all_result_server_tokens.update(tool_server_tokens)
+        if tool_server_tokens and (query_tokens & tool_server_tokens):
+            matched_indices.append(idx)
+
+    query_server_tokens = query_tokens - {
+        "tool", "tools", "find", "search", "get", "list", "create",
+        "update", "delete", "manage", "control", "send", "set",
+        "the", "a", "an", "for", "with", "and", "or", "in", "on",
+        "my", "all", "new", "add", "use", "check", "run", "start",
+        "stop", "read", "write", "edit", "view", "show", "open",
+        "lights", "switches", "devices", "sensors", "automation",
+        "home", "smart", "memory", "graph", "knowledge", "data",
+    }
+
+    explicitly_named_absent_server = bool(
+        query_server_tokens
+        and not (query_server_tokens & all_result_server_tokens)
+        and not matched_indices
+    )
+
+    if explicitly_named_absent_server:
+        ceiling = ABSENT_DOMAIN_SCORE_CEILING
+        return [
+            t for t in tools
+            if float(t.get("rerank_score", t.get("score", 0.0)) or 0.0) >= ceiling
+        ]
+
+    if not matched_indices:
+        return tools
+
+    for idx in matched_indices:
+        tool = tools[idx]
+        score = tool.get("score")
+        if isinstance(score, (int, float)):
+            boosted = min(1.0, float(score) + EXPLICIT_SERVER_MATCH_BOOST)
+            tool["score"] = boosted
+            if isinstance(tool.get("rerank_score"), (int, float)):
+                tool["rerank_score"] = boosted
+
+    tools.sort(key=lambda t: float(t.get("rerank_score", t.get("score", 0.0)) or 0.0), reverse=True)
+    return tools
 
 def llm_rerank_tools(query: str, documents: list, objects: list, limit: int) -> list:
     """
@@ -404,7 +481,7 @@ def search_tools_with_reranking(
                         fusion_type=HybridFusion.RELATIVE_SCORE,
                         query_properties=[
                             "name^2",
-                            "enhanced_description^2",
+                            "description^2",
                             "description",
                             "tags",
                             "mcp_server_name"
@@ -455,7 +532,6 @@ def search_tools_with_reranking(
                             
                             if documents:
                                 if RERANKER_PROVIDER == "litellm":
-                                    # LLM intent-aware reranker via chat completion
                                     scored_objects = llm_rerank_tools(
                                         query=cleaned_query,
                                         documents=documents,
@@ -471,13 +547,41 @@ def search_tools_with_reranking(
                                     else:
                                         print("LLM reranking failed, falling back to original order")
                                         result.objects = result.objects[:limit]
-                                else:
-                                    # Cross-encoder reranker (vLLM/Ollama)
+                                elif RERANKER_PROVIDER == "cohere":
                                     client = get_reranker_client()
-                                    
-                                    # Build payload based on provider
+                                    payload = {
+                                        "model": RERANKER_MODEL,
+                                        "query": cleaned_query,
+                                        "documents": documents,
+                                        "top_n": min(limit, len(documents)),
+                                    }
+                                    headers = {
+                                        "Content-Type": "application/json",
+                                        "Authorization": f"Bearer {COHERE_API_KEY}",
+                                    }
+                                    response = client.post(RERANKER_URL, json=payload, headers=headers)
+                                    if response.status_code == 200:
+                                        rerank_data = response.json()
+                                        rerank_results = rerank_data.get('results', [])
+                                        scored_objects = []
+                                        for rerank_result in rerank_results:
+                                            original_idx = rerank_result['index']
+                                            if original_idx < len(result.objects):
+                                                obj = result.objects[original_idx]
+                                                score = rerank_result['relevance_score']
+                                                scored_objects.append((score, obj))
+                                        scored_objects.sort(key=lambda x: x[0], reverse=True)
+                                        for score, obj in scored_objects[:limit]:
+                                            if not hasattr(obj, 'rerank_score'):
+                                                obj.rerank_score = score
+                                        result.objects = [obj for _, obj in scored_objects[:limit]]
+                                        print(f"Cohere reranking completed: {len(scored_objects)} results reranked")
+                                    else:
+                                        print(f"Cohere reranker failed: {response.status_code} {response.text[:200]}, falling back")
+                                        result.objects = result.objects[:limit]
+                                else:
+                                    client = get_reranker_client()
                                     if RERANKER_PROVIDER == "vllm":
-                                        # vLLM format: /v1/rerank endpoint
                                         instructed_query = f"{DEFAULT_RERANK_INSTRUCTION}\n\nQuery: {cleaned_query}"
                                         payload = {
                                             "model": RERANKER_MODEL,
@@ -486,19 +590,16 @@ def search_tools_with_reranking(
                                             "top_k": min(limit, len(documents)),
                                         }
                                     else:
-                                        # Ollama adapter format (default)
                                         payload = {
                                             "query": cleaned_query,
                                             "documents": documents,
                                             "k": min(limit, len(documents)),
                                             "instruction": DEFAULT_RERANK_INSTRUCTION,
                                         }
-                                    
                                     response = client.post(RERANKER_URL, json=payload)
                                     if response.status_code == 200:
                                         rerank_data = response.json()
                                         rerank_results = rerank_data.get('results', [])
-                                        
                                         scored_objects = []
                                         for rerank_result in rerank_results:
                                             original_idx = rerank_result['index']
@@ -506,15 +607,11 @@ def search_tools_with_reranking(
                                                 obj = result.objects[original_idx]
                                                 score = rerank_result['relevance_score']
                                                 scored_objects.append((score, obj))
-                                        
                                         scored_objects.sort(key=lambda x: x[0], reverse=True)
-                                        
                                         for score, obj in scored_objects[:limit]:
                                             if not hasattr(obj, 'rerank_score'):
                                                 obj.rerank_score = score
-                                        
                                         result.objects = [obj for _, obj in scored_objects[:limit]]
-                                        
                                         print(f"Client-side reranking completed: {len(scored_objects)} results reranked")
                                     else:
                                         print(f"Reranker request failed: {response.status_code}, falling back to original order")
@@ -538,7 +635,7 @@ def search_tools_with_reranking(
                         fusion_type=HybridFusion.RELATIVE_SCORE,
                         query_properties=[
                             "name^2",
-                            "enhanced_description^2",
+                            "description^2",
                             "description",
                             "tags",
                             "mcp_server_name"
@@ -574,8 +671,8 @@ def search_tools_with_reranking(
                 
                 if use_reranking:
                     print(f"Reranking complete: returned {len(tools)} tools")
-                
-                return tools
+
+                return _prioritize_explicit_server_matches(original_query, tools)
                 
             except Exception as e:
                 print(f"Error in collection query: {e}")

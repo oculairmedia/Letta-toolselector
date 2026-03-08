@@ -26,11 +26,12 @@ services:
       QUERY_DEFAULTS_LIMIT: 15
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
       PERSISTENCE_DATA_PATH: /var/lib/weaviate
-      DEFAULT_VECTORIZER_MODULE: text2vec-openai
-      ENABLE_MODULES: text2vec-openai,text2vec-ollama
+      DEFAULT_VECTORIZER_MODULE: text2vec-cohere
+      ENABLE_MODULES: text2vec-openai,text2vec-ollama,text2vec-cohere
       CLUSTER_HOSTNAME: node1
       READINESS_MAX_WAIT_SECS: 300
       OPENAI_APIKEY: ${OPENAI_API_KEY:-dummy}
+      COHERE_APIKEY: ${COHERE_API_KEY:-}
     volumes:
       - weaviate_data:/var/lib/weaviate
     healthcheck:
@@ -75,26 +76,28 @@ services:
       - MANAGE_ONLY_MCP_TOOLS=${MANAGE_ONLY_MCP_TOOLS:-true}
       - NEVER_DETACH_TOOLS=${NEVER_DETACH_TOOLS:-find_tools,Read,Write,Edit,Glob,Grep,Bash,BashOutput,KillBash,TodoWrite,Skill,AskUserQuestion,memory,memory_apply_patch,conversation_search,archival_memory_search,archival_memory_insert,find_agents,matrix_messaging,matrix_agent_message,get_entity_neighbors,search_recent_context,search_documents}
       - PROTECTED_TOOLS=${PROTECTED_TOOLS:-find_tools,Read,Write,Edit,Glob,Grep,Bash,BashOutput,KillBash,TodoWrite,Skill,AskUserQuestion,memory,memory_apply_patch,conversation_search,archival_memory_search,archival_memory_insert,find_agents,matrix_messaging,matrix_agent_message,search_documents}
-      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-vllm}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-cohere}
+      - COHERE_API_KEY=${COHERE_API_KEY:-}
       - VLLM_EMBEDDING_BASE_URL=${VLLM_EMBEDDING_BASE_URL:-http://100.81.139.20:11450}
       - VLLM_EMBEDDING_MODEL=${VLLM_EMBEDDING_MODEL:-qwen3-embedding}
-      - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-2560}
+      - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-1024}
       - ENABLE_RERANKING=${ENABLE_RERANKING:-true}
       - ENABLE_RERANKING_BY_DEFAULT=${ENABLE_RERANKING_BY_DEFAULT:-true}
       - RERANK_INITIAL_LIMIT=${RERANK_INITIAL_LIMIT:-30}
       - RERANK_TOP_K=${RERANK_TOP_K:-10}
-      - RERANKER_MODEL=${RERANKER_MODEL:-minimax/MiniMax-M2.5}
-      - RERANKER_PROVIDER=${RERANKER_PROVIDER:-litellm}
-      - RERANKER_URL=${RERANKER_URL:-http://192.168.50.90:4001}
+      - RERANKER_MODEL=${RERANKER_MODEL:-rerank-v3.5}
+      - RERANKER_PROVIDER=${RERANKER_PROVIDER:-cohere}
+      - RERANKER_URL=${RERANKER_URL:-https://api.cohere.com/v2/rerank}
       - RERANKER_TIMEOUT=${RERANKER_TIMEOUT:-30.0}
-      - RERANKER_TEMPERATURE=${RERANKER_TEMPERATURE:-0.1}
       - LITELLM_API_KEY=${LITELLM_API_KEY:-sk-1234}
       - LETTA_DIRECT_MESSAGE_URL=${LETTA_DIRECT_MESSAGE_URL:-http://192.168.50.90:8283}
       - MATRIX_BRIDGE_WEBHOOK_URL=${MATRIX_BRIDGE_WEBHOOK_URL:-}
       - ENABLE_AUTO_ENRICHMENT=${ENABLE_AUTO_ENRICHMENT:-false}
-      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://192.168.50.90:8082/v1}
-      - ANTHROPIC_PROXY_URL=${ANTHROPIC_BASE_URL:-http://192.168.50.90:8082/v1}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-dummy}
+      - ENRICHMENT_MODEL=${ENRICHMENT_MODEL:-minimax/MiniMax-M2.5}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_PROXY_URL:-http://192.168.50.90:4001/v1}
+      - ANTHROPIC_PROXY_URL=${ANTHROPIC_PROXY_URL:-http://192.168.50.90:4001/v1}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-1234}
+      - COHERE_API_KEY=${COHERE_API_KEY:-}
       - ENRICHMENT_CACHE_DIR=/app/enrichment_cache
     restart: unless-stopped
     healthcheck:
@@ -126,14 +129,16 @@ services:
       - API_URL=http://tool-selector-api:3001
       - SYNC_INTERVAL=300
       - ENABLE_AUTO_ENRICHMENT=${ENABLE_AUTO_ENRICHMENT:-false}
-      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://192.168.50.90:8082/v1}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-dummy}
+      - ENRICHMENT_MODEL=${ENRICHMENT_MODEL:-minimax/MiniMax-M2.5}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_PROXY_URL:-http://192.168.50.90:4001/v1}
+      - ANTHROPIC_PROXY_URL=${ANTHROPIC_PROXY_URL:-http://192.168.50.90:4001/v1}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-1234}
       - ENRICHMENT_CACHE_DIR=/app/enrichment_cache
       - WEAVIATE_HTTP_HOST=192.168.50.90
       - WEAVIATE_HTTP_PORT=8091
       - WEAVIATE_GRPC_PORT=50051
-      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-vllm}
-      - VLLM_EMBEDDING_PROXY_URL=${VLLM_EMBEDDING_PROXY_URL:-http://localhost:8450}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-cohere}
+      - COHERE_API_KEY=${COHERE_API_KEY:-}
     volumes:
       - ./.env:/app/.env:ro
       - tool_cache_volume:/app/runtime_cache
@@ -154,8 +159,10 @@ services:
       - enrichment
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://192.168.50.90:8082/v1}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-dummy}
+      - ENRICHMENT_MODEL=${ENRICHMENT_MODEL:-minimax/MiniMax-M2.5}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_PROXY_URL:-http://192.168.50.90:4001/v1}
+      - ANTHROPIC_PROXY_URL=${ANTHROPIC_PROXY_URL:-http://192.168.50.90:4001/v1}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-1234}
       - ENRICHMENT_CACHE_DIR=/app/enrichment_cache
       - ENRICHMENT_INTERVAL=${ENRICHMENT_INTERVAL:-3600}
       - WEAVIATE_HTTP_HOST=192.168.50.90

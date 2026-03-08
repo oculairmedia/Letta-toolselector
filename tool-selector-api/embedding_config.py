@@ -13,8 +13,12 @@ OLLAMA_EMBEDDING_MODEL = "dengcao/Qwen3-Embedding-4B:Q4_K_M"
 OLLAMA_EMBEDDING_DIMENSION = 2560  # Qwen3-Embedding-4B model dimension
 OLLAMA_BASE_URL = "http://192.168.50.80:11434"
 
+# Cohere Embedding Configuration
+COHERE_EMBEDDING_MODEL = "embed-v4.0"
+COHERE_EMBEDDING_DIMENSION = 1024
+
 # Weaviate Configuration
-WEAVIATE_VECTORIZER = "text2vec-openai"
+WEAVIATE_VECTORIZER = "text2vec-cohere"
 
 def validate_embedding_config():
     """

@@ -21,8 +21,7 @@ class AnthropicClient:
     Uses the proxy at ANTHROPIC_PROXY_URL with OpenAI-compatible API format.
     """
     
-    # Default model for enrichment
-    DEFAULT_MODEL = "claude-sonnet-4-20250514"
+    DEFAULT_MODEL = os.getenv("ENRICHMENT_MODEL", "minimax/MiniMax-M2.5")
     
     def __init__(
         self,

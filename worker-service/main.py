@@ -166,9 +166,9 @@ async def lookup_tool_endpoint(request: LookupToolRequest) -> dict:
     try:
         params: dict = {}
         if request.tool_name:
-            params["name"] = request.tool_name
+            params["tool_name"] = request.tool_name
         if request.tool_id:
-            params["id"] = request.tool_id
+            params["tool_id"] = request.tool_id
         if request.fuzzy:
             params["fuzzy"] = "true"
             params["limit"] = str(request.limit)

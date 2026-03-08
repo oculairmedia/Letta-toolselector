@@ -46,6 +46,10 @@ RUN mkdir -p /app/cache && chown -R app:app /app/cache
 RUN mkdir -p /app/runtime_cache && \
    chown -R app:app /app/runtime_cache && \
    chmod -R g+w /app/runtime_cache
+# Create the enrichment_cache directory for semantic enrichment pipeline
+RUN mkdir -p /app/enrichment_cache && \
+   chown -R app:app /app/enrichment_cache && \
+   chmod -R g+w /app/enrichment_cache
 
 # Set default environment variables (will be overridden by docker-compose)
 # These are just placeholders - actual values come from docker-compose environment section

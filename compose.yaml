@@ -91,6 +91,11 @@ services:
       - LITELLM_API_KEY=${LITELLM_API_KEY:-sk-1234}
       - LETTA_DIRECT_MESSAGE_URL=${LETTA_DIRECT_MESSAGE_URL:-http://192.168.50.90:8283}
       - MATRIX_BRIDGE_WEBHOOK_URL=${MATRIX_BRIDGE_WEBHOOK_URL:-}
+      - ENABLE_AUTO_ENRICHMENT=${ENABLE_AUTO_ENRICHMENT:-false}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://192.168.50.90:8082/v1}
+      - ANTHROPIC_PROXY_URL=${ANTHROPIC_BASE_URL:-http://192.168.50.90:8082/v1}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-dummy}
+      - ENRICHMENT_CACHE_DIR=/app/enrichment_cache
     restart: unless-stopped
     healthcheck:
       test:
@@ -105,6 +110,7 @@ services:
     volumes:
       - ./.env:/app/.env:ro
       - tool_cache_volume:/app/runtime_cache
+      - enrichment_cache_volume:/app/enrichment_cache
       - ./tool-selector-api:/app:rw
     networks:
       - letta-tools

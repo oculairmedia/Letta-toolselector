@@ -43,8 +43,8 @@ class AnthropicClient:
             max_retries: Max retry attempts on failure
         """
         self.base_url = base_url or os.getenv(
-            "ANTHROPIC_PROXY_URL", 
-            "http://192.168.50.90:4010/v1"
+            "ANTHROPIC_PROXY_URL",
+            os.getenv("ANTHROPIC_BASE_URL", "http://192.168.50.90:8082/v1")
         )
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
         self.model = model or self.DEFAULT_MODEL

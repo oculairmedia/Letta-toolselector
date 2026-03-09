@@ -1,0 +1,60 @@
+[project]
+name = "letta-tool-selector"
+version = "0.1.0"
+description = "Intelligent tool management for Letta AI agents"
+requires-python = ">=3.10"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+# Directories to lint
+src = ["tool-selector-api", "worker-service", "tests", "scripts"]
+
+# Exclude generated/vendored code
+exclude = [
+    ".venv",
+    "venv",
+    "__pycache__",
+    "node_modules",
+    ".git",
+    "htmlcov",
+    "experiments",
+    "experiments-engine",
+    "data-management",
+    "cost_control_data",
+]
+
+[tool.ruff.lint]
+# Start lenient — enforce critical rules, ignore noisy ones.
+# Tighten over time by removing entries from 'ignore'.
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    # "I",  # isort — disabled until import ordering is cleaned up (~6000 violations)
+]
+
+ignore = [
+    "F401",   # unused-import — 214 violations, fix incrementally
+    "F541",   # f-string-missing-placeholders — 97 violations, fix incrementally
+    "F811",   # redefined-while-unused — 1 violation (api_server.py import shadow)
+    "F841",   # unused-variable — 35 violations, fix incrementally
+    "E402",   # module-import-not-at-top-of-file — 23 violations, some intentional (sys.path)
+    "E501",   # line-too-long — handled by formatter
+    "E712",   # true-false-comparison — 3 violations, low priority
+    "E713",   # not-in-test — 4 violations, low priority
+    "E701",   # multiple-statements-on-one-line — 2 violations
+    "E722",   # bare-except — 19 violations, fix incrementally (add specific exception types)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files can have unused imports (fixtures) and bare excepts
+"tests/**" = ["F811", "E722"]
+# Root-level shared modules may need flexible imports
+"*.py" = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"

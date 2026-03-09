@@ -124,12 +124,12 @@ jobs:
       
       - name: Run Ruff (linting)
         run: |
-          ruff check tool-selector-api/ worker-service/ --output-format=github || true
-      
+          ruff check tool-selector-api/ worker-service/ tests/ scripts/ --config pyproject.toml --output-format=github
+
       - name: Run Ruff (formatting check)
         run: |
-          ruff format --check tool-selector-api/ worker-service/ || true
-      
+          ruff format --check tool-selector-api/ worker-service/ tests/ scripts/ --config pyproject.toml
+
       - name: Run MyPy (type checking)
         run: |
           mypy tool-selector-api/ worker-service/ --ignore-missing-imports || true

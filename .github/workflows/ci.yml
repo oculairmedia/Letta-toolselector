@@ -51,12 +51,11 @@ jobs:
       - name: Run Python linting with ruff
         run: |
           pip install ruff
-          ruff check tool-selector-api/ --output-format=github
+          ruff check tool-selector-api/ worker-service/ tests/ scripts/ --config pyproject.toml --output-format=github
 
-      - name: Run Python formatting check
+      - name: Run Python formatting check with ruff
         run: |
-          pip install black
-          black --check tool-selector-api/
+          ruff format --check tool-selector-api/ worker-service/ tests/ scripts/ --config pyproject.toml
 
   # Job 2: Python Tests
   python-tests:

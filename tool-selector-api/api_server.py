@@ -98,7 +98,7 @@ def _normalize_letta_base_url(url: str):
         normalized = f"{normalized}/v1"
     return normalized
 
-raw_letta_url = os.getenv('LETTA_API_URL', 'https://letta2.oculair.ca/v1')
+raw_letta_url = os.getenv('LETTA_API_URL', 'http://192.168.50.90:8289/v1')
 LETTA_URL = _normalize_letta_base_url(raw_letta_url)
 
 

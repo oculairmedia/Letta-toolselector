@@ -52,7 +52,7 @@ class LettaSDKClient:
             max_retries: Number of retries for failed requests
             timeout: Request timeout in seconds
         """
-        self._base_url = base_url or os.getenv('LETTA_API_URL', 'https://letta2.oculair.ca/v1')
+        self._base_url = base_url or os.getenv('LETTA_API_URL', 'http://192.168.50.90:8289/v1')
         self._api_key = api_key or os.getenv('LETTA_PASSWORD', '')
         self._max_retries = max_retries
         self._timeout = timeout

@@ -63,7 +63,7 @@ class ToolInventoryBrowser:
     def __init__(
         self,
         storage_path: str = "/opt/stacks/lettatoolsselector/data-management/browser",
-        letta_api_url: str = "https://letta.oculair.ca/v1",
+        letta_api_url: str = "http://192.168.50.90:8289/v1",
         letta_password: str = None
     ):
         self.storage_path = Path(storage_path)

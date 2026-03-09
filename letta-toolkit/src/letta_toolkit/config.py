@@ -20,7 +20,7 @@ class LettaConfig:
     """
     
     base_url: str = field(default_factory=lambda: os.environ.get(
-        "LETTA_BASE_URL", "https://letta.oculair.ca"
+        "LETTA_BASE_URL", "http://192.168.50.90:8289"
     ))
     api_key: str = field(default_factory=lambda: os.environ.get(
         "LETTA_PASSWORD", ""

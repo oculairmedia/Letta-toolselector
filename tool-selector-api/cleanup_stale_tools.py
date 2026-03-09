@@ -14,7 +14,7 @@ import sys
 from collections import defaultdict
 
 def main(dry_run=True):
-    letta_url = os.getenv('LETTA_API_URL', 'https://letta2.oculair.ca/v1')
+    letta_url = os.getenv('LETTA_API_URL', 'http://192.168.50.90:8289/v1')
     letta_pass = os.getenv('LETTA_PASSWORD', '')
     headers = {'Authorization': f'Bearer {letta_pass}'}
     

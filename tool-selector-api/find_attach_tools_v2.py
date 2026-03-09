@@ -102,7 +102,7 @@ def find_attach_tools_v2(
         return None
 
     # API endpoints
-    letta_base = "https://letta2.oculair.ca/v1"
+    letta_base = "http://192.168.50.90:8289/v1"
     weaviate_host = "100.81.139.20"
     weaviate_port = 8020
     weaviate_base = f"http://{weaviate_host}:{weaviate_port}"

@@ -17,7 +17,7 @@ const app = express();
 const sessions = new Map();
 
 app.use(cors({
-    origin: ['http://localhost', 'http://127.0.0.1', 'http://192.168.50.90', 'https://letta.oculair.ca', 'https://letta2.oculair.ca'],
+    origin: ['http://localhost', 'http://127.0.0.1', 'http://192.168.50.90', 'http://192.168.50.90:8289', 'http://192.168.50.90:8289'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Mcp-Session-Id', 'Accept'],
     exposedHeaders: ['Mcp-Session-Id']

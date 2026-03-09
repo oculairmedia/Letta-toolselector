@@ -11,7 +11,7 @@ import os
 from typing import Dict, List, Any
 
 # Test configuration
-LETTA_API_URL = os.getenv('LETTA_API_URL', 'https://letta.oculair.ca/v1')
+LETTA_API_URL = os.getenv('LETTA_API_URL', 'http://192.168.50.90:8289/v1')
 LETTA_PASSWORD = os.getenv('LETTA_PASSWORD')
 TOOL_SELECTOR_URL = os.getenv('TOOLS_API_BASE_URL', 'http://localhost:8020')
 

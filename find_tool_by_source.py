@@ -6,10 +6,10 @@ import requests
 import json
 
 # Set environment variables
-os.environ['LETTA_API_URL'] = 'https://letta.oculair.ca/v1'
+os.environ['LETTA_API_URL'] = 'http://192.168.50.90:8289/v1'
 os.environ['LETTA_PASSWORD'] = 'lettaSecurePass123'
 
-LETTA_URL = 'https://letta.oculair.ca/v1'
+LETTA_URL = 'http://192.168.50.90:8289/v1'
 LETTA_API_KEY = 'lettaSecurePass123'
 
 headers = {

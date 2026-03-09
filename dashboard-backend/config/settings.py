@@ -24,7 +24,7 @@ class Settings:
     WEAVIATE_URL: str = os.getenv("WEAVIATE_URL", "http://localhost:8080")
     
     # Letta API Configuration  
-    LETTA_API_URL: str = os.getenv("LETTA_API_URL", "https://letta.oculair.ca/v1")
+    LETTA_API_URL: str = os.getenv("LETTA_API_URL", "http://192.168.50.90:8289/v1")
     LETTA_PASSWORD: str = os.getenv("LETTA_PASSWORD", "")
     
     # OpenAI Configuration

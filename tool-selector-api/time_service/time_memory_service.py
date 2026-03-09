@@ -11,7 +11,7 @@ load_dotenv()
 
 class TimeMemoryService:
     def __init__(self):
-        self.host = os.getenv('LETTA_API_URL', 'https://letta2.oculair.ca').replace('http://', 'https://')
+        self.host = os.getenv('LETTA_API_URL', 'http://192.168.50.90:8289').replace('http://', 'https://')
         api_key = os.getenv('LETTA_PASSWORD', 'lettaSecurePass123')
         self.headers = {
             'Content-Type': 'application/json',

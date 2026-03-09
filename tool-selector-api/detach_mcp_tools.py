@@ -74,7 +74,7 @@ def detach_mcp_tools(
         "X-BARE-PASSWORD": "password lettaSecurePass123"
     }
 
-    base_url = "https://letta2.oculair.ca/v1"
+    base_url = "http://192.168.50.90:8289/v1"
     
     try:
         # First, get the agent's tools

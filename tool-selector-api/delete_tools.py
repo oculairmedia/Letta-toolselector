@@ -4,7 +4,7 @@ import json
 
 def list_tools() -> None:
     """List all tools and their full details with pagination."""
-    base_url = "https://letta2.oculair.ca/v1/tools"
+    base_url = "http://192.168.50.90:8289/v1/tools"
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -67,7 +67,7 @@ def list_tools() -> None:
 
 def delete_tool(tool_id: str) -> bool:
     """Delete a tool from Letta."""
-    url = f"https://letta2.oculair.ca/v1/tools/{tool_id}"
+    url = f"http://192.168.50.90:8289/v1/tools/{tool_id}"
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",

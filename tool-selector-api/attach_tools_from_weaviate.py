@@ -23,7 +23,7 @@ logging.getLogger("aiohttp").setLevel(logging.WARNING)
 
 
 # Constants
-BASE_URL = "https://letta2.oculair.ca"
+BASE_URL = "http://192.168.50.90:8289"
 API_KEY = os.getenv("LETTA_API_KEY", "lettaSecurePass123") # Load from env if available
 HEADERS = {
     "Content-Type": "application/json",

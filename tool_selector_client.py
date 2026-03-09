@@ -180,8 +180,8 @@ def _normalize_letta_base_url(url: Optional[str]) -> Optional[str]:
 
 def get_letta_api_url() -> str:
     """Get Letta API URL from environment."""
-    url = _normalize_letta_base_url(os.getenv("LETTA_API_URL", "https://letta2.oculair.ca/v1"))
-    return url or "https://letta2.oculair.ca/v1"
+    url = _normalize_letta_base_url(os.getenv("LETTA_API_URL", "http://192.168.50.90:8289/v1"))
+    return url or "http://192.168.50.90:8289/v1"
 
 
 def get_letta_api_key() -> str:

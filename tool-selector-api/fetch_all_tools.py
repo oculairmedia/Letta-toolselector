@@ -170,7 +170,7 @@ async def fetch_all_tools_async():
         "X-BARE-PASSWORD": f'password {api_key}'
     }
 
-    base_url = os.getenv('LETTA_API_URL', 'https://letta2.oculair.ca/v1').replace('http://', 'https://')
+    base_url = os.getenv('LETTA_API_URL', 'http://192.168.50.90:8289/v1')
     if not base_url.endswith('/v1'):
         base_url = base_url.rstrip('/') + '/v1'
 

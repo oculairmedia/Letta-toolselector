@@ -1431,6 +1431,58 @@ async def list_agent_tools(agent_id: str):
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 
+@tools_bp.route("/api/v1/tools/pins/<agent_id>", methods=["GET"])
+async def get_agent_pins(agent_id: str):
+    """
+    Get pinned tools for an agent.
+
+    Returns the list of pinned tool IDs with resolved names.
+    Agents can call this to discover which of their tools are pinned.
+    """
+    logger.debug("Received request for /api/v1/tools/pins/%s", agent_id)
+
+    if not _pin_service:
+        return jsonify({"error": "Pin service not configured"}), 503
+
+    try:
+        if not agent_id:
+            return jsonify({"error": "agent_id is required"}), 400
+
+        pinned_ids = await _pin_service.get_pinned_tools(agent_id)
+
+        # Resolve tool names if tool_manager is available
+        pinned_tools = []
+        if _tool_manager and pinned_ids:
+            try:
+                agent_tools = await _tool_manager.fetch_agent_tools(agent_id)
+                id_to_name = {(t.get("id") or t.get("tool_id")): t.get("name", "") for t in agent_tools}
+                for tid in pinned_ids:
+                    pinned_tools.append(
+                        {
+                            "tool_id": tid,
+                            "name": id_to_name.get(tid, "unknown"),
+                        }
+                    )
+            except Exception as resolve_err:
+                logger.warning(f"Could not resolve pin names: {resolve_err}")
+                pinned_tools = [{"tool_id": tid, "name": "unknown"} for tid in pinned_ids]
+        else:
+            pinned_tools = [{"tool_id": tid, "name": "unknown"} for tid in pinned_ids]
+
+        return jsonify(
+            {
+                "success": True,
+                "agent_id": agent_id,
+                "pinned_count": len(pinned_tools),
+                "pinned_tools": pinned_tools,
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error getting pinned tools: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
 @tools_bp.route("/api/v1/tools/inspect/<path:tool_name_or_id>", methods=["GET"])
 async def inspect_tool(tool_name_or_id: str):
     """

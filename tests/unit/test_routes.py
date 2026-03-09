@@ -201,3 +201,80 @@ class TestBlueprintIntegration:
 
         # Clean up
         tools._attach_tools_func = None
+
+
+class TestPinsEndpoint:
+    """Tests for GET /api/v1/tools/pins/{agent_id} endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_pins_returns_503_when_pin_service_not_configured(self):
+        """Should return 503 when pin service is not available."""
+        from routes import tools
+        from quart import Quart
+
+        test_app = Quart(__name__)
+        tools._pin_service = None
+        test_app.register_blueprint(tools.tools_bp)
+
+        async with test_app.test_client() as client:
+            response = await client.get("/api/v1/tools/pins/agent-test-123")
+            assert response.status_code == 503
+            data = await response.get_json()
+            assert "not configured" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_pins_returns_empty_when_no_pins(self):
+        """Should return empty list when agent has no pinned tools."""
+        from routes import tools
+        from quart import Quart
+
+        test_app = Quart(__name__)
+        mock_pin = AsyncMock()
+        mock_pin.get_pinned_tools = AsyncMock(return_value=[])
+        tools._pin_service = mock_pin
+        tools._tool_manager = None
+        test_app.register_blueprint(tools.tools_bp)
+
+        async with test_app.test_client() as client:
+            response = await client.get("/api/v1/tools/pins/agent-test-123")
+            assert response.status_code == 200
+            data = await response.get_json()
+            assert data["success"] is True
+            assert data["pinned_count"] == 0
+            assert data["pinned_tools"] == []
+
+        tools._pin_service = None
+
+    @pytest.mark.asyncio
+    async def test_pins_returns_pinned_tools_with_names(self):
+        """Should return pinned tools with resolved names."""
+        from routes import tools
+        from quart import Quart
+
+        test_app = Quart(__name__)
+        mock_pin = AsyncMock()
+        mock_pin.get_pinned_tools = AsyncMock(return_value=["tool-abc", "tool-def"])
+        tools._pin_service = mock_pin
+
+        mock_tm = AsyncMock()
+        mock_tm.fetch_agent_tools = AsyncMock(
+            return_value=[
+                {"id": "tool-abc", "name": "web_search", "tool_type": "external_mcp"},
+                {"id": "tool-def", "name": "send_email", "tool_type": "external_mcp"},
+                {"id": "tool-ghi", "name": "other_tool", "tool_type": "external_mcp"},
+            ]
+        )
+        tools._tool_manager = mock_tm
+        test_app.register_blueprint(tools.tools_bp)
+
+        async with test_app.test_client() as client:
+            response = await client.get("/api/v1/tools/pins/agent-test-123")
+            assert response.status_code == 200
+            data = await response.get_json()
+            assert data["success"] is True
+            assert data["pinned_count"] == 2
+            names = {t["name"] for t in data["pinned_tools"]}
+            assert names == {"web_search", "send_email"}
+
+        tools._pin_service = None
+        tools._tool_manager = None

@@ -52,16 +52,25 @@ Thumbs.db
 # Docker override (local development)
 docker-compose.override.yml
 
-# Test files
+# Test / coverage artifacts
 keep-mcp/
 node_modules/
-
-# Generated artifacts
 .coverage
+.coverage.*
 coverage.xml
 htmlcov/
+.pytest_cache/
+.benchmarks/
+*.jsonl.bak
+
+# Generated / runtime
+*.pyc
+*.pyo
 
 # OpenCode / VIBESync / Letta local state
 .opencode/
 .vibesync-cache/
 .letta/
+
+# Claude Code
+.claude/

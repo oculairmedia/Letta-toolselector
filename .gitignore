@@ -53,5 +53,15 @@ Thumbs.db
 docker-compose.override.yml
 
 # Test files
-test_*.pykeep-mcp/
+keep-mcp/
 node_modules/
+
+# Generated artifacts
+.coverage
+coverage.xml
+htmlcov/
+
+# OpenCode / VIBESync / Letta local state
+.opencode/
+.vibesync-cache/
+.letta/

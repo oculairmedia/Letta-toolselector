@@ -42,7 +42,7 @@ class ToolCacheService:
     @property
     def cache_file(self) -> str:
         """Get the path to the tools cache file."""
-        return os.path.join(_cache_dir or '/app/cache', 'all_tools_cache.json')
+        return os.path.join(_cache_dir or '/app/runtime_cache', 'tool_cache.json')
     
     async def read_tool_cache(self, force_reload: bool = False) -> List[Dict[str, Any]]:
         """

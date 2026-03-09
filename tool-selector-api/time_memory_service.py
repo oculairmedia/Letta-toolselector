@@ -20,7 +20,7 @@ load_dotenv()
 class TimeMemoryService:
     def __init__(self):
         # Get base URL - respect configured protocol (http or https)
-        base_url = os.getenv('LETTA_API_URL', 'https://letta2.oculair.ca/v1')
+        base_url = os.getenv('LETTA_API_URL', 'http://192.168.50.90:8289/v1')
         if not base_url.endswith('/v1'):
              # Add /v1 if it's missing, handling potential trailing slash
             base_url = base_url.rstrip('/') + '/v1'
@@ -254,14 +254,16 @@ class TimeMemoryService:
             else:
                 logger.info(f"Watch block already attached to {agent['name']}")
 
+        update_interval = int(os.getenv('UPDATE_INTERVAL', 60))
+        
         logger.info("\nTime Memory Service is running...")
         logger.info(f"Block ID: {self.block_id}")
-        logger.info("Updating time every second...")
+        logger.info(f"Updating time every {update_interval} seconds...")
 
         while True:
             try:
                 self.update_time_block()
-                time.sleep(1)  # Update every second
+                time.sleep(update_interval)
             except KeyboardInterrupt:
                 logger.info("\nShutting down Time Memory Service...")
                 break

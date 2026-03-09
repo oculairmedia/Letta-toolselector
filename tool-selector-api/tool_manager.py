@@ -566,6 +566,16 @@ async def perform_tool_pruning(
     requested_keep_tool_ids = set(keep_tool_ids or [])
     requested_newly_matched_tool_ids = set(newly_matched_tool_ids or [])
     
+    # Fetch pinned tool IDs once (before the loop)
+    pinned_tool_ids: set = set()
+    if _pin_service:
+        try:
+            pinned_tool_ids = set(await _pin_service.get_pinned_tools(agent_id))
+            if pinned_tool_ids:
+                logger.info(f"Found {len(pinned_tool_ids)} pinned tools for agent {agent_id}: {pinned_tool_ids}")
+        except Exception as pin_err:
+            logger.warning(f"Failed to fetch pinned tools: {pin_err}")
+    
     logger.debug("Pruning request for agent %s with prompt: '%s', drop_rate: %s", agent_id, user_prompt, drop_rate)
     logger.debug("Requested to keep (all types): %s, Requested newly matched (all types): %s", requested_keep_tool_ids, requested_newly_matched_tool_ids)
 
@@ -595,7 +605,8 @@ async def perform_tool_pruning(
             is_never_detach = (
                 tool_id in requested_keep_tool_ids or 
                 tool_id in requested_newly_matched_tool_ids or
-                config.should_protect_tool(tool.get('name', ''))
+                config.should_protect_tool(tool.get('name', '')) or
+                tool_id in pinned_tool_ids
             )
             
             if is_never_detach or (config.manage_only_mcp_tools and is_core):

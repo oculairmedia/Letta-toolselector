@@ -16,12 +16,13 @@ from letta_tool_utils import (
 
 DEFAULT_LIMIT = 10
 DEFAULT_MIN_SCORE = 50.0
-MAX_LIMIT = int(os.getenv('FIND_TOOLS_MAX_LIMIT', '25'))
+MAX_LIMIT = int(os.getenv("FIND_TOOLS_MAX_LIMIT", "25"))
 MIN_LIMIT = 1
 MIN_SCORE_RANGE = (0.0, 100.0)
-ATTACH_ENDPOINT = urljoin(get_tool_selector_base_url() + '/', 'api/v1/tools/attach')
+ATTACH_ENDPOINT = urljoin(get_tool_selector_base_url() + "/", "api/v1/tools/attach")
 REQUEST_HEADERS = build_tool_selector_headers()
 REQUEST_TIMEOUT = get_tool_selector_timeout()
+
 
 def _log(message: str) -> None:
     print(f"[find_tools_enhanced] {message}", file=sys.stderr)
@@ -56,7 +57,7 @@ def _prepare_keep_tools(keep_tools: Optional[str], agent_id: Optional[str]) -> L
         _log("Warning: could not resolve find_tools ID; continuing without auto-preserve entry")
 
     if keep_tools:
-        for item in keep_tools.split(','):
+        for item in keep_tools.split(","):
             tool_id = item.strip()
             if tool_id and tool_id not in keep_tool_ids:
                 keep_tool_ids.append(tool_id)
@@ -66,10 +67,11 @@ def _prepare_keep_tools(keep_tools: Optional[str], agent_id: Optional[str]) -> L
 
 def _request_attach(payload: Dict[str, Any]) -> requests.Response:
     _log(
-        "POST %s (limit=%s, min_score=%s)" % (
+        "POST %s (limit=%s, min_score=%s)"
+        % (
             ATTACH_ENDPOINT,
-            payload.get('limit'),
-            payload.get('min_score'),
+            payload.get("limit"),
+            payload.get("min_score"),
         )
     )
     return requests.post(
@@ -183,10 +185,11 @@ def Find_tools(
                             "total_detached": len(details.get("detached_tools", [])),
                             "total_kept": len(details.get("preserved_tools", [])),
                             "processed": details.get("processed_count", 0),
-                            "passed_filter": details.get("passed_filter_count", 0)
-                        }
+                            "passed_filter": details.get("passed_filter_count", 0),
+                        },
+                        "pinned_tools": details.get("pinned_tools", []),
                     },
-                    "recommendations": _generate_recommendations_from_details(details, query)
+                    "recommendations": _generate_recommendations_from_details(details, query),
                 }
                 return json.dumps(response_data, indent=2)
 
@@ -197,7 +200,7 @@ def Find_tools(
             "status": "error",
             "operation_id": operation_id,
             "error": error,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
         if detailed_response:
             return json.dumps(error_payload, indent=2)
@@ -206,13 +209,16 @@ def Find_tools(
     except Exception as exc:  # pragma: no cover - defensive guard
         _log(f"[{operation_id}] Unexpected error while formatting response: {exc}")
         if detailed_response:
-            return json.dumps({
-                "status": "error",
-                "operation_id": operation_id,
-                "error": "Unexpected error while formatting response.",
-                "exception": str(exc),
-                "timestamp": datetime.now().isoformat()
-            }, indent=2)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "operation_id": operation_id,
+                    "error": "Unexpected error while formatting response.",
+                    "exception": str(exc),
+                    "timestamp": datetime.now().isoformat(),
+                },
+                indent=2,
+            )
         return _build_error_response("Unexpected error while formatting response.", {"exception": str(exc)})
 
 
@@ -267,7 +273,9 @@ def _generate_recommendations(data: Dict[str, Any], query: Optional[str]) -> Lis
 
     # Check if we found what we were looking for
     if query and not attached:
-        recommendations.append(f"No tools matched '{query}'. Try a broader search term or check available tool categories.")
+        recommendations.append(
+            f"No tools matched '{query}'. Try a broader search term or check available tool categories."
+        )
 
     # Suggest related tools
     if search_results:
@@ -279,7 +287,9 @@ def _generate_recommendations(data: Dict[str, Any], query: Optional[str]) -> Lis
     # Warn about tool limits
     total_tools = len(attached) + len(data.get("kept", []))
     if total_tools > 15:
-        recommendations.append(f"You have {total_tools} tools attached. Consider detaching unused tools for better performance.")
+        recommendations.append(
+            f"You have {total_tools} tools attached. Consider detaching unused tools for better performance."
+        )
 
     return recommendations
 
@@ -295,7 +305,9 @@ def _generate_recommendations_from_details(details: Dict[str, Any], query: Optio
 
     # Check if we found what we were looking for
     if query and not attached and processed > 0:
-        recommendations.append(f"No tools matched '{query}' with your criteria. Try lowering min_score or using broader search terms.")
+        recommendations.append(
+            f"No tools matched '{query}' with your criteria. Try lowering min_score or using broader search terms."
+        )
 
     # Warn about failed attachments
     if failed:
@@ -303,20 +315,30 @@ def _generate_recommendations_from_details(details: Dict[str, Any], query: Optio
 
     # Suggest filter adjustments
     if processed > 0 and passed_filter < processed / 2:
-        recommendations.append(f"Only {passed_filter} of {processed} tools passed the score filter. Consider lowering min_score for more results.")
+        recommendations.append(
+            f"Only {passed_filter} of {processed} tools passed the score filter. Consider lowering min_score for more results."
+        )
 
     # Performance tip
     total_tools = len(attached) + len(details.get("preserved_tools", []))
     if total_tools > 15:
-        recommendations.append(f"You have {total_tools} tools attached. Consider detaching unused tools for better performance.")
+        recommendations.append(
+            f"You have {total_tools} tools attached. Consider detaching unused tools for better performance."
+        )
 
     return recommendations
 
 
 # Enhanced version with tool dependency support
-def Find_tools_with_rules(query: str = None, agent_id: str = None, keep_tools: str = None,
-                         limit: int = 10, min_score: float = 50.0, request_heartbeat: bool = False,
-                         apply_rules: bool = True) -> str:
+def Find_tools_with_rules(
+    query: str = None,
+    agent_id: str = None,
+    keep_tools: str = None,
+    limit: int = 10,
+    min_score: float = 50.0,
+    request_heartbeat: bool = False,
+    apply_rules: bool = True,
+) -> str:
     """
     Enhanced version that supports tool dependency rules.
 
@@ -327,7 +349,7 @@ def Find_tools_with_rules(query: str = None, agent_id: str = None, keep_tools: s
     TOOL_DEPENDENCIES = {
         "data_analysis": ["file_reader", "csv_parser"],
         "web_scraper": ["web_search", "html_parser"],
-        "code_executor": ["syntax_checker", "security_scanner"]
+        "code_executor": ["syntax_checker", "security_scanner"],
     }
 
     # Tool exclusions (mutually exclusive tools)
@@ -344,7 +366,7 @@ def Find_tools_with_rules(query: str = None, agent_id: str = None, keep_tools: s
         limit=limit,
         min_score=min_score,
         request_heartbeat=False,  # We'll handle this after applying rules
-        detailed_response=True
+        detailed_response=True,
     )
 
     if not apply_rules:
@@ -390,7 +412,7 @@ def Find_tools_with_rules(query: str = None, agent_id: str = None, keep_tools: s
                     limit=len(additional_tools),
                     min_score=30.0,  # Lower threshold for dependencies
                     request_heartbeat=request_heartbeat,
-                    detailed_response=True
+                    detailed_response=True,
                 )
 
         # If no additional changes needed, return original result
@@ -417,10 +439,10 @@ if __name__ == "__main__":
     args = {}
     i = 1
     while i < len(sys.argv):
-        if sys.argv[i].startswith('--'):
+        if sys.argv[i].startswith("--"):
             key = sys.argv[i][2:]  # Remove '--'
-            if i + 1 < len(sys.argv) and not sys.argv[i+1].startswith('--'):
-                args[key] = sys.argv[i+1]
+            if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith("--"):
+                args[key] = sys.argv[i + 1]
                 i += 2
             else:
                 args[key] = True
@@ -429,32 +451,32 @@ if __name__ == "__main__":
             i += 1
 
     # Convert types
-    limit = int(args.get('limit', '10'))
-    min_score = float(args.get('min_score', '50.0'))
-    request_heartbeat = args.get('request_heartbeat', 'false').lower() == 'true'
-    detailed_response = args.get('detailed', 'false').lower() == 'true'
-    apply_rules = args.get('apply_rules', 'true').lower() == 'true'
+    limit = int(args.get("limit", "10"))
+    min_score = float(args.get("min_score", "50.0"))
+    request_heartbeat = args.get("request_heartbeat", "false").lower() == "true"
+    detailed_response = args.get("detailed", "false").lower() == "true"
+    apply_rules = args.get("apply_rules", "true").lower() == "true"
 
     # Use enhanced version if rules are requested
-    if apply_rules and 'no_rules' not in args:
+    if apply_rules and "no_rules" not in args:
         result = Find_tools_with_rules(
-            query=args.get('query'),
-            agent_id=args.get('agent_id'),
-            keep_tools=args.get('keep_tools'),
+            query=args.get("query"),
+            agent_id=args.get("agent_id"),
+            keep_tools=args.get("keep_tools"),
             limit=limit,
             min_score=min_score,
             request_heartbeat=request_heartbeat,
-            apply_rules=True
+            apply_rules=True,
         )
     else:
         result = Find_tools(
-            query=args.get('query'),
-            agent_id=args.get('agent_id'),
-            keep_tools=args.get('keep_tools'),
+            query=args.get("query"),
+            agent_id=args.get("agent_id"),
+            keep_tools=args.get("keep_tools"),
             limit=limit,
             min_score=min_score,
             request_heartbeat=request_heartbeat,
-            detailed_response=detailed_response
+            detailed_response=detailed_response,
         )
 
     print(result)

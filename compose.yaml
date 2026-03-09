@@ -249,6 +249,9 @@ services:
       - TOOLS_API_ALLOW_INSECURE_HTTP=true
       - WORKER_SERVICE_URL=http://task-worker:3021
       - WORKER_REQUEST_TIMEOUT_MS=${WORKER_REQUEST_TIMEOUT_MS:-15000}
+    volumes:
+      - ./find_tools_enhanced.py:/app/find_tools_enhanced.py:ro
+      - ./letta_tool_utils.py:/app/letta_tool_utils.py:ro
     restart: unless-stopped
     labels:
        - homepage.group=Letta Ecosystem

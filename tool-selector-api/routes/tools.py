@@ -699,6 +699,21 @@ async def attach_tools():
                 except Exception as trigger_error:
                     logger.error(f"Exception during agent_service.trigger_agent_loop: {trigger_error}", exc_info=True)
 
+            # 8. Fetch pinned tools for the response
+            pinned_tools_info = []
+            if _pin_service and agent_id:
+                try:
+                    pinned_ids = await _pin_service.get_pinned_tools(agent_id)
+                    if pinned_ids:
+                        # Resolve names from the agent's current tools
+                        agent_tools = await _tool_manager.fetch_agent_tools(agent_id)
+                        id_to_name = {(t.get("id") or t.get("tool_id")): t.get("name", "") for t in agent_tools}
+                        pinned_tools_info = [
+                            {"tool_id": tid, "name": id_to_name.get(tid, "unknown")} for tid in pinned_ids
+                        ]
+                except Exception as pin_err:
+                    logger.warning(f"Could not fetch pinned tools for response: {pin_err}")
+
             return jsonify(
                 {
                     "success": True,
@@ -715,6 +730,7 @@ async def attach_tools():
                         "preserved_tools": keep_tools,
                         "target_agent": agent_id,
                         "loop_triggered": loop_triggered,
+                        "pinned_tools": pinned_tools_info,
                     },
                 }
             )

@@ -511,16 +511,18 @@ class TestTriggerAgentLoop:
 
     def test_trigger_agent_loop_spawns_background_task(self, test_agent_id):
         """Should spawn a background task for trigger."""
-        # Import from agent_service instead of api_server
-
         attached_tools = [{"tool_id": "tool-1", "name": "tool_one"}, {"tool_id": "tool-2", "name": "tool_two"}]
 
-        with patch("agent_service.asyncio.create_task") as mock_create_task:
+        mock_loop = MagicMock()
+        mock_task = MagicMock()
+        mock_loop.create_task.return_value = mock_task
+
+        with patch("agent_service.asyncio.get_event_loop", return_value=mock_loop):
             with patch("agent_service.send_trigger_message", new_callable=AsyncMock):
                 result = agent_service.trigger_agent_loop(test_agent_id, attached_tools, query="test query")
 
-        # Should have attempted to create a task
-        assert result is True or mock_create_task.called
+        assert result is True
+        assert mock_loop.create_task.called
 
     def test_trigger_agent_loop_with_empty_tools(self, test_agent_id):
         """Should handle empty tools list."""
@@ -538,8 +540,11 @@ class TestTriggerAgentLoop:
         attached_tools = [{"tool_id": "tool-1", "name": "test_tool"}]
         query = "find database tools"
 
+        mock_loop = MagicMock()
+        mock_loop.create_task.return_value = MagicMock()
+
         with patch("agent_service.send_trigger_message", new_callable=AsyncMock) as mock_send:
-            with patch("agent_service.asyncio.create_task"):
+            with patch("agent_service.asyncio.get_event_loop", return_value=mock_loop):
                 agent_service.trigger_agent_loop(test_agent_id, attached_tools, query=query)
 
         # The function should pass the query to _send_trigger_message

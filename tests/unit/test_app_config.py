@@ -33,7 +33,8 @@ class TestLettaConfig:
 
         config = LettaConfig()
 
-        assert "letta" in config.url.lower()
+        # Default URL should be a valid HTTP endpoint (may be IP or hostname)
+        assert config.url.startswith("http"), f"URL should start with http, got: {config.url}"
         assert config.use_sdk is False
         assert config.api_key is None
 

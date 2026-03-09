@@ -430,7 +430,7 @@ class TestFetchAgentToolsDirect:
 
         # Verify the URL called
         call_args = mock_session.get.call_args
-        expected_url = f"http://test:8283/agents/{test_agent_id}/tools"
+        expected_url = f"http://test:8283/agents/{test_agent_id}/tools?limit=100"
         assert call_args[0][0] == expected_url
         assert call_args[1]["headers"]["X-Custom"] == "header"
 

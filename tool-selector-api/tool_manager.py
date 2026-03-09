@@ -299,6 +299,15 @@ async def process_tools(
                 logger.info(f"Protected {len(pinned_ids)} pinned tools from detachment in process_tools")
         except Exception as pin_err:
             logger.warning(f"Failed to check pinned tools in process_tools: {pin_err}")
+
+    # Protect NEVER_DETACH_TOOLS from detachment
+    config = get_tool_config()
+    for tool in mcp_tools:
+        tool_name = tool.get("name", "")
+        tool_id = tool.get("tool_id") or tool.get("id")
+        if tool_id and config.should_protect_tool(tool_name) and tool_id not in keep_tool_ids:
+            keep_tool_ids.add(tool_id)
+            logger.info(f"Protected tool '{tool_name}' ({tool_id}) added to keep list via NEVER_DETACH_TOOLS")
     logger.debug("Tool IDs to keep: %s", keep_tool_ids)
 
     # Check session availability

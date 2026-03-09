@@ -325,6 +325,52 @@ class TestProcessToolsDirect:
         assert "error" in result
         assert result["error"] == "HTTP session not available"
 
+    @pytest.mark.asyncio
+    async def test_process_tools_respects_never_detach_tools(self, test_agent_id):
+        """Should not detach tools listed in NEVER_DETACH_TOOLS config."""
+        import tool_manager
+
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={})
+
+        async_cm = AsyncMock()
+        async_cm.__aenter__.return_value = mock_response
+        async_cm.__aexit__.return_value = None
+
+        mock_session = MagicMock()
+        mock_session.patch.return_value = async_cm
+
+        tool_manager.configure(http_session=mock_session, letta_url="http://test:8283", headers={}, use_letta_sdk=False)
+
+        # find_tools is in NEVER_DETACH_TOOLS by default
+        current_tools = [
+            {"id": "tool-find-tools", "name": "find_tools", "tool_type": "external_mcp"},
+            {"id": "tool-removable", "name": "some_other_tool", "tool_type": "external_mcp"},
+        ]
+
+        new_tools = [
+            {"id": "tool-new-1", "name": "new_tool", "tool_type": "external_mcp"},
+        ]
+
+        # Empty keep_tools — without the fix, find_tools would be detached
+        with (
+            patch("tool_manager.get_tool_config") as mock_config,
+            patch("tool_manager.get_min_mcp_tools", return_value=1),
+        ):
+            mock_cfg = MagicMock()
+            mock_cfg.should_protect_tool = lambda name: name == "find_tools"
+            mock_config.return_value = mock_cfg
+
+            result = await tool_manager.process_tools(test_agent_id, current_tools, new_tools, keep_tools=[])
+
+        # find_tools must NOT appear in detached list
+        assert "tool-find-tools" not in result["detached_tools"], (
+            "find_tools was detached despite being in NEVER_DETACH_TOOLS"
+        )
+        # some_other_tool SHOULD be detached (not protected)
+        assert "tool-removable" in result["detached_tools"]
+
 
 # ============================================================================
 # Fetch Agent Tools Tests

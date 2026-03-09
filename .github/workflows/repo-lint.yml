@@ -1,0 +1,17 @@
+name: Repo Structure Lint
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  structure-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run repo structure lint
+        run: bash scripts/lint-repo-structure.sh

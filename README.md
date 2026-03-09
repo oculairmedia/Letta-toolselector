@@ -1,169 +1,156 @@
 # Letta Tool Selector
 
-An intelligent tool selection and management service for Letta AI agents. This service provides semantic search, automatic tool attachment/detachment, and intelligent pruning capabilities for managing tools across multiple Letta agents.
+Intelligent tool management for [Letta](https://github.com/letta-ai/letta) AI agents. Automatically discovers, attaches, and prunes tools using semantic search so agents always have the right tools for the task.
 
-## Features
+## How It Works
 
-- **Semantic Tool Search**: Uses Weaviate vector database with OpenAI embeddings for intelligent tool discovery
-- **Automatic Tool Management**: Automatically attaches relevant tools and detaches irrelevant ones based on context
-- **MCP Tool Support**: Full support for Model Context Protocol (MCP) tools with automatic registration
-- **Header-Aware MCP Requests**: Accepts `x-agent-id` headers so agents no longer need to send `agent_id` in tool payloads
-- **Intelligent Pruning**: Configurable tool pruning to maintain optimal tool sets for agents
-- **Tool Type Filtering**: Can be configured to manage only MCP tools, excluding Letta core tools
-- **RESTful API**: Simple HTTP API for tool search, attachment, and management
-- **Low-Latency MCP Worker**: Persistent FastAPI worker eliminates per-request Python process spawning for MCP calls
+1. Agent sends a natural language query (e.g. "I need to search the web")
+2. Query is expanded with synonyms and matched against tool embeddings in Weaviate
+3. Most relevant tools are attached to the agent; irrelevant ones are pruned
+4. Configurable limits and protection rules prevent over-pruning
 
 ## Architecture
 
-The system consists of four main services:
+Nine containerized services orchestrated via `compose.yaml`:
 
-1. **API Server** (`api-server`): Main service handling tool search, attachment, and pruning
-2. **Sync Service** (`sync-service`): Synchronizes tools between Letta and Weaviate
-3. **Worker Service** (`worker-service`): FastAPI process that provides a persistent `find_tools` endpoint for the MCP server with HTTP connection pooling
-4. **Time Service** (`time-service`): Manages time-based memory updates
-
-
-## Further Documentation
-
-- Embeddings usage and architecture: see [EMBEDDINGS_USAGE.md](./EMBEDDINGS_USAGE.md)
+| Service | Stack | Port | Role |
+|---------|-------|------|------|
+| **MCP Server** | Node.js | 3020 | HTTP-based MCP server, exposes `find_tools` |
+| **API Server** | Python/Quart | 8020 | Tool search, attach, prune REST API |
+| **Worker Service** | Python/FastAPI | 3021 | Persistent `find_tools` endpoint for MCP |
+| **Weaviate** | Go | 8091 | Vector DB for tool embeddings |
+| **Embedding Proxy** | Python/FastAPI | 8450 | Rewrites OpenAI model names for vLLM |
+| **Sync Service** | Python | — | Syncs tools between Letta API and Weaviate |
+| **Time Service** | Python | — | Time-based memory block updates |
+| **Dashboard API** | Python/FastAPI | 8025 | Dashboard backend |
+| **Dashboard UI** | React | 3001 | Dashboard frontend |
 
 ## Quick Start
 
-1. Clone the repository:
 ```bash
 git clone https://github.com/oculairmedia/Letta-toolselector.git
 cd Letta-toolselector
+cp .env.example .env   # Edit with your configuration
+docker compose up -d
 ```
 
-2. Copy the example environment file and configure:
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/tools/search` | Semantic tool search |
+| `POST` | `/api/v1/tools/attach` | Attach tools with auto-detach + optional prune |
+| `POST` | `/api/v1/tools/prune` | Intelligent relevance-based pruning |
+| `POST` | `/api/v1/tools/sync` | Force Letta→Weaviate sync |
+| `POST` | `/mcp` | MCP protocol endpoint |
+| `GET`  | `/api/health` | Health check |
+
+### Example: Search for tools
+
 ```bash
-cp .env.example .env
-# Edit .env with your configuration
+curl -s http://localhost:8020/api/v1/tools/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "search web content", "limit": 10}'
 ```
 
-3. Start the services:
+### Example: Attach tools to an agent
+
 ```bash
-docker-compose up -d
+curl -s http://localhost:8020/api/v1/tools/attach \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "agent_id": "agent-uuid",
+    "query": "web scraping tools",
+    "limit": 5
+  }'
 ```
 
-## Configuration
-
-Key environment variables:
-
-- `LETTA_API_URL`: URL of your Letta instance
-- `LETTA_PASSWORD`: Authentication password for Letta
-- `OPENAI_API_KEY`: OpenAI API key for embeddings
-- `MANAGE_ONLY_MCP_TOOLS`: Set to `true` to only manage MCP tools
-- `MAX_TOTAL_TOOLS`: Maximum total tools per agent (default: 30)
-- `MAX_MCP_TOOLS`: Maximum MCP tools per agent (default: 20)
-- `MIN_MCP_TOOLS`: Minimum MCP tools per agent (default: 7)
-- `DEFAULT_DROP_RATE`: Tool pruning aggressiveness (0.0-1.0, default: 0.6)
-- `WORKER_SERVICE_URL`: Base URL the MCP server uses to reach the worker service (default: `http://worker-service:3021`)
-- `WORKER_REQUEST_TIMEOUT_MS`: Request timeout when the MCP server calls the worker (default: `15000`)
-- `ENABLE_AGENT_ID_HEADER`: Enable `x-agent-id` header support (default: `true`)
-- `REQUIRE_AGENT_ID`: Require an agent identifier from either header or payload (default: `true`)
-- `STRICT_AGENT_ID_VALIDATION`: Reject headers that do not match the expected format (default: `false`)
-- `DEBUG_AGENT_ID_SOURCE`: Emit log lines showing whether the header or payload provided the agent ID (default: `false`)
-
-## Agent ID Handling
-
-Both MCP entry points (`src/index.js` and `src/simple-server.js`) now resolve agent identity from the `x-agent-id` HTTP header. The header value takes precedence over the `agent_id` argument, letting Letta agents omit the field entirely. When both are supplied they must match; otherwise the request fails with a `-32602` JSON-RPC error.
-
-Example header-only request:
+### Example: MCP call with agent ID header
 
 ```bash
 curl -s http://localhost:3020/mcp \
   -H 'Content-Type: application/json' \
   -H 'x-agent-id: agent-1234' \
   -d '{
-        "jsonrpc": "2.0",
-        "id": "req-1",
-        "method": "tools/call",
-        "params": {
-          "name": "find_tools",
-          "arguments": {"query": "graphiti", "limit": 5}
-        }
-      }'
+    "jsonrpc": "2.0", "id": "1",
+    "method": "tools/call",
+    "params": {"name": "find_tools", "arguments": {"query": "graphiti", "limit": 5}}
+  }'
 ```
 
-Set `ENABLE_AGENT_ID_HEADER=false` to disable header support or toggle the other environment variables listed above to adjust validation and logging behaviour.
+## Configuration
 
-## API Endpoints
+### Required
 
-### Search Tools
-```http
-POST /api/v1/tools/search
-Content-Type: application/json
+| Variable | Description |
+|----------|-------------|
+| `LETTA_API_URL` | Letta API endpoint |
+| `LETTA_PASSWORD` | Letta authentication |
+| `COHERE_API_KEY` | Cohere API key for embeddings and reranking |
+| `WEAVIATE_URL` | Weaviate endpoint (default: `http://weaviate:8080/`) |
 
-{
-  "query": "search web content",
-  "limit": 10
-}
-```
+### Tool Limits
 
-### Attach Tools
-```http
-POST /api/v1/tools/attach
-Content-Type: application/json
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MIN_MCP_TOOLS` | `7` | Minimum MCP tools per agent (prevents over-pruning) |
+| `MAX_MCP_TOOLS` | `20` | Maximum MCP tools per agent |
+| `MAX_TOTAL_TOOLS` | `30` | Maximum total tools including core Letta tools |
+| `DEFAULT_DROP_RATE` | `0.6` | Pruning aggressiveness (0.0–1.0) |
+| `NEVER_DETACH_TOOLS` | `find_tools` | Comma-separated tools protected from removal |
+| `MANAGE_ONLY_MCP_TOOLS` | `true` | Only manage MCP tools, ignore Letta core tools |
 
-{
-  "agent_id": "agent-uuid",
-  "query": "web scraping tools",
-  "limit": 5,
-  "keep_tools": ["tool-id-1", "tool-id-2"]
-}
-```
+### Agent ID Handling
 
-### Prune Tools
-```http
-POST /api/v1/tools/prune
-Content-Type: application/json
-
-{
-  "agent_id": "agent-uuid",
-  "user_prompt": "current task context",
-  "drop_rate": 0.3,
-  "keep_tool_ids": ["tool-id-1"]
-}
-```
-
-### Health Check
-```http
-GET /api/health
-```
-
-## Tool Management Behavior
-
-When `MANAGE_ONLY_MCP_TOOLS=true`:
-- Only MCP tools (external_mcp type) are returned in search results
-- Letta core tools (send_message, memory functions, etc.) are excluded
-- Tool attachment only processes MCP tools
-- Tool pruning preserves all Letta core tools
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_AGENT_ID_HEADER` | `true` | Accept `x-agent-id` HTTP header |
+| `REQUIRE_AGENT_ID` | `true` | Require agent ID from header or payload |
+| `WORKER_SERVICE_URL` | `http://worker-service:3021` | Worker service URL |
+| `WORKER_REQUEST_TIMEOUT_MS` | `15000` | Worker request timeout |
 
 ## Development
 
-To mount source code for development:
+Mount source code for live reloading:
 
-1. Create a `docker-compose.override.yml`:
 ```yaml
+# docker-compose.override.yml
 services:
   api-server:
     volumes:
       - ./.env:/app/.env:ro
       - tool_cache_volume:/app/runtime_cache
       - ./tool-selector-api/api_server.py:/app/api_server.py:ro
-      - ./tool-selector-api/weaviate_tool_search.py:/app/weaviate_tool_search.py:ro
 ```
 
-2. Restart the service:
 ```bash
-docker-compose restart api-server
+docker compose restart api-server
 ```
 
-## License
+## Project Structure
 
-[Add your license here]
+```
+├── compose.yaml              # Main service orchestration
+├── tool-selector-api/        # Python API server + tool management
+├── worker-service/           # FastAPI worker for MCP
+├── src/                      # Node.js MCP server
+├── embedding-proxy/          # vLLM embedding proxy
+├── dashboard-ui/             # React dashboard frontend
+├── dashboard-backend/        # FastAPI dashboard backend
+├── docs/                     # Active reference documentation
+│   └── archive/              # Historical analysis & status reports
+├── scripts/                  # Utility scripts
+├── tests/                    # Test suite
+├── letta_tool_utils.py       # Shared: dynamic tool ID lookup
+├── tool_selector_client.py   # Shared: tool selector API client
+├── qwen3_reranker_utils.py   # Shared: Qwen3 reranker formatting
+└── ollama_reranker_adapter.py # Shared: Ollama reranker adapter
+```
 
-## Contributing
+## Documentation
 
-[Add contribution guidelines]
+- **[API Contract](docs/API_CONTRACT.md)** — Request/response schemas
+- **[Deployment Guide](docs/DEPLOYMENT.md)** — Production deployment
+- **[Compose Setup](docs/COMPOSE_SETUP.md)** — Docker Compose configuration
+- **[Embeddings](docs/EMBEDDINGS_USAGE.md)** — Embedding providers and architecture
+- **[Tool Selector Guide](docs/TOOL_SELECTOR_GUIDE.md)** — User guide

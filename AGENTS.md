@@ -161,42 +161,60 @@ This project's PM agent has a `codebase_ast` memory block with live structural d
 Ask the PM agent for architectural guidance before making significant changes.
 <!-- VIBESYNC:codebase-context:END -->
 
-# Agent Instructions
+## Architecture Overview
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+Multi-service tool management system for Letta AI agents. Uses Weaviate vector DB for semantic search to auto-discover, attach, and prune tools.
 
-## Quick Reference
+### Services (compose.yaml)
+
+| Service | Stack | Port | Role |
+|---------|-------|------|------|
+| MCP Server | Node.js | 3020 | HTTP-based MCP server, exposes `find_tools` |
+| API Server | Python/Quart | 8020 | Tool search, attach, prune REST API |
+| Worker Service | Python/FastAPI | 3021 | Persistent `find_tools` endpoint for MCP |
+| Weaviate | Go | 8080 | Vector DB for tool embeddings |
+| Embedding Proxy | Python/FastAPI | 8450 | Rewrites OpenAI model names for vLLM |
+| Sync Service | Python | — | Syncs tools between Letta API and Weaviate |
+| Time Service | Python | — | Time-based memory block updates |
+| Dashboard API | Python/FastAPI | 8025 | Dashboard backend |
+| Dashboard UI | React | 3001 | Dashboard frontend |
+
+### Key API Endpoints
+
+- `POST /api/v1/tools/search` — Semantic tool search
+- `POST /api/v1/tools/attach` — Attach tools with auto-detach + optional prune
+- `POST /api/v1/tools/prune` — Intelligent relevance-based pruning
+- `POST /api/v1/tools/sync` — Force Letta→Weaviate sync
+- `POST /mcp` — MCP protocol endpoint
+- `GET /api/health` — Health check
+
+### Common Commands
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --status in_progress  # Claim work
-bd close <id>         # Complete work
-bd sync               # Sync with git
+docker compose up -d                 # Start all services
+docker compose logs -f api-server    # Follow specific service logs
+docker compose restart api-server    # Restart after code change
 ```
 
-## Landing the Plane (Session Completion)
+### Key Configuration
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+```bash
+LETTA_API_URL=http://192.168.50.90:8289/v1
+LETTA_PASSWORD=<from .env>
+WEAVIATE_URL=http://weaviate:8080/
+MIN_MCP_TOOLS=7        # Minimum MCP tools per agent
+MAX_MCP_TOOLS=20       # Maximum MCP tools per agent
+MAX_TOTAL_TOOLS=30     # Maximum total tools per agent
+DEFAULT_DROP_RATE=0.6  # Pruning aggressiveness (0.0-1.0)
+NEVER_DETACH_TOOLS=find_tools  # Protected from removal
+MANAGE_ONLY_MCP_TOOLS=true     # Only manage MCP tools
+```
 
-**MANDATORY WORKFLOW:**
+### Root-level Python modules (imported by services, DO NOT move)
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+- `letta_tool_utils.py` — Dynamic tool ID lookup utilities
+- `tool_selector_client.py` — Client library for tool selector API
+- `qwen3_reranker_utils.py` — Qwen3 reranker instruction formatting
+- `ollama_reranker_adapter.py` — Ollama reranker adapter
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+See `docs/` for detailed reference docs, `docs/archive/` for historical analysis.

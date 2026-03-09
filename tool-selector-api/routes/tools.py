@@ -490,6 +490,36 @@ async def attach_tools():
                 min_score,
             )
 
+            # 3.6. Auto-retry at lower threshold if no tools passed but candidates exist
+            auto_retried = False
+            effective_min_score = min_score
+            if len(filtered_tools) == 0 and len(matching_tools_from_search) > 0:
+                retry_min_score = min_score * 0.5
+                logger.info(
+                    "Auto-retry: 0 tools passed min_score %.1f%%, retrying at %.1f%% (half threshold)",
+                    min_score,
+                    retry_min_score,
+                )
+                for tool in matching_tools_from_search:
+                    tool_score = tool.get("rerank_score")
+                    if tool_score is None:
+                        tool_score = tool.get("score", 0)
+                    tool_score_percent = tool_score * 100
+                    if tool_score_percent >= retry_min_score:
+                        filtered_tools.append(tool)
+                        logger.debug(
+                            f"Auto-retry: Tool '{tool.get('name')}' passed with score {tool_score_percent:.1f}% >= {retry_min_score:.1f}%"
+                        )
+                if filtered_tools:
+                    auto_retried = True
+                    effective_min_score = retry_min_score
+                logger.info(
+                    "Auto-retry result: %d of %d tools passed lowered threshold of %.1f%%",
+                    len(filtered_tools),
+                    len(matching_tools_from_search),
+                    retry_min_score,
+                )
+
             # 4. Process matching tools (check cache, register if needed)
             letta_tools_cache = await _read_tool_cache_func() if _read_tool_cache_func else []
             mcp_servers = await _read_mcp_servers_cache_func() if _read_mcp_servers_cache_func else []
@@ -724,7 +754,7 @@ async def attach_tools():
             return jsonify(
                 {
                     "success": True,
-                    "message": f"Successfully processed {len(matching_tools_from_search)} candidates ({len(filtered_tools)} passed min_score={min_score}%), attached {len(results['successful_attachments'])} tool(s) to agent {agent_id}",
+                    "message": f"Successfully processed {len(matching_tools_from_search)} candidates ({len(filtered_tools)} passed min_score={effective_min_score}%{' (auto-retried from ' + str(min_score) + '%)' if auto_retried else ''}), attached {len(results['successful_attachments'])} tool(s) to agent {agent_id}",
                     "details": {
                         "detached_tools": results["detached_tools"],
                         "failed_detachments": results["failed_detachments"],
@@ -738,6 +768,7 @@ async def attach_tools():
                         "target_agent": agent_id,
                         "loop_triggered": loop_triggered,
                         "pinned_tools": pinned_tools_info,
+                        "auto_retried": auto_retried,
                     },
                 }
             )

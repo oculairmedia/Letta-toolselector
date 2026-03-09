@@ -15,7 +15,7 @@ from letta_tool_utils import (
 
 
 DEFAULT_LIMIT = 10
-DEFAULT_MIN_SCORE = 50.0
+DEFAULT_MIN_SCORE = 35.0
 MAX_LIMIT = int(os.getenv("FIND_TOOLS_MAX_LIMIT", "25"))
 MIN_LIMIT = 1
 MIN_SCORE_RANGE = (0.0, 100.0)

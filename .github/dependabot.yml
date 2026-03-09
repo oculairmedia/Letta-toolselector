@@ -31,7 +31,7 @@ updates:
 
   # Python dependencies for API Server
   - package-ecosystem: "pip"
-    directory: "/lettaaugment-source"
+    directory: "/tool-selector-api"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -61,9 +61,9 @@ updates:
       prefix: "deps"
       include: "scope"
 
-  # Docker dependencies for lettaaugment-source
+  # Docker dependencies for tool-selector-api
   - package-ecosystem: "docker"
-    directory: "/lettaaugment-source"
+    directory: "/tool-selector-api"
     schedule:
       interval: "weekly"
       day: "monday"

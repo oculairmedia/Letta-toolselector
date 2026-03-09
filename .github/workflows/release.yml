@@ -136,8 +136,8 @@ jobs:
         id: build-api-server
         uses: docker/build-push-action@v5
         with:
-          context: ./lettaaugment-source
-          file: ./lettaaugment-source/Dockerfile
+          context: ./tool-selector-api
+          file: ./tool-selector-api/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -151,8 +151,8 @@ jobs:
         id: build-sync-service
         uses: docker/build-push-action@v5
         with:
-          context: ./lettaaugment-source
-          file: ./lettaaugment-source/Dockerfile.sync
+          context: ./tool-selector-api
+          file: ./tool-selector-api/Dockerfile.sync
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

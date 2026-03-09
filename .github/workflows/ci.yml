@@ -45,18 +45,18 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          cd lettaaugment-source
+          cd tool-selector-api
           pip install -r requirements.txt
 
       - name: Run Python linting with ruff
         run: |
           pip install ruff
-          ruff check lettaaugment-source/ --output-format=github
+          ruff check tool-selector-api/ --output-format=github
 
       - name: Run Python formatting check
         run: |
           pip install black
-          black --check lettaaugment-source/
+          black --check tool-selector-api/
 
   # Job 2: Python Tests
   python-tests:
@@ -73,7 +73,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd lettaaugment-source
+          cd tool-selector-api
           pip install -r requirements.txt
           pip install pytest pytest-asyncio pytest-cov
 
@@ -83,18 +83,18 @@ jobs:
           
       - name: Test embedding configuration
         run: |
-          cd lettaaugment-source
+          cd tool-selector-api
           python3 embedding_config.py
 
       - name: Run Python tests
         run: |
-          cd lettaaugment-source
+          cd tool-selector-api
           pytest -v --cov=. --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          file: ./lettaaugment-source/coverage.xml
+          file: ./tool-selector-api/coverage.xml
           flags: python
           fail_ci_if_error: false
 
@@ -149,7 +149,7 @@ jobs:
       - name: Run bandit security linter
         run: |
           pip install bandit
-          bandit -r lettaaugment-source/ -f json -o bandit-results.json || true
+          bandit -r tool-selector-api/ -f json -o bandit-results.json || true
 
       # Node.js Security
       - name: Setup Node.js for security scan
@@ -175,12 +175,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd lettaaugment-source
+          cd tool-selector-api
           pip install -r requirements.txt
 
       - name: Validate embedding configuration consistency
         run: |
-          cd lettaaugment-source
+          cd tool-selector-api
           echo "Validating embedding configuration..."
           python3 -c "
           from embedding_config import OPENAI_EMBEDDING_MODEL, OPENAI_EMBEDDING_DIMENSION, WEAVIATE_VECTORIZER
@@ -223,7 +223,7 @@ jobs:
       - name: Generate API documentation
         run: |
           pip install pdoc3
-          cd lettaaugment-source
+          cd tool-selector-api
           pdoc3 --html --output-dir ../docs .
 
       - name: Upload documentation artifacts

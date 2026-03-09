@@ -48,19 +48,19 @@ jobs:
 
       - name: Run Bandit security linter
         run: |
-          bandit -r lettaaugment-source/ -f json -o bandit-results.json
-          bandit -r lettaaugment-source/ -f txt || true
+          bandit -r tool-selector-api/ -f json -o bandit-results.json
+          bandit -r tool-selector-api/ -f txt || true
 
       - name: Run Safety check for known vulnerabilities
         run: |
-          cd lettaaugment-source
+          cd tool-selector-api
           safety check --json --output safety-results.json || true
           safety check || true
 
       - name: Run Semgrep security analysis
         run: |
-          semgrep --config=auto --json --output=semgrep-results.json lettaaugment-source/ || true
-          semgrep --config=auto lettaaugment-source/ || true
+          semgrep --config=auto --json --output=semgrep-results.json tool-selector-api/ || true
+          semgrep --config=auto tool-selector-api/ || true
 
       # Node.js Security
       - name: Setup Node.js
@@ -93,8 +93,8 @@ jobs:
       matrix:
         dockerfile: 
           - { path: "./Dockerfile", context: ".", name: "mcp-server" }
-          - { path: "./lettaaugment-source/Dockerfile", context: "./lettaaugment-source", name: "api-server" }
-          - { path: "./lettaaugment-source/Dockerfile.sync", context: "./lettaaugment-source", name: "sync-service" }
+          - { path: "./tool-selector-api/Dockerfile", context: "./tool-selector-api", name: "api-server" }
+          - { path: "./tool-selector-api/Dockerfile.sync", context: "./tool-selector-api", name: "sync-service" }
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -193,12 +193,12 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          cd lettaaugment-source
+          cd tool-selector-api
           pip install -r requirements.txt
 
       - name: Check Python licenses
         run: |
-          cd lettaaugment-source
+          cd tool-selector-api
           pip-licenses --format=json --output-file=../python-licenses.json
           pip-licenses --format=plain-vertical
 

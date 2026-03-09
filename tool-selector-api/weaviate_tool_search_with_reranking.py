@@ -544,7 +544,7 @@ def search_tools_with_reranking(
                         alpha=0.75,  # 75% vector search, 25% keyword search
                         limit=rerank_initial_limit,  # Get more candidates for reranking
                         fusion_type=HybridFusion.RELATIVE_SCORE,
-                        query_properties=["name^2", "description^2", "description", "tags", "mcp_server_name"],
+                        query_properties=["name^2", "enhanced_description^2", "description", "tags", "mcp_server_name"],
                         return_metadata=MetadataQuery(score=True),
                     )
 
@@ -556,6 +556,7 @@ def search_tools_with_reranking(
                             for obj in result.objects:
                                 name = obj.properties.get("name", "")
                                 description = obj.properties.get("description", "")
+                                enhanced_desc = obj.properties.get("enhanced_description", "")
                                 tags = obj.properties.get("tags", [])
                                 mcp_server = obj.properties.get("mcp_server_name", "")
 
@@ -606,9 +607,10 @@ def search_tools_with_reranking(
                                     doc_parts.append(f"Service: {service}")
                                 if action_keywords:
                                     doc_parts.append(f"Actions: {', '.join(action_keywords)}")
-                                if description:
-                                    # Truncate description to first 500 chars for reranker efficiency
-                                    desc_truncated = description[:500] + ("..." if len(description) > 500 else "")
+                                # Prefer enhanced_description for reranker (richer context)
+                                rerank_desc = enhanced_desc or description
+                                if rerank_desc:
+                                    desc_truncated = rerank_desc[:500] + ("..." if len(rerank_desc) > 500 else "")
                                     doc_parts.append(f"Description: {desc_truncated}")
 
                                 doc_text = "\n".join(doc_parts)
@@ -720,7 +722,7 @@ def search_tools_with_reranking(
                         alpha=0.75,
                         limit=limit,
                         fusion_type=HybridFusion.RELATIVE_SCORE,
-                        query_properties=["name^2", "description^2", "description", "tags", "mcp_server_name"],
+                        query_properties=["name^2", "enhanced_description^2", "description", "tags", "mcp_server_name"],
                         return_metadata=MetadataQuery(score=True),
                     )
 

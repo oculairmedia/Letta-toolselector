@@ -433,6 +433,7 @@ async def process_tools(
         "failed_detachments": failed_detach,
         "successful_attachments": successful_attachments,
         "failed_attachments": failed_attachments,
+        "protected_tool_ids": list(keep_tool_ids),
     }
 
 

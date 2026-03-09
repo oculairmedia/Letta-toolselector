@@ -734,7 +734,7 @@ async def attach_tools():
                         "failure_count": len(results["failed_attachments"]),
                         "successful_attachments": results["successful_attachments"],
                         "failed_attachments": results["failed_attachments"],
-                        "preserved_tools": keep_tools,
+                        "preserved_tools": results.get("protected_tool_ids", keep_tools),
                         "target_agent": agent_id,
                         "loop_triggered": loop_triggered,
                         "pinned_tools": pinned_tools_info,

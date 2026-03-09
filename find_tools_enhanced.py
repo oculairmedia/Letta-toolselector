@@ -261,6 +261,11 @@ def _build_summary_from_details(details: Dict[str, Any]) -> str:
     if preserved:
         summary_parts.append(f"Preserved {len(preserved)} existing tools")
 
+    pinned = details.get("pinned_tools", [])
+    if pinned:
+        pin_names = [p.get("name", p.get("tool_id", "unknown")) for p in pinned]
+        summary_parts.append(f"Pinned tools (always available): {', '.join(pin_names)}")
+
     return ". ".join(summary_parts) if summary_parts else "No tool changes made."
 
 

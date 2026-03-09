@@ -21,6 +21,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 # Session-scoped fixtures
 # ============================================================================
 
+
 @pytest.fixture(scope="session")
 def event_loop():
     """Create an instance of the default event loop for the test session."""
@@ -38,6 +39,7 @@ def test_data_dir() -> Path:
 # ============================================================================
 # Configuration fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def mock_env_vars() -> Dict[str, str]:
@@ -78,6 +80,7 @@ def set_test_env(mock_env_vars: Dict[str, str]) -> Generator[None, None, None]:
 # Mock service fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def mock_weaviate_client():
     """Mock Weaviate client."""
@@ -102,20 +105,14 @@ def mock_letta_api_response():
     return {
         "id": "agent-123",
         "name": "Test Agent",
-        "tools": [
-            {
-                "id": "tool-1",
-                "name": "test_tool",
-                "description": "A test tool",
-                "tool_type": "external_mcp"
-            }
-        ]
+        "tools": [{"id": "tool-1", "name": "test_tool", "description": "A test tool", "tool_type": "external_mcp"}],
     }
 
 
 # ============================================================================
 # Sample data fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def sample_tool_data() -> Dict[str, Any]:
@@ -127,7 +124,7 @@ def sample_tool_data() -> Dict[str, Any]:
         "tool_type": "external_mcp",
         "source": "mcp_server",
         "tags": ["test", "sample"],
-        "mcp_server_name": "test-server"
+        "mcp_server_name": "test-server",
     }
 
 
@@ -143,7 +140,7 @@ def sample_tools_list(sample_tool_data: Dict[str, Any]) -> list:
             "tool_type": "external_mcp",
             "source": "mcp_server",
             "tags": ["test"],
-            "mcp_server_name": "test-server"
+            "mcp_server_name": "test-server",
         },
         {
             "id": "tool-789",
@@ -151,8 +148,8 @@ def sample_tools_list(sample_tool_data: Dict[str, Any]) -> list:
             "description": "Letta core tool",
             "tool_type": "letta_core",
             "source": "letta",
-            "tags": ["core"]
-        }
+            "tags": ["core"],
+        },
     ]
 
 
@@ -160,20 +157,8 @@ def sample_tools_list(sample_tool_data: Dict[str, Any]) -> list:
 def sample_search_results() -> list:
     """Sample search results from Weaviate."""
     return [
-        {
-            "id": "tool-1",
-            "name": "web_search",
-            "description": "Search the web",
-            "score": 0.95,
-            "distance": 0.05
-        },
-        {
-            "id": "tool-2",
-            "name": "file_reader",
-            "description": "Read files",
-            "score": 0.85,
-            "distance": 0.15
-        }
+        {"id": "tool-1", "name": "web_search", "description": "Search the web", "score": 0.95, "distance": 0.05},
+        {"id": "tool-2", "name": "file_reader", "description": "Read files", "score": 0.85, "distance": 0.15},
     ]
 
 
@@ -181,38 +166,18 @@ def sample_search_results() -> list:
 # Configuration validation fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def valid_config() -> Dict[str, Any]:
     """Valid configuration for testing."""
     return {
         "search": {
-            "embedding": {
-                "provider": "ollama",
-                "model": "test-model",
-                "dimension": 2560,
-                "max_tokens": 8192
-            },
-            "weaviate": {
-                "hybrid": {
-                    "alpha": 0.75
-                }
-            }
+            "embedding": {"provider": "ollama", "model": "test-model", "dimension": 2560, "max_tokens": 8192},
+            "weaviate": {"hybrid": {"alpha": 0.75}},
         },
-        "reranker": {
-            "enabled": True,
-            "type": "cross-encoder",
-            "scoring": {
-                "top_k": 10
-            }
-        },
-        "experiments": {
-            "cost_controls": {
-                "daily_budget_usd": 10.0
-            }
-        },
-        "evaluation": {
-            "metrics": ["precision_at_k", "ndcg_at_k"]
-        }
+        "reranker": {"enabled": True, "type": "cross-encoder", "scoring": {"top_k": 10}},
+        "experiments": {"cost_controls": {"daily_budget_usd": 10.0}},
+        "evaluation": {"metrics": ["precision_at_k", "ndcg_at_k"]},
     }
 
 
@@ -221,24 +186,20 @@ def invalid_config() -> Dict[str, Any]:
     """Invalid configuration for testing."""
     return {
         "search": {
-            "embedding": {
-                "provider": "invalid_provider",
-                "dimension": -1,
-                "max_tokens": 999999
-            },
+            "embedding": {"provider": "invalid_provider", "dimension": -1, "max_tokens": 999999},
             "weaviate": {
                 "hybrid": {
                     "alpha": 5.0  # Invalid: must be 0-1
                 }
-            }
+            },
         },
         "reranker": {
             "enabled": True,
             "type": "invalid_type",
             "scoring": {
                 "top_k": 1000  # Invalid: max is 100
-            }
-        }
+            },
+        },
     }
 
 
@@ -246,20 +207,19 @@ def invalid_config() -> Dict[str, Any]:
 # Cost control fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def sample_cost_entry():
     """Sample cost entry for testing."""
     from datetime import datetime
+
     return {
         "timestamp": datetime.now().isoformat(),
         "category": "embedding_api",
         "operation": "generate_embedding",
         "cost": 0.001,
         "currency": "USD",
-        "metadata": {
-            "model": "test-model",
-            "tokens": 100
-        }
+        "metadata": {"model": "test-model", "tokens": 100},
     }
 
 
@@ -273,7 +233,7 @@ def sample_budget_limit():
         "currency": "USD",
         "alert_thresholds": [0.5, 0.8, 0.95],
         "hard_limit": False,
-        "enabled": True
+        "enabled": True,
     }
 
 
@@ -281,17 +241,12 @@ def sample_budget_limit():
 # Pytest hooks
 # ============================================================================
 
+
 def pytest_configure(config):
     """Configure pytest with custom settings."""
-    config.addinivalue_line(
-        "markers", "unit: Unit tests that don't require external services"
-    )
-    config.addinivalue_line(
-        "markers", "integration: Integration tests requiring services"
-    )
-    config.addinivalue_line(
-        "markers", "e2e: End-to-end tests requiring full system"
-    )
+    config.addinivalue_line("markers", "unit: Unit tests that don't require external services")
+    config.addinivalue_line("markers", "integration: Integration tests requiring services")
+    config.addinivalue_line("markers", "e2e: End-to-end tests requiring full system")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -304,7 +259,7 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.e2e)
         elif "unit" in str(item.fspath):
             item.add_marker(pytest.mark.unit)
-        
+
         # Auto-mark based on test name patterns
         if "weaviate" in item.nodeid.lower():
             item.add_marker(pytest.mark.requires_weaviate)

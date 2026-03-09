@@ -30,7 +30,7 @@ from services import ToolCacheService
 logger = logging.getLogger(__name__)
 
 # Create blueprint
-config_bp = Blueprint('config', __name__, url_prefix='/api/v1/config')
+config_bp = Blueprint("config", __name__, url_prefix="/api/v1/config")
 
 # Module state - to be configured
 _http_session = None
@@ -41,7 +41,7 @@ _tool_cache_service = None
 def configure(http_session=None, log_config_change=None, tool_cache_service=None):
     """
     Configure the config routes with required dependencies.
-    
+
     Args:
         http_session: aiohttp ClientSession for API calls
         log_config_change: Async function to log configuration changes
@@ -51,7 +51,7 @@ def configure(http_session=None, log_config_change=None, tool_cache_service=None
     _http_session = http_session
     _log_config_change = log_config_change
     _tool_cache_service = tool_cache_service
-    
+
     # Reload config cache on configure
     _reload_config_cache()
 
@@ -67,27 +67,27 @@ _config_loaded_at: float = 0
 def _load_reranker_config() -> dict:
     """Load reranker config from environment."""
     return {
-        "enabled": os.getenv('RERANKER_ENABLED', 'true').lower() == 'true',
-        "model": os.getenv('RERANKER_MODEL', 'qwen3-reranker-4b'),
-        "provider": os.getenv('RERANKER_PROVIDER', 'vllm'),
+        "enabled": os.getenv("RERANKER_ENABLED", "true").lower() == "true",
+        "model": os.getenv("RERANKER_MODEL", "qwen3-reranker-4b"),
+        "provider": os.getenv("RERANKER_PROVIDER", "vllm"),
         "parameters": {
-            "temperature": float(os.getenv('RERANKER_TEMPERATURE', '0.1')),
-            "max_tokens": int(os.getenv('RERANKER_MAX_TOKENS', '512')),
-            "base_url": os.getenv('RERANKER_URL', 'http://100.81.139.20:11435/rerank')
-        }
+            "temperature": float(os.getenv("RERANKER_TEMPERATURE", "0.1")),
+            "max_tokens": int(os.getenv("RERANKER_MAX_TOKENS", "512")),
+            "base_url": os.getenv("RERANKER_URL", "http://100.81.139.20:11435/rerank"),
+        },
     }
 
 
 def _load_embedding_config() -> dict:
     """Load embedding config from environment."""
     return {
-        "model": os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
-        "provider": os.getenv('EMBEDDING_PROVIDER', 'ollama'),
+        "model": os.getenv("OLLAMA_EMBEDDING_MODEL", "dengcao/Qwen3-Embedding-4B:Q4_K_M"),
+        "provider": os.getenv("EMBEDDING_PROVIDER", "ollama"),
         "parameters": {
-            "dimensions": int(os.getenv('EMBEDDING_DIMENSION', '2560')),
-            "host": os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80'),
-            "use_ollama": os.getenv('USE_OLLAMA_EMBEDDINGS', 'true').lower() == 'true'
-        }
+            "dimensions": int(os.getenv("EMBEDDING_DIMENSION", "2560")),
+            "host": os.getenv("OLLAMA_EMBEDDING_HOST", "192.168.50.80"),
+            "use_ollama": os.getenv("USE_OLLAMA_EMBEDDINGS", "true").lower() == "true",
+        },
     }
 
 
@@ -95,26 +95,26 @@ def _load_ollama_config() -> dict:
     """Load Ollama config from environment."""
     return {
         "connection": {
-            "host": os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80'),
-            "port": int(os.getenv('OLLAMA_PORT', '11434')),
-            "timeout": int(os.getenv('OLLAMA_TIMEOUT', '30')),
-            "base_url": os.getenv('OLLAMA_BASE_URL', '')
+            "host": os.getenv("OLLAMA_EMBEDDING_HOST", "192.168.50.80"),
+            "port": int(os.getenv("OLLAMA_PORT", "11434")),
+            "timeout": int(os.getenv("OLLAMA_TIMEOUT", "30")),
+            "base_url": os.getenv("OLLAMA_BASE_URL", ""),
         },
         "embedding": {
-            "model": os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
-            "enabled": os.getenv('USE_OLLAMA_EMBEDDINGS', 'false').lower() == 'true'
+            "model": os.getenv("OLLAMA_EMBEDDING_MODEL", "dengcao/Qwen3-Embedding-4B:Q4_K_M"),
+            "enabled": os.getenv("USE_OLLAMA_EMBEDDINGS", "false").lower() == "true",
         },
         "generation": {
-            "default_model": os.getenv('OLLAMA_DEFAULT_MODEL', 'mistral:7b'),
-            "temperature": float(os.getenv('OLLAMA_TEMPERATURE', '0.7')),
-            "context_length": int(os.getenv('OLLAMA_CONTEXT_LENGTH', '4096'))
+            "default_model": os.getenv("OLLAMA_DEFAULT_MODEL", "mistral:7b"),
+            "temperature": float(os.getenv("OLLAMA_TEMPERATURE", "0.7")),
+            "context_length": int(os.getenv("OLLAMA_CONTEXT_LENGTH", "4096")),
         },
         "performance": {
-            "num_parallel": int(os.getenv('OLLAMA_NUM_PARALLEL', '1')),
-            "num_ctx": int(os.getenv('OLLAMA_NUM_CTX', '2048')),
-            "num_gpu": int(os.getenv('OLLAMA_NUM_GPU', '-1')),
-            "low_vram": os.getenv('OLLAMA_LOW_VRAM', 'false').lower() == 'true'
-        }
+            "num_parallel": int(os.getenv("OLLAMA_NUM_PARALLEL", "1")),
+            "num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "2048")),
+            "num_gpu": int(os.getenv("OLLAMA_NUM_GPU", "-1")),
+            "low_vram": os.getenv("OLLAMA_LOW_VRAM", "false").lower() == "true",
+        },
     }
 
 
@@ -124,22 +124,18 @@ def _reload_config_cache() -> None:
     _config_cache = {
         "reranker": _load_reranker_config(),
         "embedding": _load_embedding_config(),
-        "ollama": _load_ollama_config()
+        "ollama": _load_ollama_config(),
     }
     _config_loaded_at = time.time()
     logger.debug("Config cache reloaded at %s", _config_loaded_at)
 
 
-@config_bp.route('/refresh', methods=['POST'])
+@config_bp.route("/refresh", methods=["POST"])
 async def refresh_config_cache():
     """Refresh the config cache from environment variables."""
     try:
         _reload_config_cache()
-        return jsonify({
-            "success": True, 
-            "message": "Config cache refreshed",
-            "loaded_at": _config_loaded_at
-        })
+        return jsonify({"success": True, "message": "Config cache refreshed", "loaded_at": _config_loaded_at})
     except Exception as e:
         logger.error(f"Error refreshing config cache: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -157,7 +153,8 @@ def get_cached_config(section: str) -> dict:
 # Reranker Configuration
 # =============================================================================
 
-@config_bp.route('/reranker', methods=['GET'])
+
+@config_bp.route("/reranker", methods=["GET"])
 async def get_reranker_config():
     """Get current reranker configuration."""
     try:
@@ -168,40 +165,40 @@ async def get_reranker_config():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@config_bp.route('/reranker', methods=['PUT'])
+@config_bp.route("/reranker", methods=["PUT"])
 async def update_reranker_config():
     """Update reranker configuration."""
     try:
         data = await request.get_json()
         if not data:
             return jsonify({"success": False, "error": "No configuration data provided"}), 400
-        
-        required_fields = ['enabled', 'model', 'provider', 'parameters']
+
+        required_fields = ["enabled", "model", "provider", "parameters"]
         for field in required_fields:
             if field not in data:
                 return jsonify({"success": False, "error": f"Missing required field: {field}"}), 400
-        
+
         logger.info(f"Reranker config update requested: {data}")
-        
+
         return jsonify({"success": True, "message": "Reranker configuration updated successfully"})
     except Exception as e:
         logger.error(f"Error updating reranker config: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@config_bp.route('/reranker/test', methods=['POST'])
+@config_bp.route("/reranker/test", methods=["POST"])
 async def test_reranker_connection():
     """Test reranker connection with provided configuration."""
     try:
         data = await request.get_json()
         if not data:
             return jsonify({"success": False, "error": "No configuration data provided"}), 400
-        
-        provider = data.get('provider', 'ollama')
-        base_url = data.get('parameters', {}).get('base_url', 'http://ollama-reranker-adapter:8080')
-        
+
+        provider = data.get("provider", "ollama")
+        base_url = data.get("parameters", {}).get("base_url", "http://ollama-reranker-adapter:8080")
+
         connected = False
-        if provider == 'ollama':
+        if provider == "ollama":
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(f"{base_url}/health", timeout=aiohttp.ClientTimeout(total=5)) as response:
@@ -209,11 +206,8 @@ async def test_reranker_connection():
                             connected = True
             except Exception as conn_error:
                 logger.warning(f"Reranker connection test failed: {str(conn_error)}")
-        
-        return jsonify({
-            "success": True, 
-            "data": {"connected": connected}
-        })
+
+        return jsonify({"success": True, "data": {"connected": connected}})
     except Exception as e:
         logger.error(f"Error testing reranker connection: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -223,7 +217,8 @@ async def test_reranker_connection():
 # Embedding Configuration
 # =============================================================================
 
-@config_bp.route('/embedding', methods=['GET'])
+
+@config_bp.route("/embedding", methods=["GET"])
 async def get_embedding_config():
     """Get current embedding configuration."""
     try:
@@ -234,21 +229,21 @@ async def get_embedding_config():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@config_bp.route('/embedding', methods=['PUT'])
+@config_bp.route("/embedding", methods=["PUT"])
 async def update_embedding_config():
     """Update embedding configuration."""
     try:
         data = await request.get_json()
         if not data:
             return jsonify({"success": False, "error": "No configuration data provided"}), 400
-        
-        required_fields = ['model', 'provider']
+
+        required_fields = ["model", "provider"]
         for field in required_fields:
             if field not in data:
                 return jsonify({"success": False, "error": f"Missing required field: {field}"}), 400
-        
+
         logger.info(f"Embedding config update requested: {data}")
-        
+
         return jsonify({"success": True, "message": "Embedding configuration updated successfully"})
     except Exception as e:
         logger.error(f"Error updating embedding config: {str(e)}")
@@ -259,60 +254,62 @@ async def update_embedding_config():
 # Configuration Presets
 # =============================================================================
 
-@config_bp.route('/presets', methods=['GET'])
+
+@config_bp.route("/presets", methods=["GET"])
 async def get_configuration_presets():
     """Get all configuration presets."""
     try:
-        return jsonify({
-            "success": True,
-            "data": []
-        })
+        return jsonify({"success": True, "data": []})
     except Exception as e:
         logger.error(f"Error getting configuration presets: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@config_bp.route('/presets', methods=['POST'])
+@config_bp.route("/presets", methods=["POST"])
 async def create_configuration_preset():
     """Create a new configuration preset."""
     try:
         data = await request.get_json()
-        return jsonify({
-            "success": True,
-            "data": {
-                "id": "preset_" + str(int(time.time())),
-                "name": data.get("name", "Untitled Preset"),
-                "description": data.get("description", ""),
-                "config": data.get("config", {}),
-                "created_at": time.time()
+        return jsonify(
+            {
+                "success": True,
+                "data": {
+                    "id": "preset_" + str(int(time.time())),
+                    "name": data.get("name", "Untitled Preset"),
+                    "description": data.get("description", ""),
+                    "config": data.get("config", {}),
+                    "created_at": time.time(),
+                },
             }
-        })
+        )
     except Exception as e:
         logger.error(f"Error creating configuration preset: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@config_bp.route('/presets/<preset_id>', methods=['PUT'])
+@config_bp.route("/presets/<preset_id>", methods=["PUT"])
 async def update_configuration_preset(preset_id):
     """Update a configuration preset."""
     try:
         data = await request.get_json()
-        return jsonify({
-            "success": True,
-            "data": {
-                "id": preset_id,
-                "name": data.get("name", "Updated Preset"),
-                "description": data.get("description", ""),
-                "config": data.get("config", {}),
-                "updated_at": time.time()
+        return jsonify(
+            {
+                "success": True,
+                "data": {
+                    "id": preset_id,
+                    "name": data.get("name", "Updated Preset"),
+                    "description": data.get("description", ""),
+                    "config": data.get("config", {}),
+                    "updated_at": time.time(),
+                },
             }
-        })
+        )
     except Exception as e:
         logger.error(f"Error updating configuration preset: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@config_bp.route('/presets/<preset_id>', methods=['DELETE'])
+@config_bp.route("/presets/<preset_id>", methods=["DELETE"])
 async def delete_configuration_preset(preset_id):
     """Delete a configuration preset."""
     try:
@@ -326,66 +323,57 @@ async def delete_configuration_preset(preset_id):
 # Ollama Configuration
 # =============================================================================
 
+
 async def test_ollama_connection(config):
     """Test connection to Ollama server."""
     host = config.get("host", "192.168.50.80")
     port = config.get("port", 11434)
     timeout = config.get("timeout", 30)
-    
+
     try:
         base_url = f"http://{host}:{port}"
-        
+
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
             # Test basic connectivity
             async with session.get(f"{base_url}/api/version") as response:
                 if response.status == 200:
                     version_data = await response.json()
-                    
+
                     # Test model listing
                     async with session.get(f"{base_url}/api/tags") as models_response:
                         if models_response.status == 200:
                             models_data = await models_response.json()
                             model_count = len(models_data.get("models", []))
-                            
+
                             return {
                                 "available": True,
                                 "version": version_data.get("version", "unknown"),
                                 "host": host,
                                 "port": port,
                                 "model_count": model_count,
-                                "response_time": "< 1s"
+                                "response_time": "< 1s",
                             }
                         else:
                             return {
                                 "available": False,
                                 "error": f"Models endpoint returned {models_response.status}",
                                 "host": host,
-                                "port": port
+                                "port": port,
                             }
                 else:
                     return {
                         "available": False,
                         "error": f"Version endpoint returned {response.status}",
                         "host": host,
-                        "port": port
+                        "port": port,
                     }
     except asyncio.TimeoutError:
-        return {
-            "available": False,
-            "error": "Connection timeout",
-            "host": host,
-            "port": port
-        }
+        return {"available": False, "error": "Connection timeout", "host": host, "port": port}
     except Exception as e:
-        return {
-            "available": False,
-            "error": str(e),
-            "host": host,
-            "port": port
-        }
+        return {"available": False, "error": str(e), "host": host, "port": port}
 
 
-@config_bp.route('/ollama', methods=['GET'])
+@config_bp.route("/ollama", methods=["GET"])
 async def get_ollama_config():
     """Get current Ollama configuration."""
     try:
@@ -401,7 +389,7 @@ async def get_ollama_config():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@config_bp.route('/ollama', methods=['PUT'])
+@config_bp.route("/ollama", methods=["PUT"])
 async def update_ollama_config():
     """Update Ollama configuration."""
     try:
@@ -422,7 +410,7 @@ async def update_ollama_config():
                 host = conn["host"]
                 if not host or not isinstance(host, str):
                     validation_errors.append("Host must be a valid string")
-                elif not host.replace('.', '').replace('-', '').replace(':', '').isalnum():
+                elif not host.replace(".", "").replace("-", "").replace(":", "").isalnum():
                     warnings.append("Host format may be invalid")
 
             # Validate port
@@ -459,12 +447,14 @@ async def update_ollama_config():
                     warnings.append("Very large context may cause memory issues")
 
         if validation_errors:
-            return jsonify({
-                "success": False,
-                "error": "Validation failed",
-                "validation_errors": validation_errors,
-                "warnings": warnings
-            }), 400
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "Validation failed",
+                    "validation_errors": validation_errors,
+                    "warnings": warnings,
+                }
+            ), 400
 
         # Test connection if connection config provided
         if "connection" in data:
@@ -482,14 +472,10 @@ async def update_ollama_config():
                 config_type="ollama",
                 changes=data,
                 user_info={"source": "api", "timestamp": datetime.now().isoformat()},
-                metadata={"warnings": warnings, "connection_test": test_result}
+                metadata={"warnings": warnings, "connection_test": test_result},
             )
 
-        response = {
-            "success": True,
-            "message": "Ollama configuration updated successfully",
-            "applied_config": data
-        }
+        response = {"success": True, "message": "Ollama configuration updated successfully", "applied_config": data}
 
         if warnings:
             response["warnings"] = warnings
@@ -500,7 +486,7 @@ async def update_ollama_config():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@config_bp.route('/ollama/test', methods=['POST'])
+@config_bp.route("/ollama/test", methods=["POST"])
 async def test_ollama_connection_endpoint():
     """Test Ollama connection with provided configuration."""
     try:
@@ -509,9 +495,9 @@ async def test_ollama_connection_endpoint():
 
         # Use defaults if not provided
         config = {
-            "host": connection_config.get("host", os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80')),
-            "port": connection_config.get("port", int(os.getenv('OLLAMA_PORT', '11434'))),
-            "timeout": connection_config.get("timeout", int(os.getenv('OLLAMA_TIMEOUT', '30')))
+            "host": connection_config.get("host", os.getenv("OLLAMA_EMBEDDING_HOST", "192.168.50.80")),
+            "port": connection_config.get("port", int(os.getenv("OLLAMA_PORT", "11434"))),
+            "timeout": connection_config.get("timeout", int(os.getenv("OLLAMA_TIMEOUT", "30"))),
         }
 
         result = await test_ollama_connection(config)
@@ -525,16 +511,17 @@ async def test_ollama_connection_endpoint():
 # Weaviate Configuration
 # =============================================================================
 
+
 async def test_weaviate_connection(config):
     """Test connection to Weaviate server."""
     url = config.get("url", "http://weaviate:8080/")
     timeout = config.get("timeout", 30)
     api_key = config.get("api_key")
-    
+
     try:
         headers = {}
         if api_key:
-            headers['Authorization'] = f"Bearer {api_key}"
+            headers["Authorization"] = f"Bearer {api_key}"
 
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
             # Test basic connectivity
@@ -556,63 +543,53 @@ async def test_weaviate_connection(config):
                                 "hostname": meta_data.get("hostname", "unknown"),
                                 "class_count": class_count,
                                 "modules": meta_data.get("modules", {}),
-                                "url": url
+                                "url": url,
                             }
                         else:
                             return {
                                 "available": False,
                                 "error": f"Schema endpoint returned {schema_response.status}",
-                                "url": url
+                                "url": url,
                             }
                 else:
-                    return {
-                        "available": False,
-                        "error": f"Meta endpoint returned {response.status}",
-                        "url": url
-                    }
+                    return {"available": False, "error": f"Meta endpoint returned {response.status}", "url": url}
     except asyncio.TimeoutError:
-        return {
-            "available": False,
-            "error": "Connection timeout",
-            "url": url
-        }
+        return {"available": False, "error": "Connection timeout", "url": url}
     except Exception as e:
-        return {
-            "available": False,
-            "error": str(e),
-            "url": url
-        }
+        return {"available": False, "error": str(e), "url": url}
 
 
-@config_bp.route('/weaviate', methods=['GET'])
+@config_bp.route("/weaviate", methods=["GET"])
 async def get_weaviate_config():
     """Get current Weaviate configuration."""
     try:
         config = {
             "connection": {
-                "url": os.getenv('WEAVIATE_URL', 'http://weaviate:8080/'),
-                "timeout": int(os.getenv('WEAVIATE_TIMEOUT', '30')),
-                "retries": int(os.getenv('WEAVIATE_RETRIES', '3')),
-                "api_key": "***" if os.getenv('WEAVIATE_API_KEY') else None
+                "url": os.getenv("WEAVIATE_URL", "http://weaviate:8080/"),
+                "timeout": int(os.getenv("WEAVIATE_TIMEOUT", "30")),
+                "retries": int(os.getenv("WEAVIATE_RETRIES", "3")),
+                "api_key": "***" if os.getenv("WEAVIATE_API_KEY") else None,
             },
             "schema": {
-                "class_name": os.getenv('WEAVIATE_CLASS_NAME', 'Tool'),
-                "vector_index_type": os.getenv('WEAVIATE_VECTOR_INDEX', 'hnsw'),
-                "distance_metric": os.getenv('WEAVIATE_DISTANCE_METRIC', 'cosine')
+                "class_name": os.getenv("WEAVIATE_CLASS_NAME", "Tool"),
+                "vector_index_type": os.getenv("WEAVIATE_VECTOR_INDEX", "hnsw"),
+                "distance_metric": os.getenv("WEAVIATE_DISTANCE_METRIC", "cosine"),
             },
             "search": {
-                "alpha": float(os.getenv('WEAVIATE_ALPHA', '0.75')),
-                "limit": int(os.getenv('WEAVIATE_LIMIT', '50')),
-                "additional_properties": os.getenv('WEAVIATE_ADDITIONAL_PROPERTIES', 'id,distance,certainty').split(','),
-                "autocut": int(os.getenv('WEAVIATE_AUTOCUT', '1'))
+                "alpha": float(os.getenv("WEAVIATE_ALPHA", "0.75")),
+                "limit": int(os.getenv("WEAVIATE_LIMIT", "50")),
+                "additional_properties": os.getenv("WEAVIATE_ADDITIONAL_PROPERTIES", "id,distance,certainty").split(
+                    ","
+                ),
+                "autocut": int(os.getenv("WEAVIATE_AUTOCUT", "1")),
             },
             "performance": {
-                "ef_construction": int(os.getenv('WEAVIATE_EF_CONSTRUCTION', '128')),
-                "ef": int(os.getenv('WEAVIATE_EF', '64')),
-                "max_connections": int(os.getenv('WEAVIATE_MAX_CONNECTIONS', '64')),
-                "vector_cache_max_objects": int(os.getenv('WEAVIATE_VECTOR_CACHE_MAX_OBJECTS', '1000000')),
-                "cleanup_interval_seconds": int(os.getenv('WEAVIATE_CLEANUP_INTERVAL', '60'))
-            }
+                "ef_construction": int(os.getenv("WEAVIATE_EF_CONSTRUCTION", "128")),
+                "ef": int(os.getenv("WEAVIATE_EF", "64")),
+                "max_connections": int(os.getenv("WEAVIATE_MAX_CONNECTIONS", "64")),
+                "vector_cache_max_objects": int(os.getenv("WEAVIATE_VECTOR_CACHE_MAX_OBJECTS", "1000000")),
+                "cleanup_interval_seconds": int(os.getenv("WEAVIATE_CLEANUP_INTERVAL", "60")),
+            },
         }
 
         # Add connection status
@@ -625,7 +602,7 @@ async def get_weaviate_config():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@config_bp.route('/weaviate', methods=['PUT'])
+@config_bp.route("/weaviate", methods=["PUT"])
 async def update_weaviate_config():
     """Update Weaviate configuration."""
     try:
@@ -645,7 +622,7 @@ async def update_weaviate_config():
                 url = conn["url"]
                 if not url or not isinstance(url, str):
                     validation_errors.append("URL must be a valid string")
-                elif not (url.startswith('http://') or url.startswith('https://')):
+                elif not (url.startswith("http://") or url.startswith("https://")):
                     validation_errors.append("URL must start with http:// or https://")
 
             # Validate timeout
@@ -701,12 +678,14 @@ async def update_weaviate_config():
                     warnings.append("Very large vector cache may use excessive memory")
 
         if validation_errors:
-            return jsonify({
-                "success": False,
-                "error": "Validation failed",
-                "validation_errors": validation_errors,
-                "warnings": warnings
-            }), 400
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "Validation failed",
+                    "validation_errors": validation_errors,
+                    "warnings": warnings,
+                }
+            ), 400
 
         # Test connection if connection config provided
         if "connection" in data:
@@ -717,11 +696,7 @@ async def update_weaviate_config():
         # Log the configuration update
         logger.info(f"Weaviate configuration update requested: {data}")
 
-        response = {
-            "success": True,
-            "message": "Weaviate configuration updated successfully",
-            "applied_config": data
-        }
+        response = {"success": True, "message": "Weaviate configuration updated successfully", "applied_config": data}
 
         if warnings:
             response["warnings"] = warnings
@@ -732,7 +707,7 @@ async def update_weaviate_config():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@config_bp.route('/weaviate/test', methods=['POST'])
+@config_bp.route("/weaviate/test", methods=["POST"])
 async def test_weaviate_connection_endpoint():
     """Test Weaviate connection with provided configuration."""
     try:
@@ -741,9 +716,9 @@ async def test_weaviate_connection_endpoint():
 
         # Use defaults if not provided
         config = {
-            "url": connection_config.get("url", os.getenv('WEAVIATE_URL', 'http://weaviate:8080/')),
-            "timeout": connection_config.get("timeout", int(os.getenv('WEAVIATE_TIMEOUT', '30'))),
-            "api_key": connection_config.get("api_key", os.getenv('WEAVIATE_API_KEY'))
+            "url": connection_config.get("url", os.getenv("WEAVIATE_URL", "http://weaviate:8080/")),
+            "timeout": connection_config.get("timeout", int(os.getenv("WEAVIATE_TIMEOUT", "30"))),
+            "api_key": connection_config.get("api_key", os.getenv("WEAVIATE_API_KEY")),
         }
 
         result = await test_weaviate_connection(config)
@@ -753,16 +728,16 @@ async def test_weaviate_connection_endpoint():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@config_bp.route('/weaviate/schema', methods=['GET'])
+@config_bp.route("/weaviate/schema", methods=["GET"])
 async def get_weaviate_schema():
     """Get Weaviate schema information."""
     try:
-        url = os.getenv('WEAVIATE_URL', 'http://weaviate:8080/')
-        timeout = int(os.getenv('WEAVIATE_TIMEOUT', '30'))
+        url = os.getenv("WEAVIATE_URL", "http://weaviate:8080/")
+        timeout = int(os.getenv("WEAVIATE_TIMEOUT", "30"))
 
         headers = {}
-        if os.getenv('WEAVIATE_API_KEY'):
-            headers['Authorization'] = f"Bearer {os.getenv('WEAVIATE_API_KEY')}"
+        if os.getenv("WEAVIATE_API_KEY"):
+            headers["Authorization"] = f"Bearer {os.getenv('WEAVIATE_API_KEY')}"
 
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
             # Get schema information
@@ -784,23 +759,18 @@ async def get_weaviate_schema():
                             else:
                                 object_count = -1  # Unknown
 
-                        classes_with_counts.append({
-                            **class_info,
-                            "object_count": object_count
-                        })
+                        classes_with_counts.append({**class_info, "object_count": object_count})
 
-                    return jsonify({
-                        "success": True,
-                        "data": {
-                            "classes": classes_with_counts,
-                            "total_classes": len(classes_with_counts)
+                    return jsonify(
+                        {
+                            "success": True,
+                            "data": {"classes": classes_with_counts, "total_classes": len(classes_with_counts)},
                         }
-                    })
+                    )
                 else:
-                    return jsonify({
-                        "success": False,
-                        "error": f"Schema endpoint returned {response.status}"
-                    }), response.status
+                    return jsonify(
+                        {"success": False, "error": f"Schema endpoint returned {response.status}"}
+                    ), response.status
     except Exception as e:
         logger.error(f"Error getting Weaviate schema: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -810,55 +780,58 @@ async def get_weaviate_schema():
 # Configuration Validation & Tool Selector Configuration
 # =============================================================================
 
-@config_bp.route('/validate', methods=['POST'])
+
+@config_bp.route("/validate", methods=["POST"])
 async def validate_config():
     """LDTS-69: Validate dashboard configuration using schema-based validation."""
     logger.info("Received request for /api/v1/config/validate")
-    
+
     try:
         data = await request.get_json()
         if not data:
             return jsonify({"error": "No configuration data provided"}), 400
-        
+
         logger.info(f"Validating configuration with {len(data)} top-level sections")
-        
+
         # Validate the configuration
         validation_result = validate_configuration(data)
-        
-        logger.info(f"Configuration validation completed: valid={validation_result.valid}, "
-                   f"errors={len(validation_result.errors)}, "
-                   f"warnings={len(validation_result.warnings)}")
-        
+
+        logger.info(
+            f"Configuration validation completed: valid={validation_result.valid}, "
+            f"errors={len(validation_result.errors)}, "
+            f"warnings={len(validation_result.warnings)}"
+        )
+
         # Return validation result as JSON
         return jsonify(validation_result.to_dict())
-        
+
     except Exception as e:
         logger.error(f"Configuration validation failed: {e}", exc_info=True)
         return jsonify({"error": f"Validation failed: {str(e)}"}), 500
 
 
-@config_bp.route('/tool-selector', methods=['GET'])
+@config_bp.route("/tool-selector", methods=["GET"])
 async def get_tool_selector_config():
     """Get current tool selector configuration."""
     try:
         # Get configuration from environment variables
         config = {
             "tool_limits": {
-                "max_total_tools": int(os.getenv('MAX_TOTAL_TOOLS', '30')),
-                "max_mcp_tools": int(os.getenv('MAX_MCP_TOOLS', '20')),
-                "min_mcp_tools": int(os.getenv('MIN_MCP_TOOLS', '7'))
+                "max_total_tools": int(os.getenv("MAX_TOTAL_TOOLS", "30")),
+                "max_mcp_tools": int(os.getenv("MAX_MCP_TOOLS", "20")),
+                "min_mcp_tools": int(os.getenv("MIN_MCP_TOOLS", "7")),
             },
             "behavior": {
-                "default_drop_rate": float(os.getenv('DEFAULT_DROP_RATE', '0.6')),
-                "exclude_letta_core_tools": os.getenv('EXCLUDE_LETTA_CORE_TOOLS', 'true').lower() == 'true',
-                "exclude_official_tools": os.getenv('EXCLUDE_OFFICIAL_TOOLS', 'true').lower() == 'true',
-                "manage_only_mcp_tools": os.getenv('MANAGE_ONLY_MCP_TOOLS', 'true').lower() == 'true'
+                "default_drop_rate": float(os.getenv("DEFAULT_DROP_RATE", "0.6")),
+                "exclude_letta_core_tools": os.getenv("EXCLUDE_LETTA_CORE_TOOLS", "true").lower() == "true",
+                "exclude_official_tools": os.getenv("EXCLUDE_OFFICIAL_TOOLS", "true").lower() == "true",
+                "manage_only_mcp_tools": os.getenv("MANAGE_ONLY_MCP_TOOLS", "true").lower() == "true",
             },
             "scoring": {
-                "min_score_default": float(os.getenv('MIN_SCORE_DEFAULT', '70.0')),
-                "semantic_weight": float(os.getenv('SEMANTIC_WEIGHT', '0.7')),
-                "keyword_weight": float(os.getenv('KEYWORD_WEIGHT', '0.3'))
-            }
+                "min_score_default": float(os.getenv("MIN_SCORE_DEFAULT", "70.0")),
+                "semantic_weight": float(os.getenv("SEMANTIC_WEIGHT", "0.7")),
+                "keyword_weight": float(os.getenv("KEYWORD_WEIGHT", "0.3")),
+            },
         }
 
         # Add current usage statistics if available
@@ -869,14 +842,14 @@ async def get_tool_selector_config():
             else:
                 tools = []
             total_tools = len(tools) if tools else 0
-            mcp_tools = len([t for t in tools if t.get('source', '').startswith('mcp')]) if tools else 0
+            mcp_tools = len([t for t in tools if t.get("source", "").startswith("mcp")]) if tools else 0
             mcp_ratio = (mcp_tools / total_tools) if total_tools > 0 else 0
 
             config["current_stats"] = {
                 "total_tools": total_tools,
                 "mcp_tools": mcp_tools,
                 "mcp_tools_ratio": round(mcp_ratio, 2),
-                "last_updated": datetime.now(timezone.utc).isoformat()
+                "last_updated": datetime.now(timezone.utc).isoformat(),
             }
         except Exception as e:
             logger.warning(f"Could not load current stats: {str(e)}")
@@ -884,7 +857,7 @@ async def get_tool_selector_config():
                 "total_tools": 0,
                 "mcp_tools": 0,
                 "mcp_tools_ratio": 0.0,
-                "last_updated": datetime.now(timezone.utc).isoformat()
+                "last_updated": datetime.now(timezone.utc).isoformat(),
             }
 
         return jsonify({"success": True, "data": config})
@@ -893,7 +866,7 @@ async def get_tool_selector_config():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@config_bp.route('/tool-selector', methods=['PUT'])
+@config_bp.route("/tool-selector", methods=["PUT"])
 async def update_tool_selector_config():
     """Update tool selector configuration."""
     try:
@@ -955,12 +928,14 @@ async def update_tool_selector_config():
 
         # Return validation errors if any
         if validation_errors:
-            return jsonify({
-                "success": False,
-                "error": "Validation failed",
-                "validation_errors": validation_errors,
-                "warnings": warnings
-            }), 400
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "Validation failed",
+                    "validation_errors": validation_errors,
+                    "warnings": warnings,
+                }
+            ), 400
 
         # Log the configuration update
         logger.info(f"Tool selector configuration update requested: {data}")
@@ -972,7 +947,7 @@ async def update_tool_selector_config():
                 config_type="tool_selector",
                 changes=data,
                 user_info={"source": "api", "timestamp": datetime.now().isoformat()},
-                metadata={"warnings": warnings}
+                metadata={"warnings": warnings},
             )
 
         # For now, just acknowledge the update
@@ -981,7 +956,7 @@ async def update_tool_selector_config():
         response = {
             "success": True,
             "message": "Tool selector configuration updated successfully",
-            "applied_config": data
+            "applied_config": data,
         }
 
         if warnings:

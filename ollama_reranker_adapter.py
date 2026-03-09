@@ -70,7 +70,7 @@ class SimpleCache:
     def __init__(self, ttl: int = 300):
         self.cache: Dict[str, tuple] = {}
         self.ttl = ttl
-    
+
     def get(self, key: str) -> Optional[Any]:
         if key in self.cache:
             value, timestamp = self.cache[key]
@@ -79,10 +79,10 @@ class SimpleCache:
             else:
                 del self.cache[key]
         return None
-    
+
     def set(self, key: str, value: Any):
         self.cache[key] = (value, time.time())
-    
+
     def clear(self):
         self.cache.clear()
 
@@ -100,7 +100,7 @@ class Metrics:
         self.cache_misses = 0
         self.total_latency = 0.0
         self.model_load_time = None
-    
+
     def to_dict(self) -> Dict:
         avg_latency = self.total_latency / max(self.successful_requests, 1)
         return {
@@ -132,7 +132,7 @@ async def warmup_model():
     """Warm up the Ollama model to reduce first-request latency"""
     logger.info(f"Warming up model {OLLAMA_MODEL}...")
     start_time = time.time()
-    
+
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             warmup_prompt = build_prompt(
@@ -153,14 +153,14 @@ async def warmup_model():
                     }
                 }
             )
-            
+
             if response.status_code == 200:
                 elapsed = time.time() - start_time
                 metrics.model_load_time = elapsed
                 logger.info(f"Model warmed up successfully in {elapsed:.2f}s")
             else:
                 logger.warning(f"Model warmup failed: {response.status_code}")
-    
+
     except Exception as e:
         logger.error(f"Model warmup error: {e}")
 
@@ -189,7 +189,7 @@ async def score_document_pair(
             metrics.cache_hits += 1
             return cached_score
         metrics.cache_misses += 1
-    
+
     try:
         response = await session.post(
             f"{OLLAMA_BASE_URL}/api/generate",
@@ -231,27 +231,27 @@ async def batch_score_documents(
     if not documents:
         logger.warning("Empty documents list provided to batch_score_documents")
         return []
-    
+
     if not query or not query.strip():
         logger.warning("Empty query provided to batch_score_documents, returning zeros")
         return [0.0] * len(documents)
-    
+
     scores = []
-    
+
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as session:
             # Process in batches
             for i in range(0, len(documents), BATCH_SIZE):
                 batch = documents[i:i + BATCH_SIZE]
-                
+
                 # Score batch concurrently
                 tasks = [
                     score_document_pair(query, doc, session, instruction)
                     for doc in batch
                 ]
-                
+
                 batch_scores = await asyncio.gather(*tasks, return_exceptions=True)
-                
+
                 # Handle any exceptions in the batch and ensure all scores are floats
                 validated_scores = []
                 for score in batch_scores:
@@ -263,9 +263,9 @@ async def batch_score_documents(
                     else:
                         logger.warning(f"Invalid score {score}, using 0.0")
                         validated_scores.append(0.0)
-                
+
                 scores.extend(validated_scores)
-        
+
         # Final validation: ensure we have the right number of scores
         if len(scores) != len(documents):
             logger.error(f"Score count mismatch: got {len(scores)}, expected {len(documents)}")
@@ -274,9 +274,9 @@ async def batch_score_documents(
                 scores.extend([0.0] * (len(documents) - len(scores)))
             else:
                 scores = scores[:len(documents)]
-        
+
         return scores
-        
+
     except Exception as e:
         logger.error(f"Critical error in batch_score_documents: {e}")
         # Return all zeros as fallback
@@ -316,15 +316,15 @@ async def rerank_documents(request: RerankRequest):
     """
     start_time = time.time()
     metrics.total_requests += 1
-    
+
     try:
         # Validate input
         if not request.query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
-        
+
         if not request.documents:
             raise HTTPException(status_code=400, detail="Documents list cannot be empty")
-        
+
         # Filter out empty or invalid documents
         valid_documents = []
         document_index_mapping = []  # Track original indices
@@ -334,47 +334,47 @@ async def rerank_documents(request: RerankRequest):
                 document_index_mapping.append(idx)
             else:
                 logger.warning(f"Skipping empty or invalid document at index {idx}")
-        
+
         if not valid_documents:
             raise HTTPException(status_code=400, detail="No valid documents found after filtering")
-        
+
         # Limit k to reasonable bounds (use valid documents count)
         k = min(request.k, len(valid_documents)) if request.k else len(valid_documents)
         k = min(k, 100)  # Maximum 100 results
-        
+
         logger.info(f"Reranking {len(valid_documents)} valid documents (from {len(request.documents)} total) for query: '{request.query[:50]}...'")
-        
+
         # Score all valid documents
         scores = await batch_score_documents(
             request.query,
             valid_documents,
             request.instruction or DEFAULT_RERANK_INSTRUCTION,
         )
-        
+
         # Create indexed scores for sorting and selection (map back to original indices)
         indexed_scores = [(score, document_index_mapping[idx]) for idx, score in enumerate(scores)]
         indexed_scores.sort(reverse=True, key=lambda x: x[0])
-        
+
         # Apply k-filtering by only including top-k results
         if request.k and request.k < len(indexed_scores):
             top_k_results = indexed_scores[:k]
         else:
             top_k_results = indexed_scores
-        
+
         # Defensive validation: ensure we have at least one result
         if not top_k_results:
             # If no results, return a single 0.0 score for the first original document
             logger.warning("No rerank results available, returning single 0.0 score")
             first_original_idx = document_index_mapping[0] if document_index_mapping else 0
             top_k_results = [(0.0, first_original_idx)]
-        
+
         # Track metrics
         elapsed = time.time() - start_time
         metrics.successful_requests += 1
         metrics.total_latency += elapsed
-        
+
         logger.info(f"Reranking completed in {elapsed:.2f}s, returning {len(top_k_results)} results")
-        
+
         # Format response in Cohere-compatible format with consecutive indices
         # Note: Using consecutive indices (0, 1, 2...) instead of original document indices
         # This may be required for Weaviate compatibility
@@ -382,9 +382,9 @@ async def rerank_documents(request: RerankRequest):
             DocumentScore(index=i, relevance_score=score)
             for i, (score, original_idx) in enumerate(top_k_results)
         ]
-        
+
         return RerankResponse(results=results)
-    
+
     except HTTPException:
         metrics.failed_requests += 1
         raise
@@ -400,9 +400,9 @@ async def health_check():
         # Check Ollama connectivity
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
-            
+
             ollama_status = "connected" if response.status_code == 200 else "disconnected"
-            
+
             return {
                 "status": "healthy" if ollama_status == "connected" else "degraded",
                 "ollama": ollama_status,
@@ -410,7 +410,7 @@ async def health_check():
                 "cache_enabled": ENABLE_CACHE,
                 "uptime_seconds": time.time() - app.state.start_time if hasattr(app.state, 'start_time') else 0
             }
-    
+
     except Exception as e:
         return {
             "status": "unhealthy",
@@ -428,7 +428,7 @@ async def ready():
                 return {"ready": True}
     except Exception:
         pass
-    
+
     # Return 503 if not ready
     return JSONResponse(
         status_code=503,
@@ -466,7 +466,7 @@ async def root():
 async def add_process_time_header(request: Request, call_next):
     if not hasattr(app.state, 'start_time'):
         app.state.start_time = time.time()
-    
+
     start_time = time.time()
     response = await call_next(request)
     process_time = time.time() - start_time

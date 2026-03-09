@@ -6,10 +6,10 @@ import sys
 from letta_tool_utils import get_find_tools_id, get_find_tools_id_with_fallback
 
 # Set environment variables if not already set
-if not os.environ.get('LETTA_API_URL'):
-    os.environ['LETTA_API_URL'] = 'http://192.168.50.90:8289/v1'
+if not os.environ.get("LETTA_API_URL"):
+    os.environ["LETTA_API_URL"] = "http://192.168.50.90:8289/v1"
 
-if not os.environ.get('LETTA_PASSWORD'):
+if not os.environ.get("LETTA_PASSWORD"):
     print("Warning: LETTA_PASSWORD not set, API calls may fail")
 
 print("Testing dynamic tool ID lookup...")

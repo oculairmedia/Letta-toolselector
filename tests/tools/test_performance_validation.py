@@ -14,9 +14,9 @@ from typing import Dict, List, Tuple
 from dataclasses import dataclass
 
 # Add the tool-selector-api directory to the path
-sys.path.append('/opt/stacks/lettatoolsselector/tool-selector-api')
+sys.path.append("/opt/stacks/lettatoolsselector/tool-selector-api")
 
-os.environ.setdefault('USE_QWEN3_FORMAT', 'true')
+os.environ.setdefault("USE_QWEN3_FORMAT", "true")
 
 from specialized_embedding import (
     SpecializedEmbeddingPrompter,
@@ -32,6 +32,7 @@ from specialized_embedding import (
 @dataclass
 class TestQuery:
     """Test query with expected results for validation."""
+
     query: str
     expected_tool_types: List[str]
     expected_keywords: List[str]
@@ -41,6 +42,7 @@ class TestQuery:
 @dataclass
 class PerformanceResult:
     """Results from performance testing."""
+
     test_name: str
     original_prompt: str
     enhanced_prompt: str
@@ -51,12 +53,12 @@ class PerformanceResult:
 
 class PerformanceValidator:
     """Validates performance improvements from specialized prompting."""
-    
+
     def __init__(self):
         self.prompter = SpecializedEmbeddingPrompter()
         self.test_queries = self._create_test_queries()
         self.test_tools = self._create_test_tools()
-        
+
     def _create_test_queries(self) -> List[TestQuery]:
         """Create a comprehensive set of test queries."""
         return [
@@ -64,40 +66,40 @@ class PerformanceValidator:
                 query="create blog post",
                 expected_tool_types=["mcp", "api"],
                 expected_keywords=["blog", "post", "create", "publish", "cms"],
-                context="User wants to publish content"
+                context="User wants to publish content",
             ),
             TestQuery(
                 query="manage GitHub repositories",
                 expected_tool_types=["mcp", "api"],
                 expected_keywords=["github", "repository", "git", "manage", "version"],
-                context="Developer workflow automation"
+                context="Developer workflow automation",
             ),
             TestQuery(
                 query="send email notifications",
                 expected_tool_types=["api", "mcp"],
                 expected_keywords=["email", "send", "notification", "message", "smtp"],
-                context="Communication automation"
+                context="Communication automation",
             ),
             TestQuery(
                 query="process data files",
                 expected_tool_types=["python", "general"],
                 expected_keywords=["data", "file", "process", "convert", "transform"],
-                context="Data processing workflow"
+                context="Data processing workflow",
             ),
             TestQuery(
                 query="list available APIs",
                 expected_tool_types=["api", "mcp"],
                 expected_keywords=["api", "list", "show", "available", "endpoint"],
-                context="API discovery"
+                context="API discovery",
             ),
             TestQuery(
                 query="delete old files",
                 expected_tool_types=["python", "general"],
                 expected_keywords=["delete", "remove", "file", "cleanup", "old"],
-                context="File maintenance"
-            )
+                context="File maintenance",
+            ),
         ]
-    
+
     def _create_test_tools(self) -> List[Dict]:
         """Create test tools for validation."""
         return [
@@ -105,40 +107,40 @@ class PerformanceValidator:
                 "name": "Ghost Blog API",
                 "description": "Creates and manages blog posts on Ghost CMS platform",
                 "tool_type": "mcp",
-                "source_type": "external_mcp"
+                "source_type": "external_mcp",
             },
             {
-                "name": "GitHub Repository Manager", 
+                "name": "GitHub Repository Manager",
                 "description": "Manages GitHub repositories, issues, and pull requests",
                 "tool_type": "mcp",
-                "source_type": "external_mcp"
+                "source_type": "external_mcp",
             },
             {
                 "name": "Email Notification Service",
                 "description": "Sends email notifications and manages mailing lists",
                 "tool_type": "api",
-                "source_type": "python"
+                "source_type": "python",
             },
             {
                 "name": "CSV Data Processor",
                 "description": "Processes CSV files and converts to various formats",
                 "tool_type": "python",
-                "source_type": "custom"
+                "source_type": "custom",
             },
             {
                 "name": "REST API Explorer",
                 "description": "Lists and explores available REST API endpoints",
                 "tool_type": "api",
-                "source_type": "python"
+                "source_type": "python",
             },
             {
                 "name": "File Cleanup Utility",
                 "description": "Deletes old files and performs disk cleanup operations",
-                "tool_type": "python", 
-                "source_type": "custom"
-            }
+                "tool_type": "python",
+                "source_type": "custom",
+            },
         ]
-    
+
     def test_prompt_enhancement_quality(self) -> PerformanceResult:
         """Test the quality of prompt enhancement."""
         print("🎯 Testing Prompt Enhancement Quality")
@@ -151,10 +153,7 @@ class PerformanceValidator:
         for test_query in self.test_queries:
             original = test_query.query
             enhanced = enhance_query_for_embedding(original, test_query.context)
-            expected = get_detailed_instruct(
-                get_search_instruction(),
-                format_query_for_qwen3(original)
-            )
+            expected = get_detailed_instruct(get_search_instruction(), format_query_for_qwen3(original))
 
             print(f"Query: {original}")
             print(f"Enhanced: {enhanced}")
@@ -166,8 +165,8 @@ class PerformanceValidator:
 
         instruction_rate = formatted_correctly / total_queries if total_queries else 0.0
         improvements = {
-            'instruction_format_rate': instruction_rate,
-            'qwen3_format_enabled': 1.0 if is_qwen3_format_enabled() else 0.0,
+            "instruction_format_rate": instruction_rate,
+            "qwen3_format_enabled": 1.0 if is_qwen3_format_enabled() else 0.0,
         }
 
         execution_time = (time.time() - start_time) * 1000
@@ -178,7 +177,7 @@ class PerformanceValidator:
             enhanced_prompt="Qwen3-formatted queries",
             improvement_metrics=improvements,
             execution_time_ms=execution_time,
-            success=instruction_rate == 1.0
+            success=instruction_rate == 1.0,
         )
 
     def test_tool_description_enhancement(self) -> PerformanceResult:
@@ -196,7 +195,7 @@ class PerformanceValidator:
                 tool_description=original_desc,
                 tool_name=tool["name"],
                 tool_type=tool["tool_type"],
-                tool_source=tool["source_type"]
+                tool_source=tool["source_type"],
             )
 
             print(f"Tool: {tool['name']} ({tool['tool_type']})")
@@ -209,7 +208,7 @@ class PerformanceValidator:
 
         unchanged_rate = unchanged_descriptions / total_tools if total_tools else 0.0
         improvements = {
-            'unchanged_description_rate': unchanged_rate,
+            "unchanged_description_rate": unchanged_rate,
         }
 
         execution_time = (time.time() - start_time) * 1000
@@ -220,111 +219,104 @@ class PerformanceValidator:
             enhanced_prompt="Prepared descriptions",
             improvement_metrics=improvements,
             execution_time_ms=execution_time,
-            success=unchanged_rate == 1.0
+            success=unchanged_rate == 1.0,
         )
 
     def test_prompt_type_detection_accuracy(self) -> PerformanceResult:
         """Test accuracy of prompt type detection."""
         print("🔍 Testing Prompt Type Detection Accuracy")
         print("=" * 50)
-        
+
         start_time = time.time()
         improvements = {}
-        
+
         correct_detections = 0
         total_detections = len(self.test_tools)
-        
+
         for tool in self.test_tools:
-            detected_type = self.prompter._determine_tool_prompt_type(
-                tool["tool_type"], 
-                tool["source_type"]
-            )
-            
+            detected_type = self.prompter._determine_tool_prompt_type(tool["tool_type"], tool["source_type"])
+
             # Define expected mappings
-            expected_mapping = {
-                "mcp": "mcp_tool",
-                "api": "api_tool", 
-                "python": "general_tool"
-            }
-            
+            expected_mapping = {"mcp": "mcp_tool", "api": "api_tool", "python": "general_tool"}
+
             expected = expected_mapping.get(tool["tool_type"], "general_tool")
             if detected_type.value == expected:
                 correct_detections += 1
-            
+
             print(f"Tool: {tool['name']}")
             print(f"Type: {tool['tool_type']}, Source: {tool['source_type']}")
             print(f"Expected: {expected}, Detected: {detected_type.value}")
             print(f"Correct: {'✅' if detected_type.value == expected else '❌'}")
             print()
-        
-        improvements['detection_accuracy'] = correct_detections / total_detections
-        
+
+        improvements["detection_accuracy"] = correct_detections / total_detections
+
         execution_time = (time.time() - start_time) * 1000
-        
+
         return PerformanceResult(
             test_name="Prompt Type Detection",
             original_prompt="N/A",
             enhanced_prompt="Automatic type detection",
             improvement_metrics=improvements,
             execution_time_ms=execution_time,
-            success=improvements['detection_accuracy'] > 0.85
+            success=improvements["detection_accuracy"] > 0.85,
         )
-    
+
     def test_embedding_consistency(self) -> PerformanceResult:
         """Test consistency of embedding enhancements."""
         print("🔄 Testing Embedding Consistency")
         print("=" * 50)
-        
+
         start_time = time.time()
         improvements = {}
-        
+
         # Test same query multiple times
         test_query = "find tools to create blog posts"
         enhancements = []
-        
+
         for i in range(5):
             enhanced = enhance_query_for_embedding(test_query)
             enhancements.append(enhanced)
-        
+
         # Check consistency
         unique_enhancements = set(enhancements)
         consistency_rate = (len(enhancements) - len(unique_enhancements) + 1) / len(enhancements)
-        
-        improvements['consistency_rate'] = consistency_rate
-        improvements['enhancement_variance'] = len(unique_enhancements)
-        
+
+        improvements["consistency_rate"] = consistency_rate
+        improvements["enhancement_variance"] = len(unique_enhancements)
+
         print(f"Original query: {test_query}")
         print(f"Enhancements generated: {len(enhancements)}")
         print(f"Unique enhancements: {len(unique_enhancements)}")
         print(f"Consistency rate: {consistency_rate:.2%}")
-        
+
         execution_time = (time.time() - start_time) * 1000
-        
+
         return PerformanceResult(
             test_name="Embedding Consistency",
             original_prompt=test_query,
             enhanced_prompt="Multiple enhancement attempts",
             improvement_metrics=improvements,
             execution_time_ms=execution_time,
-            success=consistency_rate > 0.9  # Should be very consistent
+            success=consistency_rate > 0.9,  # Should be very consistent
         )
-    
+
     def run_all_tests(self) -> List[PerformanceResult]:
         """Run all performance validation tests."""
         print("🚀 Specialized Embedding Performance Validation")
         print("=" * 60)
         print()
-        
+
         results = []
-        
+
         # Run all tests
         test_methods = [
             self.test_prompt_enhancement_quality,
-            self.test_tool_description_enhancement, 
+            self.test_tool_description_enhancement,
             self.test_prompt_type_detection_accuracy,
-            self.test_embedding_consistency
+            self.test_embedding_consistency,
         ]
-        
+
         for test_method in test_methods:
             try:
                 result = test_method()
@@ -333,45 +325,46 @@ class PerformanceValidator:
             except Exception as e:
                 print(f"❌ Test failed: {e}")
                 import traceback
+
                 traceback.print_exc()
                 print()
-        
+
         return results
-    
+
     def generate_performance_report(self, results: List[PerformanceResult]) -> str:
         """Generate a comprehensive performance report."""
         report = []
         report.append("# Specialized Embedding Performance Report")
         report.append("=" * 50)
         report.append("")
-        
+
         passed_tests = sum(1 for r in results if r.success)
         total_tests = len(results)
-        
+
         report.append("## Summary")
         report.append(f"- **Total Tests**: {total_tests}")
         report.append(f"- **Passed**: {passed_tests}")
-        report.append(f"- **Success Rate**: {passed_tests/total_tests:.1%}")
+        report.append(f"- **Success Rate**: {passed_tests / total_tests:.1%}")
         report.append("")
-        
+
         report.append("## Individual Test Results")
         report.append("")
-        
+
         for result in results:
             status = "✅ PASS" if result.success else "❌ FAIL"
             report.append(f"### {result.test_name} {status}")
             report.append(f"- **Execution Time**: {result.execution_time_ms:.1f}ms")
-            
+
             for metric, value in result.improvement_metrics.items():
                 if isinstance(value, float):
-                    if metric.endswith('_rate') or metric.endswith('_accuracy'):
+                    if metric.endswith("_rate") or metric.endswith("_accuracy"):
                         report.append(f"- **{metric.replace('_', ' ').title()}**: {value:.1%}")
                     else:
                         report.append(f"- **{metric.replace('_', ' ').title()}**: {value:.2f}")
                 else:
                     report.append(f"- **{metric.replace('_', ' ').title()}**: {value}")
             report.append("")
-        
+
         return "\n".join(report)
 
 
@@ -379,27 +372,27 @@ def main():
     """Run the performance validation suite."""
     validator = PerformanceValidator()
     results = validator.run_all_tests()
-    
+
     # Generate and display report
     report = validator.generate_performance_report(results)
     print(report)
-    
+
     # Save report to file
-    with open('/opt/stacks/lettatoolsselector/performance_report.md', 'w') as f:
+    with open("/opt/stacks/lettatoolsselector/performance_report.md", "w") as f:
         f.write(report)
-    
+
     print(f"📄 Performance report saved to performance_report.md")
-    
+
     # Return success status
     passed = sum(1 for r in results if r.success)
     total = len(results)
     success = passed == total
-    
+
     if success:
         print(f"🎉 All {total} performance tests passed!")
     else:
         print(f"⚠️ {total - passed} out of {total} tests failed.")
-    
+
     return success
 
 

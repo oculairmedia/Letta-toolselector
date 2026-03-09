@@ -9,27 +9,24 @@ import json
 
 load_dotenv()
 
+
 class TimeMemoryService:
     def __init__(self):
-        self.host = os.getenv('LETTA_API_URL', 'http://192.168.50.90:8289').replace('http://', 'https://')
-        api_key = os.getenv('LETTA_PASSWORD', 'lettaSecurePass123')
+        self.host = os.getenv("LETTA_API_URL", "http://192.168.50.90:8289").replace("http://", "https://")
+        api_key = os.getenv("LETTA_PASSWORD", "lettaSecurePass123")
         self.headers = {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-BARE-PASSWORD': f'password {api_key}',
-            'Content-Type': 'application/json'
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-BARE-PASSWORD": f"password {api_key}",
         }
         self.block_id = None
         self.block_name = "watch"
         self.timezone = "America/Toronto"
-        
+
     def list_agents(self):
         """Get list of all agents in the system"""
         try:
-            response = requests.get(
-                f"{self.host}/v1/agents",
-                headers=self.headers
-            )
+            response = requests.get(f"{self.host}/v1/agents", headers=self.headers)
             response.raise_for_status()
             agents = response.json()
             return agents
@@ -42,10 +39,10 @@ class TimeMemoryService:
         # First check if watch block already exists for any agent
         agents = self.list_agents()
         for agent in agents:
-            existing_block = self.get_block_by_label(agent['id'], 'watch')
+            existing_block = self.get_block_by_label(agent["id"], "watch")
             if existing_block:
                 print(f"Found existing watch block: {existing_block['id']}")
-                self.block_id = existing_block['id']
+                self.block_id = existing_block["id"]
                 return True
 
         # Create new block if none found
@@ -53,22 +50,13 @@ class TimeMemoryService:
             "name": self.block_name,
             "label": "watch",  # Use watch as the label
             "value": json.dumps(self._get_time_info()),
-            "metadata": {
-                "type": "time_service",
-                "version": "1.0",
-                "timezone": self.timezone,
-                "update_frequency": "1s"
-            }
+            "metadata": {"type": "time_service", "version": "1.0", "timezone": self.timezone, "update_frequency": "1s"},
         }
-        
+
         try:
-            response = requests.post(
-                f"{self.host}/v1/blocks",
-                json=block_data,
-                headers=self.headers
-            )
+            response = requests.post(f"{self.host}/v1/blocks", json=block_data, headers=self.headers)
             response.raise_for_status()
-            self.block_id = response.json()['id']
+            self.block_id = response.json()["id"]
             print(f"Created time block with ID: {self.block_id}")
             return True
         except requests.exceptions.RequestException as e:
@@ -80,8 +68,7 @@ class TimeMemoryService:
         # This endpoint retrieves a block *if* it's attached to the agent
         try:
             response = requests.get(
-                f"{self.host}/v1/agents/{agent_id}/core-memory/blocks/{label}",
-                headers=self.headers
+                f"{self.host}/v1/agents/{agent_id}/core-memory/blocks/{label}", headers=self.headers
             )
             if response.status_code == 200:
                 # Block exists and is attached
@@ -92,7 +79,7 @@ class TimeMemoryService:
             else:
                 # Other error
                 response.raise_for_status()
-                return None # Should not reach here if raise_for_status works
+                return None  # Should not reach here if raise_for_status works
         except requests.exceptions.RequestException as e:
             # Handle connection errors or non-404 HTTP errors
             print(f"Error getting block by label '{label}' for agent {agent_id}: {e}")
@@ -100,21 +87,18 @@ class TimeMemoryService:
             try:
                 error_details = e.response.json()
                 print(f"Server response: {json.dumps(error_details, indent=2)}")
-            except: # Ignore if response is not JSON or doesn't exist
+            except:  # Ignore if response is not JSON or doesn't exist
                 pass
             return None
 
     def get_block_by_name(self, block_name):
         """Get a block by name"""
         try:
-            response = requests.get(
-                f"{self.host}/v1/blocks",
-                headers=self.headers
-            )
+            response = requests.get(f"{self.host}/v1/blocks", headers=self.headers)
             response.raise_for_status()
             blocks = response.json()
             for block in blocks:
-                if block['name'] == block_name:
+                if block["name"] == block_name:
                     return block
             return None
         except requests.exceptions.RequestException as e:
@@ -126,29 +110,23 @@ class TimeMemoryService:
         block_data = {
             "name": f"agent_card_{agent_id}",
             "label": "agent_card",
-            "value": json.dumps({
-                "agent_id": agent_id,
-                "agent_name": agent_name,
-                "type": "agent_card",
-                "created_at": datetime.now(pytz.UTC).isoformat()
-            }),
-            "metadata": {
-                "type": "agent_card",
-                "version": "1.0",
-                "last_updated": datetime.now(pytz.UTC).isoformat()
-            }
+            "value": json.dumps(
+                {
+                    "agent_id": agent_id,
+                    "agent_name": agent_name,
+                    "type": "agent_card",
+                    "created_at": datetime.now(pytz.UTC).isoformat(),
+                }
+            ),
+            "metadata": {"type": "agent_card", "version": "1.0", "last_updated": datetime.now(pytz.UTC).isoformat()},
         }
 
         try:
             # Check if agent card block exists by label
-            if not self.get_block_by_label(agent_id, 'agent_card'):
-                response = requests.post(
-                    f"{self.host}/v1/blocks",
-                    json=block_data,
-                    headers=self.headers
-                )
+            if not self.get_block_by_label(agent_id, "agent_card"):
+                response = requests.post(f"{self.host}/v1/blocks", json=block_data, headers=self.headers)
                 response.raise_for_status()
-                block_id = response.json()['id']
+                block_id = response.json()["id"]
                 self.attach_block_to_agent(agent_id, agent_name, block_id)
                 print(f"Created agent card for {agent_name} ({agent_id})")
             else:
@@ -160,18 +138,14 @@ class TimeMemoryService:
         """Attach the time block to a specific agent"""
         try:
             # First check if block is already attached with the watch label
-            existing_block = self.get_block_by_label(agent_id, 'watch')
+            existing_block = self.get_block_by_label(agent_id, "watch")
             if existing_block:
                 print(f"Block already attached to agent {agent_name} with label 'watch'")
                 return True
 
             block_id_to_attach = block_id or self.block_id
             attach_url = f"{self.host}/v1/agents/{agent_id}/core-memory/blocks/attach/{block_id_to_attach}?label=watch"
-            response = requests.patch(
-                attach_url,
-                json={},
-                headers=self.headers
-            )
+            response = requests.patch(attach_url, json={}, headers=self.headers)
             response.raise_for_status()
             print(f"Attached time block to agent: {agent_name} ({agent_id})")
             return True
@@ -183,34 +157,24 @@ class TimeMemoryService:
         """Generate current time information"""
         tz = pytz.timezone(self.timezone)
         now = datetime.now(tz)
-        
+
         return {
             "timestamp": now.isoformat(),
             "date": now.strftime("%Y-%m-%d"),
             "time": now.strftime("%H:%M:%S"),
-            "timezone": {
-                "name": self.timezone,
-                "offset": now.strftime("%z"),
-                "abbreviation": now.strftime("%Z")
-            },
-            "unix_timestamp": int(now.timestamp())
+            "timezone": {"name": self.timezone, "offset": now.strftime("%z"), "abbreviation": now.strftime("%Z")},
+            "unix_timestamp": int(now.timestamp()),
         }
 
     def update_time_block(self):
         """Update the time memory block"""
         if not self.block_id:
             return
-            
-        update_data = {
-            "value": json.dumps(self._get_time_info())
-        }
-        
+
+        update_data = {"value": json.dumps(self._get_time_info())}
+
         try:
-            response = requests.patch(
-                f"{self.host}/v1/blocks/{self.block_id}",
-                json=update_data,
-                headers=self.headers
-            )
+            response = requests.patch(f"{self.host}/v1/blocks/{self.block_id}", json=update_data, headers=self.headers)
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
             print(f"Error updating time block: {e}")
@@ -218,11 +182,11 @@ class TimeMemoryService:
     def run(self):
         """Main service loop"""
         print("Starting Time Memory Service...")
-        
+
         # Get list of agents first
         print("Fetching list of agents...")
         agents = self.list_agents()
-        
+
         if not agents:
             print("No agents found or failed to fetch agents")
             return
@@ -236,20 +200,20 @@ class TimeMemoryService:
         print(f"Processing {len(agents)} agents...")
         for agent in agents:
             # Create agent card if needed
-            self.create_agent_card(agent['id'], agent['name'])
-            
+            self.create_agent_card(agent["id"], agent["name"])
+
             # Check if watch block is already attached by label
-            existing_block = self.get_block_by_label(agent['id'], 'watch')
+            existing_block = self.get_block_by_label(agent["id"], "watch")
             if not existing_block:
                 print(f"Attaching watch block to {agent['name']}")
-                self.attach_block_to_agent(agent['id'], agent['name'])
+                self.attach_block_to_agent(agent["id"], agent["name"])
             else:
                 print(f"Watch block already attached to {agent['name']}")
 
         print("\nTime Memory Service is running...")
         print(f"Block ID: {self.block_id}")
         print("Updating time every second...")
-        
+
         while True:
             try:
                 self.update_time_block()
@@ -260,6 +224,7 @@ class TimeMemoryService:
             except Exception as e:
                 print(f"Error in service loop: {e}")
                 time.sleep(5)  # Wait before retrying
+
 
 if __name__ == "__main__":
     service = TimeMemoryService()

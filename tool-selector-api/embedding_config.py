@@ -20,6 +20,7 @@ COHERE_EMBEDDING_DIMENSION = 1024
 # Weaviate Configuration
 WEAVIATE_VECTORIZER = "text2vec-cohere"
 
+
 def validate_embedding_config():
     """
     Validate that the embedding configuration is consistent.
@@ -32,6 +33,7 @@ def validate_embedding_config():
     print(f"✓ Ollama base URL: {OLLAMA_BASE_URL}")
     print(f"✓ Weaviate vectorizer: {WEAVIATE_VECTORIZER}")
     return True
+
 
 if __name__ == "__main__":
     # Run validation when script is executed directly

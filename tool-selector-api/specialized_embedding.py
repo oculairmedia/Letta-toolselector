@@ -36,9 +36,7 @@ USE_QWEN3_FORMAT = _env_flag("USE_QWEN3_FORMAT", True)
 QWEN3_LAST_TOKEN_POOLING = _env_flag("QWEN3_LAST_TOKEN_POOLING", True)
 QWEN3_INSTRUCTION_MODE = os.getenv("QWEN3_INSTRUCTION_MODE", "search").strip().lower()
 
-DEFAULT_SEARCH_INSTRUCTION = (
-    "Given a web search query, retrieve relevant passages that answer the query"
-)
+DEFAULT_SEARCH_INSTRUCTION = "Given a web search query, retrieve relevant passages that answer the query"
 
 QWEN3_SEARCH_INSTRUCTION = _env_text(
     "QWEN3_SEARCH_INSTRUCTION",
@@ -83,6 +81,7 @@ def format_tool_description_for_qwen(description: str) -> str:
 
 class PromptType(Enum):
     """Types of legacy embedding prompts available."""
+
     TOOL_DESCRIPTION = "tool_description"
     SEARCH_QUERY = "search_query"
     GENERAL_TOOL = "general_tool"
@@ -93,6 +92,7 @@ class PromptType(Enum):
 @dataclass
 class PromptTemplate:
     """Template for generating legacy specialized embedding prompts."""
+
     instruction: str
     context: Optional[str] = None
     suffix: Optional[str] = None
@@ -105,28 +105,28 @@ class SpecializedEmbeddingPrompter:
         PromptType.TOOL_DESCRIPTION: PromptTemplate(
             instruction="Given a tool description, encode this tool's capabilities and purpose",
             context="This tool helps users accomplish specific tasks through its functionality.",
-            suffix="Focus on the tool's core capabilities, use cases, and operational context."
+            suffix="Focus on the tool's core capabilities, use cases, and operational context.",
         ),
         PromptType.SEARCH_QUERY: PromptTemplate(
             instruction="Given a tool search request, find tools that match the user's intent",
             context="The user is looking for tools to help accomplish a specific task or goal.",
-            suffix="Focus on understanding the user's underlying need and matching it to relevant tool capabilities."
+            suffix="Focus on understanding the user's underlying need and matching it to relevant tool capabilities.",
         ),
         PromptType.GENERAL_TOOL: PromptTemplate(
             instruction="Given a software tool description, encode its functionality and use cases",
             context="This is a general-purpose software tool with specific capabilities.",
-            suffix="Emphasize the tool's primary functions and target use cases."
+            suffix="Emphasize the tool's primary functions and target use cases.",
         ),
         PromptType.MCP_TOOL: PromptTemplate(
             instruction="Given an MCP tool description, encode its external service capabilities",
             context="This is an MCP (Model Context Protocol) tool that provides external service integration.",
-            suffix="Focus on the external service functionality and integration capabilities it provides."
+            suffix="Focus on the external service functionality and integration capabilities it provides.",
         ),
         PromptType.API_TOOL: PromptTemplate(
             instruction="Given an API tool description, encode its endpoint and integration capabilities",
             context="This tool provides API access to external services or data sources.",
-            suffix="Emphasize the API functionality, data access, and integration possibilities."
-        )
+            suffix="Emphasize the API functionality, data access, and integration possibilities.",
+        ),
     }
 
     def __init__(self, custom_templates: Optional[Dict[PromptType, PromptTemplate]] = None):
@@ -134,38 +134,27 @@ class SpecializedEmbeddingPrompter:
         if custom_templates:
             self.templates.update(custom_templates)
 
-        self.use_context = os.getenv('EMBEDDING_PROMPT_USE_CONTEXT', 'true').lower() == 'true'
-        self.use_suffix = os.getenv('EMBEDDING_PROMPT_USE_SUFFIX', 'true').lower() == 'true'
-        self.max_prompt_length = int(os.getenv('EMBEDDING_PROMPT_MAX_LENGTH', '512'))
+        self.use_context = os.getenv("EMBEDDING_PROMPT_USE_CONTEXT", "true").lower() == "true"
+        self.use_suffix = os.getenv("EMBEDDING_PROMPT_USE_SUFFIX", "true").lower() == "true"
+        self.max_prompt_length = int(os.getenv("EMBEDDING_PROMPT_MAX_LENGTH", "512"))
 
     def enhance_tool_description(
         self,
         description: str,
         tool_type: str = "general",
         tool_name: Optional[str] = None,
-        tool_source: Optional[str] = None
+        tool_source: Optional[str] = None,
     ) -> str:
         prompt_type = self._determine_tool_prompt_type(tool_type, tool_source)
         template = self.templates.get(prompt_type, self.templates[PromptType.TOOL_DESCRIPTION])
         enhanced_prompt = self._build_prompt(
-            template=template,
-            content=description,
-            additional_context=f"Tool: {tool_name}" if tool_name else None
+            template=template, content=description, additional_context=f"Tool: {tool_name}" if tool_name else None
         )
         return self._truncate_prompt(enhanced_prompt)
 
-    def enhance_search_query(
-        self,
-        query: str,
-        context: Optional[str] = None,
-        search_type: str = "general"
-    ) -> str:
+    def enhance_search_query(self, query: str, context: Optional[str] = None, search_type: str = "general") -> str:
         template = self.templates[PromptType.SEARCH_QUERY]
-        enhanced_prompt = self._build_prompt(
-            template=template,
-            content=query,
-            additional_context=context
-        )
+        enhanced_prompt = self._build_prompt(template=template, content=query, additional_context=context)
         return self._truncate_prompt(enhanced_prompt)
 
     def _determine_tool_prompt_type(self, tool_type: str, tool_source: Optional[str] = None) -> PromptType:
@@ -183,12 +172,7 @@ class SpecializedEmbeddingPrompter:
 
         return PromptType.GENERAL_TOOL
 
-    def _build_prompt(
-        self,
-        template: PromptTemplate,
-        content: str,
-        additional_context: Optional[str] = None
-    ) -> str:
+    def _build_prompt(self, template: PromptTemplate, content: str, additional_context: Optional[str] = None) -> str:
         parts = [template.instruction]
 
         if self.use_context and template.context:
@@ -208,7 +192,7 @@ class SpecializedEmbeddingPrompter:
         if len(prompt) <= self.max_prompt_length:
             return prompt
 
-        sentences = re.split(r'[.!?]\s+', prompt)
+        sentences = re.split(r"[.!?]\s+", prompt)
         truncated = ""
 
         for sentence in sentences:
@@ -250,24 +234,19 @@ def enhance_tool_for_embedding(
     tool_description: str,
     tool_name: Optional[str] = None,
     tool_type: str = "general",
-    tool_source: Optional[str] = None
+    tool_source: Optional[str] = None,
 ) -> str:
     if is_qwen3_format_enabled():
         return format_tool_description_for_qwen(tool_description)
 
     prompter = SpecializedEmbeddingPrompter()
     return prompter.enhance_tool_description(
-        description=tool_description,
-        tool_type=tool_type,
-        tool_name=tool_name,
-        tool_source=tool_source
+        description=tool_description, tool_type=tool_type, tool_name=tool_name, tool_source=tool_source
     )
 
 
 def enhance_query_for_embedding(
-    search_query: str,
-    context: Optional[str] = None,
-    task_description: Optional[str] = None
+    search_query: str, context: Optional[str] = None, task_description: Optional[str] = None
 ) -> str:
     if is_qwen3_format_enabled():
         return _build_qwen3_query(search_query, task_description)

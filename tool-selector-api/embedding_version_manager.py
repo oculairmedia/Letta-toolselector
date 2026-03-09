@@ -30,27 +30,33 @@ from weaviate.collections import Collection
 import weaviate.classes.query as wq
 from dotenv import load_dotenv
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
 
 class MigrationStatus(Enum):
     """Migration status tracking"""
+
     PLANNED = "planned"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     FAILED = "failed"
     ROLLED_BACK = "rolled_back"
 
+
 class EmbeddingProvider(Enum):
     """Supported embedding providers"""
+
     OPENAI = "openai"
     OLLAMA = "ollama"
     HUGGINGFACE = "huggingface"
     CUSTOM = "custom"
 
+
 @dataclass
 class EmbeddingVersion:
     """Represents an embedding model version"""
+
     provider: str
     model: str
     version: str
@@ -71,9 +77,11 @@ class EmbeddingVersion:
         content = f"{self.provider}:{self.model}:{self.dimensions}"
         return hashlib.md5(content.encode()).hexdigest()[:12]
 
+
 @dataclass
 class MigrationRecord:
     """Represents a migration operation"""
+
     migration_id: str
     from_version: EmbeddingVersion
     to_version: EmbeddingVersion
@@ -91,6 +99,7 @@ class MigrationRecord:
             self.performance_improvement = {}
         if self.rollback_info is None:
             self.rollback_info = {}
+
 
 class EmbeddingVersionManager:
     """Manages embedding versions and migration tracking"""
@@ -121,22 +130,19 @@ class EmbeddingVersionManager:
             grpc_host="192.168.50.90",
             grpc_port=50051,
             grpc_secure=False,
-            headers={
-                "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY", "")
-            },
-            skip_init_checks=True
+            headers={"X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY", "")},
+            skip_init_checks=True,
         )
 
     def _load_versions(self):
         """Load embedding versions from file"""
         if self.versions_file.exists():
             try:
-                with open(self.versions_file, 'r') as f:
+                with open(self.versions_file, "r") as f:
                     data = json.load(f)
 
                 self.versions = {
-                    version_id: EmbeddingVersion(**version_data)
-                    for version_id, version_data in data.items()
+                    version_id: EmbeddingVersion(**version_data) for version_id, version_data in data.items()
                 }
                 logger.info(f"Loaded {len(self.versions)} embedding versions")
             except Exception as e:
@@ -146,15 +152,15 @@ class EmbeddingVersionManager:
         """Load migration history from file"""
         if self.migrations_file.exists():
             try:
-                with open(self.migrations_file, 'r') as f:
+                with open(self.migrations_file, "r") as f:
                     data = json.load(f)
 
                 self.migrations = {}
                 for migration_id, migration_data in data.items():
                     # Convert nested dictionaries back to objects
-                    migration_data['from_version'] = EmbeddingVersion(**migration_data['from_version'])
-                    migration_data['to_version'] = EmbeddingVersion(**migration_data['to_version'])
-                    migration_data['status'] = MigrationStatus(migration_data['status'])
+                    migration_data["from_version"] = EmbeddingVersion(**migration_data["from_version"])
+                    migration_data["to_version"] = EmbeddingVersion(**migration_data["to_version"])
+                    migration_data["status"] = MigrationStatus(migration_data["status"])
 
                     self.migrations[migration_id] = MigrationRecord(**migration_data)
 
@@ -165,12 +171,9 @@ class EmbeddingVersionManager:
     def _save_versions(self):
         """Save embedding versions to file"""
         try:
-            data = {
-                version_id: asdict(version)
-                for version_id, version in self.versions.items()
-            }
+            data = {version_id: asdict(version) for version_id, version in self.versions.items()}
 
-            with open(self.versions_file, 'w') as f:
+            with open(self.versions_file, "w") as f:
                 json.dump(data, f, indent=2)
 
         except Exception as e:
@@ -182,22 +185,24 @@ class EmbeddingVersionManager:
             data = {}
             for migration_id, migration in self.migrations.items():
                 migration_dict = asdict(migration)
-                migration_dict['status'] = migration.status.value
+                migration_dict["status"] = migration.status.value
                 data[migration_id] = migration_dict
 
-            with open(self.migrations_file, 'w') as f:
+            with open(self.migrations_file, "w") as f:
                 json.dump(data, f, indent=2, default=str)
 
         except Exception as e:
             logger.error(f"Failed to save migrations: {e}")
 
-    def register_version(self,
-                        provider: str,
-                        model: str,
-                        version: str,
-                        dimensions: int,
-                        description: str = "",
-                        performance_metrics: Dict[str, float] = None) -> str:
+    def register_version(
+        self,
+        provider: str,
+        model: str,
+        version: str,
+        dimensions: int,
+        description: str = "",
+        performance_metrics: Dict[str, float] = None,
+    ) -> str:
         """Register a new embedding version"""
 
         version_id = f"{provider}_{model}_{version}".replace(":", "_").replace("/", "_")
@@ -209,7 +214,7 @@ class EmbeddingVersionManager:
             dimensions=dimensions,
             created_at=datetime.now().isoformat(),
             description=description,
-            performance_metrics=performance_metrics or {}
+            performance_metrics=performance_metrics or {},
         )
 
         self.versions[version_id] = embedding_version
@@ -249,9 +254,7 @@ class EmbeddingVersionManager:
 
         # Try to find exact match
         for version_id, version in self.versions.items():
-            if (version.provider == provider and
-                version.model == model and
-                version.dimensions == dimensions):
+            if version.provider == provider and version.model == model and version.dimensions == dimensions:
                 return version_id, version
 
         # Auto-register if not found
@@ -260,15 +263,12 @@ class EmbeddingVersionManager:
             model=model,
             version="auto-detected",
             dimensions=dimensions,
-            description=f"Auto-detected from environment"
+            description=f"Auto-detected from environment",
         )
 
         return version_id, self.versions[version_id]
 
-    def start_migration(self,
-                       from_version_id: str,
-                       to_version_id: str,
-                       notes: str = "") -> str:
+    def start_migration(self, from_version_id: str, to_version_id: str, notes: str = "") -> str:
         """Start a new migration between versions"""
 
         from_version = self.get_version(from_version_id)
@@ -285,7 +285,7 @@ class EmbeddingVersionManager:
             to_version=to_version,
             status=MigrationStatus.PLANNED,
             started_at=datetime.now().isoformat(),
-            notes=notes
+            notes=notes,
         )
 
         self.migrations[migration_id] = migration
@@ -294,12 +294,14 @@ class EmbeddingVersionManager:
         logger.info(f"Started migration {migration_id}: {from_version_id} -> {to_version_id}")
         return migration_id
 
-    def update_migration_status(self,
-                               migration_id: str,
-                               status: MigrationStatus,
-                               tools_migrated: int = 0,
-                               tools_failed: int = 0,
-                               performance_improvement: Dict[str, float] = None):
+    def update_migration_status(
+        self,
+        migration_id: str,
+        status: MigrationStatus,
+        tools_migrated: int = 0,
+        tools_failed: int = 0,
+        performance_improvement: Dict[str, float] = None,
+    ):
         """Update migration progress and status"""
 
         if migration_id not in self.migrations:
@@ -344,15 +346,14 @@ class EmbeddingVersionManager:
 
             # Sample tools to analyze versions
             results = collection.query.fetch_objects(
-                limit=100,
-                return_properties=["migration_timestamp", "embedding_model_version", "name"]
+                limit=100, return_properties=["migration_timestamp", "embedding_model_version", "name"]
             )
 
             version_analysis = {
                 "total_tools": len(results.objects),
                 "version_distribution": {},
                 "migration_timestamps": [],
-                "collection_name": collection_name
+                "collection_name": collection_name,
             }
 
             for obj in results.objects:
@@ -395,26 +396,19 @@ class EmbeddingVersionManager:
             "provider_match": version1.provider == version2.provider,
             "compatibility_hash_match": version1.compatibility_hash == version2.compatibility_hash,
             "migration_recommended": False,
-            "warnings": []
+            "warnings": [],
         }
 
         # Check dimension compatibility
         if not compatibility["dimension_match"]:
-            compatibility["warnings"].append(
-                f"Dimension mismatch: {version1.dimensions} vs {version2.dimensions}"
-            )
+            compatibility["warnings"].append(f"Dimension mismatch: {version1.dimensions} vs {version2.dimensions}")
 
         # Check provider compatibility
         if not compatibility["provider_match"]:
-            compatibility["warnings"].append(
-                f"Provider change: {version1.provider} -> {version2.provider}"
-            )
+            compatibility["warnings"].append(f"Provider change: {version1.provider} -> {version2.provider}")
 
         # Overall compatibility
-        compatibility["compatible"] = (
-            compatibility["dimension_match"] and
-            len(compatibility["warnings"]) == 0
-        )
+        compatibility["compatible"] = compatibility["dimension_match"] and len(compatibility["warnings"]) == 0
 
         # Migration recommendation
         if compatibility["compatible"]:
@@ -427,10 +421,9 @@ class EmbeddingVersionManager:
 
         return compatibility
 
-    def generate_migration_plan(self,
-                              from_version_id: str,
-                              to_version_id: str,
-                              estimated_tools: int = None) -> Dict[str, Any]:
+    def generate_migration_plan(
+        self, from_version_id: str, to_version_id: str, estimated_tools: int = None
+    ) -> Dict[str, Any]:
         """Generate a comprehensive migration plan"""
 
         from_version = self.get_version(from_version_id)
@@ -458,7 +451,7 @@ class EmbeddingVersionManager:
             "prerequisites": [],
             "risks": [],
             "rollback_strategy": {},
-            "validation_steps": []
+            "validation_steps": [],
         }
 
         # Add prerequisites
@@ -466,16 +459,18 @@ class EmbeddingVersionManager:
             "Backup current collection",
             "Verify new embedding model accessibility",
             "Test with small batch first",
-            "Monitor system resources"
+            "Monitor system resources",
         ]
 
         # Add risks based on compatibility
         if not compatibility["compatible"]:
-            plan["risks"].extend([
-                "Dimension mismatch may cause query failures",
-                "Provider change requires configuration updates",
-                "Search quality may change significantly"
-            ])
+            plan["risks"].extend(
+                [
+                    "Dimension mismatch may cause query failures",
+                    "Provider change requires configuration updates",
+                    "Search quality may change significantly",
+                ]
+            )
 
         if compatibility["provider_match"]:
             plan["risks"].append("Minor search quality variations expected")
@@ -489,8 +484,8 @@ class EmbeddingVersionManager:
                 "Keep original collection as backup",
                 "Test new collection thoroughly",
                 "Atomic switch when verified",
-                "Immediate rollback capability maintained"
-            ]
+                "Immediate rollback capability maintained",
+            ],
         }
 
         # Validation steps
@@ -499,16 +494,16 @@ class EmbeddingVersionManager:
             "Test sample queries for relevance",
             "Compare search performance metrics",
             "Validate embedding dimensions",
-            "Check migration timestamps"
+            "Check migration timestamps",
         ]
 
         return plan
 
     def print_version_summary(self):
         """Print summary of all registered versions"""
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print("EMBEDDING VERSIONS SUMMARY")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
 
         if not self.versions:
             print("No embedding versions registered.")
@@ -528,9 +523,9 @@ class EmbeddingVersionManager:
 
     def print_migration_summary(self):
         """Print summary of migration history"""
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print("MIGRATION HISTORY")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
 
         if not self.migrations:
             print("No migrations recorded.")
@@ -563,7 +558,7 @@ async def main():
         version="1.0",
         dimensions=1536,
         description="OpenAI text-embedding-3-small model",
-        performance_metrics={"search_accuracy": 0.85, "speed": 0.2}
+        performance_metrics={"search_accuracy": 0.85, "speed": 0.2},
     )
 
     ollama_v1 = manager.register_version(
@@ -572,7 +567,7 @@ async def main():
         version="Q4_K_M",
         dimensions=768,
         description="Ollama Qwen3 Embedding model, Q4_K_M quantization",
-        performance_metrics={"search_accuracy": 0.82, "speed": 0.8}
+        performance_metrics={"search_accuracy": 0.82, "speed": 0.8},
     )
 
     # Show version summary

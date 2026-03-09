@@ -2,10 +2,12 @@
 """
 Compare baseline vs reranked search results to verify reranking is working.
 """
+
 import asyncio
 import aiohttp
 import json
 import time
+
 
 async def test_reranking_comparison():
     """Compare baseline vs reranked search to verify different ordering."""
@@ -14,13 +16,13 @@ async def test_reranking_comparison():
         "data analysis tools for financial modeling",
         "web scraping tools for extracting data",
         "file operations and text processing",
-        "database integration and SQL queries"
+        "database integration and SQL queries",
     ]
 
     for query in queries:
-        print(f"\n{'='*80}")
+        print(f"\n{'=' * 80}")
         print(f"Testing Query: '{query}'")
-        print('='*80)
+        print("=" * 80)
 
         request_payload = {
             "query": query,
@@ -28,7 +30,7 @@ async def test_reranking_comparison():
             "limit": 8,
             "enable_reranking": False,  # Will be overridden
             "min_score": 0.1,
-            "include_metadata": True
+            "include_metadata": True,
         }
 
         try:
@@ -41,7 +43,7 @@ async def test_reranking_comparison():
                 async with session.post(
                     "http://192.168.50.90:8030/api/v1/tools/search",
                     json=baseline_payload,
-                    headers={"Content-Type": "application/json"}
+                    headers={"Content-Type": "application/json"},
                 ) as response:
                     baseline_duration = (time.time() - start_time) * 1000
                     baseline_results = []
@@ -56,7 +58,7 @@ async def test_reranking_comparison():
                 async with session.post(
                     "http://192.168.50.90:8030/api/v1/tools/search/rerank",
                     json=rerank_payload,
-                    headers={"Content-Type": "application/json"}
+                    headers={"Content-Type": "application/json"},
                 ) as response:
                     rerank_duration = (time.time() - start_time) * 1000
                     rerank_results = []
@@ -67,17 +69,19 @@ async def test_reranking_comparison():
                 print(f"\n--- Baseline Search Results ---")
                 print(f"Count: {len(baseline_results)}, Duration: {baseline_duration:.2f}ms")
                 for i, result in enumerate(baseline_results[:5]):
-                    print(f"{i+1}. {result.get('name', 'N/A')} (score: {result.get('score', 0):.3f})")
+                    print(f"{i + 1}. {result.get('name', 'N/A')} (score: {result.get('score', 0):.3f})")
 
                 print(f"\n--- Reranked Search Results ---")
                 print(f"Count: {len(rerank_results)}, Duration: {rerank_duration:.2f}ms")
                 for i, result in enumerate(rerank_results[:5]):
-                    reranked_flag = "🎯" if result.get('reranked') else ""
-                    print(f"{i+1}. {result.get('name', 'N/A')} (score: {result.get('score', 0):.3f}, rerank: {result.get('rerank_score', 0):.3f}) {reranked_flag}")
+                    reranked_flag = "🎯" if result.get("reranked") else ""
+                    print(
+                        f"{i + 1}. {result.get('name', 'N/A')} (score: {result.get('score', 0):.3f}, rerank: {result.get('rerank_score', 0):.3f}) {reranked_flag}"
+                    )
 
                 # Check for differences
-                baseline_names = [r.get('name') for r in baseline_results[:5]]
-                rerank_names = [r.get('name') for r in rerank_results[:5]]
+                baseline_names = [r.get("name") for r in baseline_results[:5]]
+                rerank_names = [r.get("name") for r in rerank_results[:5]]
 
                 if baseline_names != rerank_names:
                     print(f"\n✅ RERANKING WORKING: Different result ordering detected!")
@@ -99,6 +103,7 @@ async def test_reranking_comparison():
 
         except Exception as e:
             print(f"✗ Test failed for query '{query}': {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(test_reranking_comparison())

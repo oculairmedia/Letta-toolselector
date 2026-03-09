@@ -49,6 +49,7 @@ _locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
 # Configuration
 # ============================================================================
 
+
 def configure(cache_dir: str):
     """
     Configure the pin service with the cache directory.
@@ -67,8 +68,8 @@ def configure(cache_dir: str):
 
 def _get_pin_dir() -> str:
     """Get the pinned tools directory path."""
-    base = _cache_dir or os.getenv('CACHE_DIR', '/app/runtime_cache')
-    return os.path.join(base, 'pinned_tools')
+    base = _cache_dir or os.getenv("CACHE_DIR", "/app/runtime_cache")
+    return os.path.join(base, "pinned_tools")
 
 
 def _get_pin_file(agent_id: str) -> str:
@@ -92,16 +93,17 @@ def _get_lock(agent_id: str) -> asyncio.Lock:
 # Internal I/O
 # ============================================================================
 
+
 async def _read_pins(agent_id: str) -> Set[str]:
     """Read pinned tool IDs for an agent from disk."""
     pin_file = _get_pin_file(agent_id)
     if not os.path.exists(pin_file):
         return set()
     try:
-        async with aiofiles.open(pin_file, 'r') as f:
+        async with aiofiles.open(pin_file, "r") as f:
             content = await f.read()
             data = json.loads(content) if content else {}
-            return set(data.get('pinned_tool_ids', []))
+            return set(data.get("pinned_tool_ids", []))
     except Exception as e:
         logger.error(f"Error reading pins for agent {agent_id}: {e}")
         return set()
@@ -111,12 +113,9 @@ async def _write_pins(agent_id: str, tool_ids: Set[str]):
     """Write pinned tool IDs for an agent to disk."""
     pin_file = _get_pin_file(agent_id)
     os.makedirs(os.path.dirname(pin_file), exist_ok=True)
-    data = {
-        'pinned_tool_ids': sorted(list(tool_ids)),
-        'updated_at': datetime.now(timezone.utc).isoformat()
-    }
+    data = {"pinned_tool_ids": sorted(list(tool_ids)), "updated_at": datetime.now(timezone.utc).isoformat()}
     try:
-        async with aiofiles.open(pin_file, 'w') as f:
+        async with aiofiles.open(pin_file, "w") as f:
             await f.write(json.dumps(data, indent=2))
     except Exception as e:
         logger.error(f"Error writing pins for agent {agent_id}: {e}")
@@ -126,6 +125,7 @@ async def _write_pins(agent_id: str, tool_ids: Set[str]):
 # ============================================================================
 # Public API
 # ============================================================================
+
 
 async def get_pinned_tools(agent_id: str) -> List[str]:
     """

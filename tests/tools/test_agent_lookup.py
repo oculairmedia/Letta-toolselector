@@ -6,8 +6,8 @@ import sys
 from letta_tool_utils import get_find_tools_id, get_find_tools_id_with_fallback
 
 # Set environment variables
-os.environ['LETTA_API_URL'] = 'http://192.168.50.90:8289/v1'
-os.environ['LETTA_PASSWORD'] = 'lettaSecurePass123'
+os.environ["LETTA_API_URL"] = "http://192.168.50.90:8289/v1"
+os.environ["LETTA_PASSWORD"] = "lettaSecurePass123"
 
 # Test with the agent ID from the conversation
 test_agent_id = "agent-e54fc601-4773-4116-9c6c-cf45da2e269e"

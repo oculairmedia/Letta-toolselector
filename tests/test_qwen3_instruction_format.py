@@ -16,6 +16,7 @@ OLLAMA_HOST = "192.168.50.80"
 OLLAMA_PORT = 11434
 MODEL = "dengcao/Qwen3-Embedding-4B:Q4_K_M"
 
+
 def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     """Calculate cosine similarity between two vectors."""
     vec1_np = np.array(vec1)
@@ -30,17 +31,16 @@ def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
 
     return dot_product / (norm1 * norm2)
 
+
 def get_detailed_instruct(task_description: str, query: str) -> str:
     """Generate Qwen3-compatible instruction format."""
-    return f'Instruct: {task_description}\nQuery: {query}'
+    return f"Instruct: {task_description}\nQuery: {query}"
+
 
 async def get_embedding(session: aiohttp.ClientSession, prompt: str) -> List[float]:
     """Get embedding from Ollama for a given prompt."""
     url = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/embeddings"
-    payload = {
-        "model": MODEL,
-        "prompt": prompt
-    }
+    payload = {"model": MODEL, "prompt": prompt}
 
     async with session.post(url, json=payload) as response:
         if response.status == 200:
@@ -48,6 +48,7 @@ async def get_embedding(session: aiohttp.ClientSession, prompt: str) -> List[flo
             return result.get("embedding", [])
         else:
             raise Exception(f"Failed to get embedding: {response.status}")
+
 
 async def test_instruction_format():
     """Test if Ollama properly processes Qwen3 instruction format."""
@@ -57,18 +58,18 @@ async def test_instruction_format():
         {
             "name": "Web Search Tools",
             "raw_query": "web search tools",
-            "task_description": "Given a web search query, retrieve relevant passages that answer the query"
+            "task_description": "Given a web search query, retrieve relevant passages that answer the query",
         },
         {
             "name": "File Management",
             "raw_query": "file management and text processing",
-            "task_description": "Given a web search query, retrieve relevant passages that answer the query"
+            "task_description": "Given a web search query, retrieve relevant passages that answer the query",
         },
         {
             "name": "Database Operations",
             "raw_query": "database operations and SQL queries",
-            "task_description": "Given a web search query, retrieve relevant passages that answer the query"
-        }
+            "task_description": "Given a web search query, retrieve relevant passages that answer the query",
+        },
     ]
 
     results = []
@@ -97,20 +98,22 @@ async def test_instruction_format():
             makes_difference = similarity < 0.95
             print(f"Instruction format processed differently: {makes_difference}")
 
-            results.append({
-                "name": test_case["name"],
-                "raw_query": raw_query,
-                "instruction_query": instruction_query,
-                "similarity": similarity,
-                "instruction_processed": makes_difference,
-                "raw_embedding_dim": len(raw_embedding),
-                "instruction_embedding_dim": len(instruction_embedding)
-            })
+            results.append(
+                {
+                    "name": test_case["name"],
+                    "raw_query": raw_query,
+                    "instruction_query": instruction_query,
+                    "similarity": similarity,
+                    "instruction_processed": makes_difference,
+                    "raw_embedding_dim": len(raw_embedding),
+                    "instruction_embedding_dim": len(instruction_embedding),
+                }
+            )
 
     # Summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("SUMMARY")
-    print("="*60)
+    print("=" * 60)
 
     processed_count = sum(1 for r in results if r["instruction_processed"])
     total_tests = len(results)
@@ -149,9 +152,10 @@ async def test_instruction_format():
 
     return results
 
+
 if __name__ == "__main__":
     print("Testing Qwen3 Instruction Format Support in Ollama")
-    print("="*60)
+    print("=" * 60)
     print(f"Ollama Host: {OLLAMA_HOST}:{OLLAMA_PORT}")
     print(f"Model: {MODEL}")
     print()

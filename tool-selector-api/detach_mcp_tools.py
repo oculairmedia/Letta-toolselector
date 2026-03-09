@@ -2,18 +2,16 @@ import requests
 import json
 from typing import Dict, Optional
 
-def detach_mcp_tools(
-    agent_id: str,
-    debug_level: str = "INFO"
-) -> Dict[str, Optional[str]]:
+
+def detach_mcp_tools(agent_id: str, debug_level: str = "INFO") -> Dict[str, Optional[str]]:
     """
     Detach all external MCP tools from the specified agent.
 
     Args:
-        agent_id (str): 
+        agent_id (str):
             The unique identifier of the agent to detach tools from (e.g., "agent-123e4567-e89b-12d3-a456-426614174000").
             This is the UUID of the agent in the Letta system.
-        debug_level (str, optional): 
+        debug_level (str, optional):
             Controls the verbosity of logging. Valid values are:
             - "DEBUG": Most verbose, includes detailed debugging information
             - "INFO": Standard information messages (default)
@@ -49,111 +47,99 @@ def detach_mcp_tools(
                 "properties": {
                     "agent_id": {
                         "type": "string",
-                        "description": "UUID of the agent to detach tools from (e.g., 'agent-123e4567-e89b-12d3-a456-426614174000')"
+                        "description": "UUID of the agent to detach tools from (e.g., 'agent-123e4567-e89b-12d3-a456-426614174000')",
                     },
                     "debug_level": {
                         "type": "string",
                         "enum": ["DEBUG", "INFO", "WARNING", "ERROR"],
                         "description": "Controls logging verbosity. Options: DEBUG, INFO (default), WARNING, ERROR",
-                        "default": "INFO"
-                    }
+                        "default": "INFO",
+                    },
                 },
-                "required": ["agent_id"]
-            }
+                "required": ["agent_id"],
+            },
         }
-        return {
-            "success": "true",
-            "response": json.dumps(info),
-            "error": None,
-            "metadata": None
-        }
+        return {"success": "true", "response": json.dumps(info), "error": None, "metadata": None}
 
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "X-BARE-PASSWORD": "password lettaSecurePass123"
+        "X-BARE-PASSWORD": "password lettaSecurePass123",
     }
 
     base_url = "http://192.168.50.90:8289/v1"
-    
+
     try:
         # First, get the agent's tools
         agent_url = f"{base_url}/agents/{agent_id}"
         agent_response = requests.get(agent_url, headers=headers)
         agent_response.raise_for_status()
         agent_data = agent_response.json()
-        
+
         # Filter for external MCP tools
-        mcp_tools = [tool for tool in agent_data.get("tools", []) 
-                    if tool.get("tool_type") == "external_mcp"]
-        
-        results = {
-            "detached_tools": [],
-            "failed_tools": []
-        }
-        
+        mcp_tools = [tool for tool in agent_data.get("tools", []) if tool.get("tool_type") == "external_mcp"]
+
+        results = {"detached_tools": [], "failed_tools": []}
+
         # Detach each MCP tool
         for tool in mcp_tools:
             try:
                 detach_url = f"{base_url}/agents/{agent_id}/tools/detach/{tool['id']}"
                 detach_response = requests.patch(detach_url, headers=headers)
                 detach_response.raise_for_status()
-                
-                results["detached_tools"].append({
-                    "tool_id": tool["id"],
-                    "name": tool["name"],
-                    "type": tool["tool_type"]
-                })
+
+                results["detached_tools"].append(
+                    {"tool_id": tool["id"], "name": tool["name"], "type": tool["tool_type"]}
+                )
             except Exception as e:
-                results["failed_tools"].append({
-                    "tool_id": tool["id"],
-                    "name": tool["name"],
-                    "error": f"{type(e).__name__}: {str(e)}"
-                })
+                results["failed_tools"].append(
+                    {"tool_id": tool["id"], "name": tool["name"], "error": f"{type(e).__name__}: {str(e)}"}
+                )
 
         # Create operation metadata
         metadata = {
             "total_mcp_tools": len(mcp_tools),
             "detached_count": len(results["detached_tools"]),
             "failed_count": len(results["failed_tools"]),
-            "agent_id": agent_id
+            "agent_id": agent_id,
         }
 
         # Determine overall success
         success = len(results["failed_tools"]) == 0
-        
+
         return {
             "success": "true" if success else "false",
             "response": json.dumps(results, indent=2),
             "error": None if success else f"Failed to detach {len(results['failed_tools'])} tools",
-            "metadata": json.dumps(metadata)
+            "metadata": json.dumps(metadata),
         }
-        
+
     except Exception as e:
         error_msg = f"{type(e).__name__}: {str(e)}"
         return {
             "success": "false",
             "response": None,
             "error": error_msg,
-            "metadata": json.dumps({"agent_id": agent_id})
+            "metadata": json.dumps({"agent_id": agent_id}),
         }
+
 
 if __name__ == "__main__":
     # Test the tool
     test_agent_id = "agent-d5d91a6a-cc16-47dd-97be-07101cdbd49d"
     print(f"\nTesting with agent ID: {test_agent_id}")
-    
+
     result = detach_mcp_tools(test_agent_id)
-    
+
     if result["success"] == "true":
         response_data = json.loads(result["response"])
         metadata = json.loads(result["metadata"])
-        
+
         print("\nOperation successful!")
         print(f"\nDetached {metadata['detached_count']} tools:")
         for tool in response_data["detached_tools"]:
             print(f"- {tool['name']} ({tool['tool_id']})")
-            
+
         if response_data["failed_tools"]:
             print(f"\nFailed to detach {metadata['failed_count']} tools:")
             for tool in response_data["failed_tools"]:

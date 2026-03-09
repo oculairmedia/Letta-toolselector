@@ -19,9 +19,7 @@ SYSTEM_PROMPT_PREFIX = (
     "<|im_end|>\n<|im_start|>user\n"
 )
 
-ASSISTANT_PROMPT_SUFFIX = (
-    "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\nAnswer:"
-)
+ASSISTANT_PROMPT_SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\nAnswer:"
 
 MAX_DOCUMENT_CHARS = 3000
 YES_TOKEN = "yes"
@@ -46,11 +44,7 @@ def format_instruction(
 ) -> str:
     """Return the Qwen3-formatted instruction block."""
     task_instruction = instruction or DEFAULT_RERANK_INSTRUCTION
-    return (
-        f"<Instruct>: {task_instruction}\n"
-        f"<Query>: {query}\n"
-        f"<Document>: {document}"
-    )
+    return f"<Instruct>: {task_instruction}\n<Query>: {query}\n<Document>: {document}"
 
 
 def build_prompt(

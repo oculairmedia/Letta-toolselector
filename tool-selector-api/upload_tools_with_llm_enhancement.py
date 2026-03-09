@@ -27,17 +27,20 @@ from ollama_client import OllamaClient
 # Import cache system to preserve valuable enhanced descriptions
 from enhancement_cache import get_cache, cache_tool_enhancement, get_cached_tool_enhancement
 
+
 class LLMEnhancedUploader:
     """Enhanced uploader with LLM-powered tool description enhancement"""
-    
-    def __init__(self, 
-                 ollama_base_url: str = "http://100.81.139.20:11434/v1",
-                 ollama_model: str = "gemma3:12b",
-                 batch_size: int = 3,
-                 enable_enhancement: bool = True):
+
+    def __init__(
+        self,
+        ollama_base_url: str = "http://100.81.139.20:11434/v1",
+        ollama_model: str = "gemma3:12b",
+        batch_size: int = 3,
+        enable_enhancement: bool = True,
+    ):
         """
         Initialize the enhanced uploader.
-        
+
         Args:
             ollama_base_url: Ollama API endpoint
             ollama_model: Model to use for enhancement
@@ -46,20 +49,20 @@ class LLMEnhancedUploader:
         """
         self.enable_enhancement = enable_enhancement
         self.batch_size = batch_size
-        
+
         if self.enable_enhancement:
             # Use very long timeouts for Graphiti-loaded system
             self.llm_client = OllamaClient(
-                base_url=ollama_base_url, 
+                base_url=ollama_base_url,
                 model=ollama_model,
                 timeout=300,  # 5 minute timeout
-                max_retries=3
+                max_retries=3,
             )
             print(f"🤖 LLM Enhancement ENABLED using {ollama_model} (5min timeout)")
         else:
             self.llm_client = None
             print("📝 LLM Enhancement DISABLED - using original descriptions")
-            
+
         # Statistics
         self.stats = {
             "tools_processed": 0,
@@ -70,15 +73,15 @@ class LLMEnhancedUploader:
             "total_enhancement_time": 0.0,
             "uploads_successful": 0,
             "uploads_skipped": 0,
-            "uploads_failed": 0
+            "uploads_failed": 0,
         }
-        
+
         # Initialize cache system to preserve valuable enhanced descriptions
         self.cache = get_cache()
-    
+
     def get_or_create_tool_schema(self, client) -> Collection:
         """Get existing schema or create new one with enhanced_description field."""
-        
+
         collection_name = "Tool"
 
         try:
@@ -98,8 +101,8 @@ class LLMEnhancedUploader:
                 # Use Ollama vectorizer with Qwen3-Embedding-4B model
                 vectorizer_config=weaviate.classes.config.Configure.Vectorizer.text2vec_ollama(
                     api_endpoint=f"http://{os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80')}:11434",
-                    model=os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
-                    vectorize_collection_name=False
+                    model=os.getenv("OLLAMA_EMBEDDING_MODEL", "dengcao/Qwen3-Embedding-4B:Q4_K_M"),
+                    vectorize_collection_name=False,
                 ),
                 properties=[
                     weaviate.classes.config.Property(
@@ -116,20 +119,20 @@ class LLMEnhancedUploader:
                         name="description",
                         data_type=weaviate.classes.config.DataType.TEXT,
                         description="Original tool description",
-                        vectorize_property_name=False
+                        vectorize_property_name=False,
                     ),
                     weaviate.classes.config.Property(
-                        name="enhanced_description", 
+                        name="enhanced_description",
                         data_type=weaviate.classes.config.DataType.TEXT,
                         description="LLM-enhanced tool description with semantic keywords and use cases for improved search accuracy",
-                        vectorize_property_name=False
+                        vectorize_property_name=False,
                         # This will be the primary field used for vectorization
                     ),
                     weaviate.classes.config.Property(
-                        name="enhancement_category", 
+                        name="enhancement_category",
                         data_type=weaviate.classes.config.DataType.TEXT,
                         description="Category used for enhancement prompting (mcp_tool, agent_management, etc.)",
-                        vectorize_property_name=False
+                        vectorize_property_name=False,
                     ),
                     weaviate.classes.config.Property(
                         name="source_type",
@@ -155,26 +158,26 @@ class LLMEnhancedUploader:
                         name="json_schema",
                         data_type=weaviate.classes.config.DataType.TEXT,
                         description="Tool's JSON schema defining interface",
-                        vectorize_property_name=False
-                    )
-                ]
+                        vectorize_property_name=False,
+                    ),
+                ],
             )
             print("✅ Schema created successfully with LLM enhancement support")
             return collection
         except Exception as e:
             print(f"❌ FATAL: Failed to create schema '{collection_name}': {e}")
             raise
-    
+
     async def enhance_tool_description(self, tool: dict) -> tuple[str, str, bool]:
         """
         Enhance a single tool description using our LLM framework with caching.
-        
+
         Returns:
             tuple: (enhanced_description, enhancement_category, success)
         """
         if not self.enable_enhancement:
             return tool.get("description", ""), "no_enhancement", True
-        
+
         # Check cache first to preserve valuable enhanced descriptions
         cached_result = self.cache.get_cached_enhancement(tool)
         if cached_result:
@@ -183,9 +186,9 @@ class LLMEnhancedUploader:
             self.stats["enhancements_successful"] += 1
             print(f"💰 Cache hit for: {tool.get('name', 'unknown')}")
             return enhanced_desc, category, True
-        
+
         self.stats["cache_misses"] += 1
-        
+
         try:
             # Convert tool to ToolContext
             tool_context = ToolContext(
@@ -195,57 +198,52 @@ class LLMEnhancedUploader:
                 mcp_server_name=tool.get("mcp_server_name"),
                 parameters=tool.get("json_schema", {}).get("parameters"),
                 category=tool.get("category"),
-                tags=tool.get("tags", [])
+                tags=tool.get("tags", []),
             )
-            
+
             # Determine category
             category = EnhancementPrompts.categorize_tool(tool_context)
-            
+
             # Build enhancement prompt
             system_prompt, user_prompt = EnhancementPrompts.build_prompt(tool_context)
-            
+
             # Get enhancement from LLM
             response = await self.llm_client.enhance_description(user_prompt, system_prompt)
-            
+
             if response.success:
                 self.stats["enhancements_successful"] += 1
                 self.stats["total_enhancement_time"] += response.processing_time
-                
+
                 # Cache the successful enhancement to preserve this valuable work
-                self.cache.cache_enhancement(
-                    tool, 
-                    response.content, 
-                    category.value, 
-                    response.processing_time
-                )
-                
+                self.cache.cache_enhancement(tool, response.content, category.value, response.processing_time)
+
                 return response.content, category.value, True
             else:
                 self.stats["enhancements_failed"] += 1
                 print(f"⚠️  Enhancement failed for {tool.get('name')}: {response.error_message}")
                 return tool.get("description", ""), category.value, False
-                
+
         except Exception as e:
             self.stats["enhancements_failed"] += 1
             print(f"❌ Enhancement error for {tool.get('name')}: {e}")
             return tool.get("description", ""), "error", False
-    
+
     async def enhance_tools_batch(self, tools_batch: list) -> list:
         """Enhance a batch of tools concurrently"""
         if not self.enable_enhancement:
             return [(tool.get("description", ""), "no_enhancement", True) for tool in tools_batch]
-        
+
         enhancement_tasks = [self.enhance_tool_description(tool) for tool in tools_batch]
         return await asyncio.gather(*enhancement_tasks, return_exceptions=True)
-    
+
     async def upload_tools(self):
         """Main upload function with LLM enhancement"""
         print("🚀 Starting Enhanced Tool Upload with LLM-Powered Descriptions")
-        print("="*80)
-        
+        print("=" * 80)
+
         # Load environment variables
         load_dotenv()
-        
+
         # Test LLM connection if enhancement is enabled
         if self.enable_enhancement:
             print("🔌 Testing LLM connection...")
@@ -255,7 +253,7 @@ class LLMEnhancedUploader:
                 self.llm_client = None
             else:
                 print("✅ LLM connection successful!")
-        
+
         try:
             # Initialize Weaviate client
             print("\n🔗 Connecting to Weaviate...")
@@ -266,7 +264,7 @@ class LLMEnhancedUploader:
                 grpc_host="192.168.50.90",
                 grpc_port=50051,
                 grpc_secure=False,
-                skip_init_checks=True
+                skip_init_checks=True,
             )
 
             # Create fresh schema
@@ -282,21 +280,21 @@ class LLMEnhancedUploader:
                 return
 
             print(f"📊 Found {len(tools)} tools to process")
-            
+
             # Process tools in batches for enhancement
             print(f"\n🤖 Starting LLM enhancement (batch size: {self.batch_size})...")
             enhanced_tools = []
-            
+
             for i in range(0, len(tools), self.batch_size):
-                batch = tools[i:i + self.batch_size]
+                batch = tools[i : i + self.batch_size]
                 batch_num = (i // self.batch_size) + 1
                 total_batches = (len(tools) + self.batch_size - 1) // self.batch_size
-                
+
                 print(f"🔄 Processing batch {batch_num}/{total_batches} ({len(batch)} tools)")
-                
+
                 # Enhance batch
                 enhancement_results = await self.enhance_tools_batch(batch)
-                
+
                 # Combine results with original tools
                 for j, (tool, result) in enumerate(zip(batch, enhancement_results)):
                     if isinstance(result, Exception):
@@ -306,28 +304,30 @@ class LLMEnhancedUploader:
                         success = False
                     else:
                         enhanced_desc, category, success = result
-                    
-                    enhanced_tools.append({
-                        **tool,
-                        "enhanced_description": enhanced_desc,
-                        "enhancement_category": category,
-                        "enhancement_success": success
-                    })
-                    
+
+                    enhanced_tools.append(
+                        {
+                            **tool,
+                            "enhanced_description": enhanced_desc,
+                            "enhancement_category": category,
+                            "enhancement_success": success,
+                        }
+                    )
+
                     self.stats["tools_processed"] += 1
-                
+
                 # Progress update
                 if self.enable_enhancement:
                     avg_time = self.stats["total_enhancement_time"] / max(1, self.stats["enhancements_successful"])
                     print(f"   ⏱️  Average enhancement time: {avg_time:.1f}s")
-                
+
                 # Small delay between batches
                 if i + self.batch_size < len(tools):
                     await asyncio.sleep(1.0)
 
             # Upload to Weaviate
             print(f"\n📤 Uploading {len(enhanced_tools)} enhanced tools to Weaviate...")
-            
+
             with collection.batch.dynamic() as batch:
                 for i, tool in enumerate(enhanced_tools, 1):
                     try:
@@ -342,35 +342,35 @@ class LLMEnhancedUploader:
                             "tool_type": tool.get("tool_type", "external_mcp"),
                             "mcp_server_name": tool.get("mcp_server_name", ""),
                             "tags": tool.get("tags", []),
-                            "json_schema": json.dumps(tool.get("json_schema", {})) if tool.get("json_schema") else ""
+                            "json_schema": json.dumps(tool.get("json_schema", {})) if tool.get("json_schema") else "",
                         }
-                        
+
                         batch.add_object(properties=properties)
                         self.stats["uploads_successful"] += 1
 
                         if i % 25 == 0:
                             print(f"   📈 Progress: {i}/{len(enhanced_tools)} tools uploaded...")
-                            
+
                     except Exception as e:
                         self.stats["uploads_failed"] += 1
                         print(f"❌ Upload error for {tool.get('name', 'Unknown')}: {e}")
 
             # Final statistics
             print(f"\n🎉 Upload Complete!")
-            print("="*80)
+            print("=" * 80)
             self.print_statistics()
-            
+
             # Finalize cache to ensure all enhancements are saved
             print("\n💾 Finalizing enhancement cache...")
             self.cache.finalize()
-            
+
             client.close()
 
         except Exception as e:
             print(f"\n❌ Critical Error: {e}")
-            if 'client' in locals():
+            if "client" in locals():
                 client.close()
-    
+
     def print_statistics(self):
         """Print comprehensive upload statistics"""
         print("📊 ENHANCEMENT STATISTICS:")
@@ -380,30 +380,32 @@ class LLMEnhancedUploader:
             print(f"   ❌ Enhancements failed: {self.stats['enhancements_failed']}")
             print(f"   💰 Cache hits: {self.stats['cache_hits']}")
             print(f"   🔍 Cache misses: {self.stats['cache_misses']}")
-            
+
             # Cache hit rate
-            total_requests = self.stats['cache_hits'] + self.stats['cache_misses']
+            total_requests = self.stats["cache_hits"] + self.stats["cache_misses"]
             if total_requests > 0:
-                cache_hit_rate = (self.stats['cache_hits'] / total_requests) * 100
+                cache_hit_rate = (self.stats["cache_hits"] / total_requests) * 100
                 print(f"   📈 Cache hit rate: {cache_hit_rate:.1f}%")
-            
-            success_rate = (self.stats['enhancements_successful'] / max(1, self.stats['tools_processed'])) * 100
+
+            success_rate = (self.stats["enhancements_successful"] / max(1, self.stats["tools_processed"])) * 100
             print(f"   📈 Enhancement success rate: {success_rate:.1f}%")
-            if self.stats['enhancements_successful'] > 0:
-                avg_time = self.stats['total_enhancement_time'] / max(1, self.stats['cache_misses'])  # Only count actual LLM calls
+            if self.stats["enhancements_successful"] > 0:
+                avg_time = self.stats["total_enhancement_time"] / max(
+                    1, self.stats["cache_misses"]
+                )  # Only count actual LLM calls
                 print(f"   ⏱️  Average enhancement time: {avg_time:.2f}s")
-                total_time = self.stats['total_enhancement_time']
+                total_time = self.stats["total_enhancement_time"]
                 print(f"   ⌛ Total enhancement time: {total_time:.1f}s")
-                time_saved = self.stats['cache_hits'] * avg_time if self.stats['cache_hits'] > 0 else 0
+                time_saved = self.stats["cache_hits"] * avg_time if self.stats["cache_hits"] > 0 else 0
                 print(f"   🚀 Time saved by caching: {time_saved:.1f}s")
         else:
             print("   📝 LLM enhancement was disabled")
-        
+
         print("\n📤 UPLOAD STATISTICS:")
         print(f"   ✅ Successful uploads: {self.stats['uploads_successful']}")
         print(f"   ⏭️  Skipped uploads: {self.stats['uploads_skipped']}")
         print(f"   ❌ Failed uploads: {self.stats['uploads_failed']}")
-        
+
         if self.llm_client:
             client_stats = self.llm_client.get_stats()
             print(f"\n🤖 LLM CLIENT STATISTICS:")
@@ -419,22 +421,22 @@ async def main():
     batch_size = int(os.getenv("LLM_ENHANCEMENT_BATCH_SIZE", "3"))
     ollama_url = os.getenv("OLLAMA_BASE_URL", "http://100.81.139.20:11434/v1")
     ollama_model = os.getenv("OLLAMA_MODEL", "gemma3:12b")
-    
+
     print(f"🔧 Configuration:")
     print(f"   LLM Enhancement: {'ENABLED' if enable_enhancement else 'DISABLED'}")
     print(f"   Batch Size: {batch_size}")
     print(f"   Ollama URL: {ollama_url}")
     print(f"   Ollama Model: {ollama_model}")
     print()
-    
+
     # Create and run uploader
     uploader = LLMEnhancedUploader(
         ollama_base_url=ollama_url,
         ollama_model=ollama_model,
         batch_size=batch_size,
-        enable_enhancement=enable_enhancement
+        enable_enhancement=enable_enhancement,
     )
-    
+
     await uploader.upload_tools()
 
 

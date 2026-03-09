@@ -3,9 +3,11 @@
 Quick test to verify reranking is working after networking fixes.
 Tests both baseline search and reranked search to see if results differ.
 """
+
 import requests
 import json
 import sys
+
 
 def test_search_endpoints(query="data analysis tools"):
     """Test both baseline and reranked search endpoints."""
@@ -20,11 +22,7 @@ def test_search_endpoints(query="data analysis tools"):
     print("-" * 50)
 
     try:
-        baseline_payload = {
-            "query": query,
-            "limit": 5,
-            "enable_reranking": False
-        }
+        baseline_payload = {"query": query, "limit": 5, "enable_reranking": False}
 
         response = requests.post(f"{base_url}/api/v1/search", json=baseline_payload, timeout=30)
 
@@ -51,11 +49,7 @@ def test_search_endpoints(query="data analysis tools"):
     print("-" * 50)
 
     try:
-        reranked_payload = {
-            "query": query,
-            "limit": 5,
-            "enable_reranking": True
-        }
+        reranked_payload = {"query": query, "limit": 5, "enable_reranking": True}
 
         response = requests.post(f"{base_url}/api/v1/search", json=reranked_payload, timeout=30)
 
@@ -80,7 +74,7 @@ def test_search_endpoints(query="data analysis tools"):
                 # Compare result ordering
                 print("\n📈 COMPARISON:")
                 print("-" * 50)
-                if 'baseline_tools' in locals():
+                if "baseline_tools" in locals():
                     baseline_names = [t.get("name", "") for t in baseline_tools[:5]]
                     reranked_names = [t.get("name", "") for t in reranked_tools[:5]]
 
@@ -90,14 +84,16 @@ def test_search_endpoints(query="data analysis tools"):
                         print("✅ Results are DIFFERENT - reranking appears to be working!")
                         changes = 0
                         for i, name in enumerate(reranked_names, 1):
-                            if i <= len(baseline_names) and baseline_names[i-1] != name:
+                            if i <= len(baseline_names) and baseline_names[i - 1] != name:
                                 try:
                                     old_pos = baseline_names.index(name) + 1
                                     change = old_pos - i
                                     if change > 0:
                                         print(f"  ↑ {name[:30]:30} moved up {change} positions (#{old_pos} → #{i})")
                                     elif change < 0:
-                                        print(f"  ↓ {name[:30]:30} moved down {abs(change)} positions (#{old_pos} → #{i})")
+                                        print(
+                                            f"  ↓ {name[:30]:30} moved down {abs(change)} positions (#{old_pos} → #{i})"
+                                        )
                                     changes += 1
                                 except ValueError:
                                     print(f"  ★ {name[:30]:30} NEW in reranked results")
@@ -113,6 +109,7 @@ def test_search_endpoints(query="data analysis tools"):
 
     except Exception as e:
         print(f"❌ Reranked search error: {e}")
+
 
 def test_reranker_health():
     """Test if the reranker adapter is accessible."""
@@ -130,6 +127,7 @@ def test_reranker_health():
     except Exception as e:
         print(f"❌ Reranker health check error: {e}")
 
+
 if __name__ == "__main__":
     print("🧪 RERANKING FUNCTIONALITY TEST")
     print("Testing after networking fixes...")
@@ -138,15 +136,10 @@ if __name__ == "__main__":
     test_reranker_health()
 
     # Test different queries
-    test_queries = [
-        "data analysis tools",
-        "blog content creation",
-        "file operations",
-        "web scraping"
-    ]
+    test_queries = ["data analysis tools", "blog content creation", "file operations", "web scraping"]
 
     for query in test_queries:
         test_search_endpoints(query)
-        print("\n" + "="*80 + "\n")
+        print("\n" + "=" * 80 + "\n")
 
     print("✅ Testing complete!")

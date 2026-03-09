@@ -3,10 +3,12 @@
 Test the rerank endpoint in the dashboard backend.
 This tests the complete flow: Frontend → Dashboard Backend → API Server → Reranker
 """
+
 import asyncio
 import aiohttp
 import json
 import time
+
 
 async def test_rerank_endpoint():
     """Test the dashboard backend's rerank endpoint."""
@@ -20,7 +22,7 @@ async def test_rerank_endpoint():
         "limit": 5,
         "enable_reranking": True,
         "min_score": 0.1,
-        "include_metadata": True
+        "include_metadata": True,
     }
 
     print(f"Testing rerank endpoint with query: '{test_query}'")
@@ -33,7 +35,7 @@ async def test_rerank_endpoint():
             async with session.post(
                 "http://192.168.50.90:8030/api/v1/tools/search/rerank",
                 json=request_payload,
-                headers={"Content-Type": "application/json"}
+                headers={"Content-Type": "application/json"},
             ) as response:
                 duration = (time.time() - start_time) * 1000
                 print(f"\n=== Rerank Endpoint Response ===")
@@ -50,7 +52,7 @@ async def test_rerank_endpoint():
 
                         # Show first few results
                         for i, result in enumerate(data[:3]):
-                            print(f"\n--- Result {i+1} ---")
+                            print(f"\n--- Result {i + 1} ---")
                             print(f"Name: {result.get('name', 'N/A')}")
                             print(f"Tool ID: {result.get('tool_id', 'N/A')}")
                             print(f"Score: {result.get('score', 'N/A')}")
@@ -73,7 +75,7 @@ async def test_rerank_endpoint():
             async with session.post(
                 "http://192.168.50.90:8030/api/v1/tools/search",
                 json=regular_payload,
-                headers={"Content-Type": "application/json"}
+                headers={"Content-Type": "application/json"},
             ) as response:
                 print(f"Regular search status: {response.status}")
                 if response.status == 200:
@@ -82,14 +84,18 @@ async def test_rerank_endpoint():
                         print(f"✓ Regular search also returns direct array with {len(data)} results")
                         if data:
                             first_result = data[0]
-                            print(f"First regular result: {first_result.get('name', 'N/A')} (score: {first_result.get('score', 'N/A')})")
+                            print(
+                                f"First regular result: {first_result.get('name', 'N/A')} (score: {first_result.get('score', 'N/A')})"
+                            )
                     else:
                         print(f"✗ Regular search returned: {type(data)}")
 
     except Exception as e:
         print(f"✗ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
+
 
 if __name__ == "__main__":
     asyncio.run(test_rerank_endpoint())

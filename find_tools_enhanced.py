@@ -221,19 +221,19 @@ def _build_summary(data: Dict[str, Any]) -> str:
     attached = data.get("attached", [])
     detached = data.get("detached", [])
     kept = data.get("kept", [])
-    
+
     summary_parts = []
     if attached:
         tool_names = [t.get("name", t.get("id", "unknown")) for t in attached[:3]]
         more = f" and {len(attached) - 3} more" if len(attached) > 3 else ""
         summary_parts.append(f"Attached {len(attached)} tools: {', '.join(tool_names)}{more}")
-    
+
     if detached:
         summary_parts.append(f"Detached {len(detached)} tools")
-    
+
     if kept:
         summary_parts.append(f"Kept {len(kept)} existing tools")
-    
+
     return ". ".join(summary_parts) if summary_parts else "No tool changes made."
 
 
@@ -242,74 +242,74 @@ def _build_summary_from_details(details: Dict[str, Any]) -> str:
     attached = details.get("successful_attachments", [])
     detached = details.get("detached_tools", [])
     preserved = details.get("preserved_tools", [])
-    
+
     summary_parts = []
     if attached:
         tool_names = [t.get("name", t.get("tool_id", "unknown")) for t in attached[:3]]
         more = f" and {len(attached) - 3} more" if len(attached) > 3 else ""
         summary_parts.append(f"Attached {len(attached)} tools: {', '.join(tool_names)}{more}")
-    
+
     if detached:
         summary_parts.append(f"Detached {len(detached)} tools")
-    
+
     if preserved:
         summary_parts.append(f"Preserved {len(preserved)} existing tools")
-    
+
     return ". ".join(summary_parts) if summary_parts else "No tool changes made."
 
 
 def _generate_recommendations(data: Dict[str, Any], query: Optional[str]) -> List[str]:
     """Generate recommendations based on the operation results."""
     recommendations = []
-    
+
     search_results = data.get("search_results", [])
     attached = data.get("attached", [])
-    
+
     # Check if we found what we were looking for
     if query and not attached:
         recommendations.append(f"No tools matched '{query}'. Try a broader search term or check available tool categories.")
-    
+
     # Suggest related tools
     if search_results:
         high_score_tools = [t for t in search_results if t.get("score", 0) > 80 and t not in attached]
         if high_score_tools:
             tool_names = [t.get("name", "unknown") for t in high_score_tools[:2]]
             recommendations.append(f"Consider also: {', '.join(tool_names)} (high relevance scores)")
-    
+
     # Warn about tool limits
     total_tools = len(attached) + len(data.get("kept", []))
     if total_tools > 15:
         recommendations.append(f"You have {total_tools} tools attached. Consider detaching unused tools for better performance.")
-    
+
     return recommendations
 
 
 def _generate_recommendations_from_details(details: Dict[str, Any], query: Optional[str]) -> List[str]:
     """Generate recommendations based on actual API response details."""
     recommendations = []
-    
+
     attached = details.get("successful_attachments", [])
     failed = details.get("failed_attachments", [])
     processed = details.get("processed_count", 0)
     passed_filter = details.get("passed_filter_count", 0)
-    
+
     # Check if we found what we were looking for
     if query and not attached and processed > 0:
         recommendations.append(f"No tools matched '{query}' with your criteria. Try lowering min_score or using broader search terms.")
-    
+
     # Warn about failed attachments
     if failed:
         recommendations.append(f"{len(failed)} tools failed to attach. Check agent permissions or tool availability.")
-    
+
     # Suggest filter adjustments
     if processed > 0 and passed_filter < processed / 2:
         recommendations.append(f"Only {passed_filter} of {processed} tools passed the score filter. Consider lowering min_score for more results.")
-    
+
     # Performance tip
     total_tools = len(attached) + len(details.get("preserved_tools", []))
     if total_tools > 15:
         recommendations.append(f"You have {total_tools} tools attached. Consider detaching unused tools for better performance.")
-    
+
     return recommendations
 
 
@@ -319,7 +319,7 @@ def Find_tools_with_rules(query: str = None, agent_id: str = None, keep_tools: s
                          apply_rules: bool = True) -> str:
     """
     Enhanced version that supports tool dependency rules.
-    
+
     Additional Args:
         apply_rules (bool): Apply tool dependency and exclusion rules (default: True)
     """
@@ -329,13 +329,13 @@ def Find_tools_with_rules(query: str = None, agent_id: str = None, keep_tools: s
         "web_scraper": ["web_search", "html_parser"],
         "code_executor": ["syntax_checker", "security_scanner"]
     }
-    
+
     # Tool exclusions (mutually exclusive tools)
     TOOL_EXCLUSIONS = {
         "tool_v1": ["tool_v2"],
         "local_file_system": ["cloud_storage"],
     }
-    
+
     # First, run the standard find_tools
     initial_result = Find_tools(
         query=query,
@@ -346,25 +346,25 @@ def Find_tools_with_rules(query: str = None, agent_id: str = None, keep_tools: s
         request_heartbeat=False,  # We'll handle this after applying rules
         detailed_response=True
     )
-    
+
     if not apply_rules:
         return initial_result
-    
+
     try:
         result_data = json.loads(initial_result)
         if result_data.get("status") != "success":
             return initial_result
-        
+
         # Apply dependency rules
         attached_tools = result_data["details"]["attached_tools"]
         additional_tools = []
-        
+
         for tool in attached_tools:
             tool_name = tool.get("name", "")
             if tool_name in TOOL_DEPENDENCIES:
                 deps = TOOL_DEPENDENCIES[tool_name]
                 additional_tools.extend(deps)
-        
+
         # Apply exclusion rules
         tools_to_remove = []
         for tool in attached_tools:
@@ -372,14 +372,14 @@ def Find_tools_with_rules(query: str = None, agent_id: str = None, keep_tools: s
             if tool_name in TOOL_EXCLUSIONS:
                 exclusions = TOOL_EXCLUSIONS[tool_name]
                 tools_to_remove.extend(exclusions)
-        
+
         # If we need to make additional changes, run find_tools again
         if additional_tools or tools_to_remove:
             # Build new keep_tools list
             current_tools = [t.get("id") for t in attached_tools + result_data["details"]["kept_tools"]]
             for remove in tools_to_remove:
                 current_tools = [t for t in current_tools if not t.endswith(remove)]
-            
+
             # Add dependencies
             if additional_tools:
                 dependency_query = " OR ".join(additional_tools)
@@ -392,14 +392,14 @@ def Find_tools_with_rules(query: str = None, agent_id: str = None, keep_tools: s
                     request_heartbeat=request_heartbeat,
                     detailed_response=True
                 )
-        
+
         # If no additional changes needed, return original result
         if request_heartbeat:
             # Trigger heartbeat separately
             _request_heartbeat(agent_id)
-        
+
         return initial_result
-        
+
     except json.JSONDecodeError:
         # If we can't parse the result, return as-is
         return initial_result
@@ -456,5 +456,5 @@ if __name__ == "__main__":
             request_heartbeat=request_heartbeat,
             detailed_response=detailed_response
         )
-    
+
     print(result)

@@ -125,7 +125,6 @@ async def current_config() -> dict:
 # ── Granular tool management endpoints ──────────────────────────────────
 
 
-
 def _api_base_url() -> str:
     return get_tool_selector_base_url().rstrip("/")
 
@@ -189,7 +188,9 @@ async def lookup_tool_endpoint(request: LookupToolRequest) -> dict:
 @app.post("/attach_tool")
 async def attach_tool_endpoint(request: AttachToolRequest) -> dict:
     """Proxy direct tool attach to POST /api/v1/tools/direct-attach."""
-    logger.info("Processing attach_tool (agent=%s, tools=%d, pin=%s)", request.agent_id, len(request.tools), request.pin)
+    logger.info(
+        "Processing attach_tool (agent=%s, tools=%d, pin=%s)", request.agent_id, len(request.tools), request.pin
+    )
     try:
         payload = {
             "agent_id": request.agent_id,
@@ -213,7 +214,9 @@ async def attach_tool_endpoint(request: AttachToolRequest) -> dict:
 @app.post("/detach_tool")
 async def detach_tool_endpoint(request: DetachToolRequest) -> dict:
     """Proxy direct tool detach to POST /api/v1/tools/direct-detach."""
-    logger.info("Processing detach_tool (agent=%s, tools=%d, unpin=%s)", request.agent_id, len(request.tools), request.unpin)
+    logger.info(
+        "Processing detach_tool (agent=%s, tools=%d, unpin=%s)", request.agent_id, len(request.tools), request.unpin
+    )
     try:
         payload = {
             "agent_id": request.agent_id,
@@ -244,9 +247,7 @@ async def list_agent_tools_endpoint(request: ListAgentToolsRequest) -> dict:
             params["filter"] = request.filter
         if request.include_schema:
             params["include_schema"] = "true"
-        result = await asyncio.to_thread(
-            _proxy_get, f"api/v1/tools/agent/{request.agent_id}", params
-        )
+        result = await asyncio.to_thread(_proxy_get, f"api/v1/tools/agent/{request.agent_id}", params)
         return result
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else 502
@@ -265,9 +266,7 @@ async def inspect_tool_endpoint(request: InspectToolRequest) -> dict:
     """Proxy tool inspection to GET /api/v1/tools/inspect/{tool_name_or_id}."""
     logger.info("Processing inspect_tool (tool=%s)", request.tool_name_or_id)
     try:
-        result = await asyncio.to_thread(
-            _proxy_get, f"api/v1/tools/inspect/{request.tool_name_or_id}"
-        )
+        result = await asyncio.to_thread(_proxy_get, f"api/v1/tools/inspect/{request.tool_name_or_id}")
         return result
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else 502

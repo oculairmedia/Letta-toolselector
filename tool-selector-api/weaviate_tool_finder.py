@@ -5,6 +5,7 @@ from typing import List, Dict, Any
 from dotenv import load_dotenv
 from embedding_config import OPENAI_EMBEDDING_MODEL, WEAVIATE_VECTORIZER
 
+
 class WeaviateConnection:
     def __init__(self):
         load_dotenv()
@@ -14,15 +15,13 @@ class WeaviateConnection:
             host="localhost",
             port=8080,
             grpc_port=50051,  # Must be an integer
-            skip_init_checks=True  # Skip initialization checks
+            skip_init_checks=True,  # Skip initialization checks
         )
-        
+
         # Add OpenAI API key for vectorization
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if openai_api_key:
-            self.client.set_additional_headers({
-                "X-OpenAI-Api-Key": openai_api_key
-            })
+            self.client.set_additional_headers({"X-OpenAI-Api-Key": openai_api_key})
 
     def close(self):
         if self.client:
@@ -40,13 +39,10 @@ def create_tool_uploader():
         "json_schema": {
             "type": "object",
             "properties": {
-                "tools_file": {
-                    "type": "string",
-                    "description": "Path to the JSON file containing tool definitions"
-                }
+                "tools_file": {"type": "string", "description": "Path to the JSON file containing tool definitions"}
             },
-            "required": ["tools_file"]
-        }
+            "required": ["tools_file"],
+        },
     }
 
 
@@ -61,18 +57,11 @@ def create_tool_finder():
         "json_schema": {
             "type": "object",
             "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query describing the desired tool functionality"
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum number of tools to return",
-                    "default": 5
-                }
+                "query": {"type": "string", "description": "Search query describing the desired tool functionality"},
+                "limit": {"type": "integer", "description": "Maximum number of tools to return", "default": 5},
             },
-            "required": ["query"]
-        }
+            "required": ["query"],
+        },
     }
 
 
@@ -80,7 +69,7 @@ def upload_tools_to_weaviate(tools_file: str) -> Dict[str, Any]:
     """Implementation of the upload_tools_to_weaviate tool"""
     try:
         conn = WeaviateConnection()
-        
+
         # Create schema for tools using v4 API
         try:
             # First try to delete the collection if it exists
@@ -89,71 +78,58 @@ def upload_tools_to_weaviate(tools_file: str) -> Dict[str, Any]:
                 print("Deleted existing Tool collection")
             except Exception as e:
                 print(f"Note: Could not delete existing Tool collection: {e}")
-            
+
             # Create the collection with properties
-            conn.client.collections.create_from_dict({
-                "class": "Tool",
-                "description": "A Letta tool with its metadata and description",
-                "vectorizer": WEAVIATE_VECTORIZER,
-                "moduleConfig": {
-                    "text2vec-openai": {
-                        "model": OPENAI_EMBEDDING_MODEL,
-                        "type": "text"
-                    }
-                },
-                "properties": [
-                    {
-                        "name": "tool_id",
-                        "dataType": ["string"],
-                        "description": "The unique identifier of the tool",
-                    },
-                    {
-                        "name": "name",
-                        "dataType": ["string"],
-                        "description": "The name of the tool",
-                    },
-                    {
-                        "name": "description",
-                        "dataType": ["text"],
-                        "description": "The description of what the tool does",
-                        "moduleConfig": {
-                            "text2vec-openai": {
-                                "skip": False,
-                                "vectorizePropertyName": False
-                            }
-                        }
-                    },
-                    {
-                        "name": "source_type",
-                        "dataType": ["string"],
-                        "description": "The type of tool (python, mcp, etc)",
-                    },
-                    {
-                        "name": "tags",
-                        "dataType": ["string[]"],
-                        "description": "Tags associated with the tool",
-                    },
-                    {
-                        "name": "json_schema",
-                        "dataType": ["text"],
-                        "description": "The JSON schema defining the tool's interface",
-                        "moduleConfig": {
-                            "text2vec-openai": {
-                                "skip": False,
-                                "vectorizePropertyName": False
-                            }
-                        }
-                    }
-                ]
-            })
+            conn.client.collections.create_from_dict(
+                {
+                    "class": "Tool",
+                    "description": "A Letta tool with its metadata and description",
+                    "vectorizer": WEAVIATE_VECTORIZER,
+                    "moduleConfig": {"text2vec-openai": {"model": OPENAI_EMBEDDING_MODEL, "type": "text"}},
+                    "properties": [
+                        {
+                            "name": "tool_id",
+                            "dataType": ["string"],
+                            "description": "The unique identifier of the tool",
+                        },
+                        {
+                            "name": "name",
+                            "dataType": ["string"],
+                            "description": "The name of the tool",
+                        },
+                        {
+                            "name": "description",
+                            "dataType": ["text"],
+                            "description": "The description of what the tool does",
+                            "moduleConfig": {"text2vec-openai": {"skip": False, "vectorizePropertyName": False}},
+                        },
+                        {
+                            "name": "source_type",
+                            "dataType": ["string"],
+                            "description": "The type of tool (python, mcp, etc)",
+                        },
+                        {
+                            "name": "tags",
+                            "dataType": ["string[]"],
+                            "description": "Tags associated with the tool",
+                        },
+                        {
+                            "name": "json_schema",
+                            "dataType": ["text"],
+                            "description": "The JSON schema defining the tool's interface",
+                            "moduleConfig": {"text2vec-openai": {"skip": False, "vectorizePropertyName": False}},
+                        },
+                    ],
+                }
+            )
             print("Created Tool collection")
-            
+
         except Exception as e:
             print(f"Warning: Error creating schema: {e}")
             print("Attempting to proceed with existing schema...")
 
         # Load and upload tools
-        with open(tools_file, 'r') as f:
+        with open(tools_file, "r") as f:
             tools = json.load(f)
 
         # Batch import tools using v4 API
@@ -165,13 +141,10 @@ def upload_tools_to_weaviate(tools_file: str) -> Dict[str, Any]:
                     "description": tool["description"],
                     "source_type": tool["source_type"],
                     "tags": tool.get("tags", []),
-                    "json_schema": json.dumps(tool["json_schema"]) if tool.get("json_schema") else ""
+                    "json_schema": json.dumps(tool["json_schema"]) if tool.get("json_schema") else "",
                 }
-                
-                batch.add_object(
-                    properties=properties,
-                    collection="Tool"
-                )
+
+                batch.add_object(properties=properties, collection="Tool")
 
         conn.close()
         return {"status": "success", "message": f"Successfully uploaded {len(tools)} tools"}
@@ -184,24 +157,25 @@ def find_tools_weaviate(query: str, limit: int = 5) -> Dict[str, Any]:
     """Implementation of the find_tools tool using Weaviate with enhanced descriptions"""
     try:
         conn = WeaviateConnection()
-        
+
         # Get the Tool collection
         collection = conn.client.collections.get("Tool")
-        
+
         # Perform hybrid search (combines vector + keyword) with enhanced descriptions
         # This gives better results than pure vector search
         from weaviate.classes.query import HybridFusion
+
         result = collection.query.hybrid(
             query=query,
             alpha=0.75,  # 75% vector, 25% keyword search
             limit=limit,
             fusion_type=HybridFusion.RELATIVE_SCORE,
-            query_properties=["name^2", "enhanced_description^2", "description^1.5", "tags"]
+            query_properties=["name^2", "enhanced_description^2", "description^1.5", "tags"],
         )
 
         # Extract tools from response
         tools = []
-        if result and hasattr(result, 'objects'):
+        if result and hasattr(result, "objects"):
             for obj in result.objects:
                 tool = obj.properties
                 # Convert JSON schema string back to object
@@ -213,22 +187,16 @@ def find_tools_weaviate(query: str, limit: int = 5) -> Dict[str, Any]:
                 tools.append(tool)
 
         conn.close()
-        return {
-            "status": "success",
-            "tools": tools
-        }
+        return {"status": "success", "tools": tools}
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 # Export tool definitions and implementations
-tool_definitions = {
-    "upload_tools_to_weaviate": create_tool_uploader(),
-    "find_tools_weaviate": create_tool_finder()
-}
+tool_definitions = {"upload_tools_to_weaviate": create_tool_uploader(), "find_tools_weaviate": create_tool_finder()}
 
 tool_implementations = {
     "upload_tools_to_weaviate": upload_tools_to_weaviate,
-    "find_tools_weaviate": find_tools_weaviate
+    "find_tools_weaviate": find_tools_weaviate,
 }

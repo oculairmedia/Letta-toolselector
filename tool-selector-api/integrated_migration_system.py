@@ -23,13 +23,13 @@ from embedding_version_manager import EmbeddingVersionManager, MigrationStatus
 
 logger = logging.getLogger(__name__)
 
+
 class IntegratedMigrationSystem:
     """Complete migration system with version tracking"""
 
-    def __init__(self,
-                 migration_config: EmbeddingMigrationConfig = None,
-                 version_manager: EmbeddingVersionManager = None):
-
+    def __init__(
+        self, migration_config: EmbeddingMigrationConfig = None, version_manager: EmbeddingVersionManager = None
+    ):
         self.migration_config = migration_config or EmbeddingMigrationConfig()
         self.version_manager = version_manager or EmbeddingVersionManager()
         self.reembedding_system = BatchReembeddingSystem(self.migration_config)
@@ -60,9 +60,11 @@ class IntegratedMigrationSystem:
         # Try to find existing target version or register it
         target_version_id = None
         for version_id, version in self.version_manager.versions.items():
-            if (version.provider == target_provider and
-                version.model == target_model and
-                version.dimensions == target_dimensions):
+            if (
+                version.provider == target_provider
+                and version.model == target_model
+                and version.dimensions == target_dimensions
+            ):
                 target_version_id = version_id
                 break
 
@@ -73,15 +75,14 @@ class IntegratedMigrationSystem:
                 model=target_model,
                 version="migration-target",
                 dimensions=target_dimensions,
-                description=f"Target version for migration from {current_version_id}"
+                description=f"Target version for migration from {current_version_id}",
             )
 
         return current_version_id, target_version_id
 
-    async def plan_migration(self,
-                           from_version_id: str = None,
-                           to_version_id: str = None,
-                           estimated_tools: int = None) -> dict:
+    async def plan_migration(
+        self, from_version_id: str = None, to_version_id: str = None, estimated_tools: int = None
+    ) -> dict:
         """Generate comprehensive migration plan with version tracking"""
 
         # Auto-detect versions if not provided
@@ -95,9 +96,7 @@ class IntegratedMigrationSystem:
 
         # Generate migration plan using version manager
         plan = self.version_manager.generate_migration_plan(
-            from_version_id=from_version_id,
-            to_version_id=to_version_id,
-            estimated_tools=estimated_tools
+            from_version_id=from_version_id, to_version_id=to_version_id, estimated_tools=estimated_tools
         )
 
         # Add integration-specific information
@@ -107,15 +106,14 @@ class IntegratedMigrationSystem:
             "checkpoint_file": self.migration_config.checkpoint_file,
             "batch_size": self.migration_config.batch_size,
             "resume_capable": True,
-            "version_tracked": True
+            "version_tracked": True,
         }
 
         return plan
 
-    async def start_tracked_migration(self,
-                                    from_version_id: str = None,
-                                    to_version_id: str = None,
-                                    migration_notes: str = "") -> str:
+    async def start_tracked_migration(
+        self, from_version_id: str = None, to_version_id: str = None, migration_notes: str = ""
+    ) -> str:
         """Start migration with full version tracking"""
 
         # Auto-detect versions if needed
@@ -127,18 +125,13 @@ class IntegratedMigrationSystem:
 
         # Start migration tracking in version manager
         migration_id = self.version_manager.start_migration(
-            from_version_id=from_version_id,
-            to_version_id=to_version_id,
-            notes=migration_notes
+            from_version_id=from_version_id, to_version_id=to_version_id, notes=migration_notes
         )
 
         self.current_migration_id = migration_id
 
         # Update status to in_progress
-        self.version_manager.update_migration_status(
-            migration_id=migration_id,
-            status=MigrationStatus.IN_PROGRESS
-        )
+        self.version_manager.update_migration_status(migration_id=migration_id, status=MigrationStatus.IN_PROGRESS)
 
         logger.info(f"Started tracked migration {migration_id}: {from_version_id} -> {to_version_id}")
 
@@ -152,7 +145,7 @@ class IntegratedMigrationSystem:
                 migration_id=migration_id,
                 status=MigrationStatus.COMPLETED,
                 tools_migrated=stats.processed_successfully,
-                tools_failed=stats.failed_tools
+                tools_failed=stats.failed_tools,
             )
 
             logger.info(f"✅ Migration {migration_id} completed successfully")
@@ -165,7 +158,7 @@ class IntegratedMigrationSystem:
                 migration_id=migration_id,
                 status=MigrationStatus.FAILED,
                 tools_migrated=stats.processed_successfully,
-                tools_failed=stats.failed_tools
+                tools_failed=stats.failed_tools,
             )
 
             logger.error(f"❌ Migration {migration_id} failed: {e}")
@@ -175,9 +168,7 @@ class IntegratedMigrationSystem:
         """Resume migration with version tracking"""
 
         # Check if there's an in-progress migration
-        in_progress_migrations = self.version_manager.list_migrations(
-            status=MigrationStatus.IN_PROGRESS
-        )
+        in_progress_migrations = self.version_manager.list_migrations(status=MigrationStatus.IN_PROGRESS)
 
         if not in_progress_migrations:
             logger.info("No in-progress migrations found")
@@ -199,7 +190,7 @@ class IntegratedMigrationSystem:
                 migration_id=migration_id,
                 status=MigrationStatus.COMPLETED,
                 tools_migrated=stats.processed_successfully,
-                tools_failed=stats.failed_tools
+                tools_failed=stats.failed_tools,
             )
 
             logger.info(f"✅ Resumed migration {migration_id} completed")
@@ -212,7 +203,7 @@ class IntegratedMigrationSystem:
                 migration_id=migration_id,
                 status=MigrationStatus.FAILED,
                 tools_migrated=stats.processed_successfully,
-                tools_failed=stats.failed_tools
+                tools_failed=stats.failed_tools,
             )
 
             logger.error(f"❌ Resumed migration {migration_id} failed: {e}")
@@ -239,8 +230,7 @@ class IntegratedMigrationSystem:
                     else:
                         # Mark as failed
                         self.version_manager.update_migration_status(
-                            migration_id=migration_id,
-                            status=MigrationStatus.FAILED
+                            migration_id=migration_id, status=MigrationStatus.FAILED
                         )
                         logger.warning(f"⚠️  Migration {migration_id} verification failed")
 
@@ -249,10 +239,7 @@ class IntegratedMigrationSystem:
         except Exception as e:
             logger.error(f"Verification failed: {e}")
             if migration_id:
-                self.version_manager.update_migration_status(
-                    migration_id=migration_id,
-                    status=MigrationStatus.FAILED
-                )
+                self.version_manager.update_migration_status(migration_id=migration_id, status=MigrationStatus.FAILED)
             return False
 
     def get_migration_status(self, migration_id: str = None) -> dict:
@@ -268,26 +255,26 @@ class IntegratedMigrationSystem:
 
         # Get re-embedding system stats if available
         reembedding_stats = {}
-        if hasattr(self.reembedding_system, 'stats'):
+        if hasattr(self.reembedding_system, "stats"):
             stats = self.reembedding_system.stats
             reembedding_stats = {
                 "processed_successfully": stats.processed_successfully,
                 "failed_tools": stats.failed_tools,
                 "total_processing_time": stats.total_processing_time,
                 "embedding_provider": stats.embedding_provider,
-                "embedding_model_used": stats.embedding_model_used
+                "embedding_model_used": stats.embedding_model_used,
             }
 
         # Get checkpoint info if available
         checkpoint_info = {}
-        if hasattr(self.reembedding_system, 'checkpoint'):
+        if hasattr(self.reembedding_system, "checkpoint"):
             checkpoint = self.reembedding_system.checkpoint
             checkpoint_info = {
                 "processed_count": checkpoint.processed_count,
                 "current_batch": checkpoint.current_batch,
                 "total_tools": checkpoint.total_tools,
                 "last_processed_tool": checkpoint.last_processed_tool,
-                "failed_tools_count": len(checkpoint.failed_tools)
+                "failed_tools_count": len(checkpoint.failed_tools),
             }
 
         return {
@@ -297,13 +284,13 @@ class IntegratedMigrationSystem:
                 "provider": migration.from_version.provider,
                 "model": migration.from_version.model,
                 "version": migration.from_version.version,
-                "dimensions": migration.from_version.dimensions
+                "dimensions": migration.from_version.dimensions,
             },
             "to_version": {
                 "provider": migration.to_version.provider,
                 "model": migration.to_version.model,
                 "version": migration.to_version.version,
-                "dimensions": migration.to_version.dimensions
+                "dimensions": migration.to_version.dimensions,
             },
             "started_at": migration.started_at,
             "completed_at": migration.completed_at,
@@ -311,14 +298,14 @@ class IntegratedMigrationSystem:
             "tools_failed": migration.tools_failed,
             "reembedding_stats": reembedding_stats,
             "checkpoint_info": checkpoint_info,
-            "notes": migration.notes
+            "notes": migration.notes,
         }
 
     def print_integration_status(self):
         """Print comprehensive status of the integrated system"""
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print("INTEGRATED MIGRATION SYSTEM STATUS")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
 
         # Current migration
         if self.current_migration_id:
@@ -328,10 +315,10 @@ class IntegratedMigrationSystem:
             print(f"From: {status['from_version']['provider']}/{status['from_version']['model']}")
             print(f"To: {status['to_version']['provider']}/{status['to_version']['model']}")
 
-            if status.get('checkpoint_info'):
-                checkpoint = status['checkpoint_info']
-                if checkpoint['total_tools'] > 0:
-                    progress = (checkpoint['processed_count'] / checkpoint['total_tools']) * 100
+            if status.get("checkpoint_info"):
+                checkpoint = status["checkpoint_info"]
+                if checkpoint["total_tools"] > 0:
+                    progress = (checkpoint["processed_count"] / checkpoint["total_tools"]) * 100
                     print(f"Progress: {checkpoint['processed_count']}/{checkpoint['total_tools']} ({progress:.1f}%)")
         else:
             print("No active migration")

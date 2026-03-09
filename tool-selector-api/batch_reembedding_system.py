@@ -37,12 +37,14 @@ from fetch_all_tools import fetch_all_tools_async
 from upload_tools_to_weaviate import EnhancedToolUploader
 from embedding_providers import EmbeddingProviderFactory
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class EmbeddingMigrationConfig:
     """Configuration for embedding migration"""
+
     source_collection: str = "Tool"
     target_collection: str = "ToolReembedded"
     checkpoint_file: str = "reembedding_checkpoint.json"
@@ -52,9 +54,11 @@ class EmbeddingMigrationConfig:
     backup_enabled: bool = True
     verification_enabled: bool = True
 
+
 @dataclass
 class ProcessingCheckpoint:
     """Checkpoint data for resume capability"""
+
     processed_count: int = 0
     failed_tools: List[str] = None
     last_processed_tool: Optional[str] = None
@@ -68,9 +72,11 @@ class ProcessingCheckpoint:
         if self.failed_tools is None:
             self.failed_tools = []
 
+
 @dataclass
 class ReembeddingStats:
     """Statistics for re-embedding process"""
+
     total_tools: int = 0
     processed_successfully: int = 0
     failed_tools: int = 0
@@ -80,6 +86,7 @@ class ReembeddingStats:
     embedding_model_used: str = ""
     embedding_provider: str = ""
     checkpoint_saves: int = 0
+
 
 class BatchReembeddingSystem:
     """Comprehensive system for batch re-embedding with resume capability"""
@@ -112,10 +119,8 @@ class BatchReembeddingSystem:
             grpc_host="192.168.50.90",
             grpc_port=50051,
             grpc_secure=False,
-            headers={
-                "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
-            },
-            skip_init_checks=True
+            headers={"X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")},
+            skip_init_checks=True,
         )
 
     def create_target_collection(self) -> Collection:
@@ -134,8 +139,8 @@ class BatchReembeddingSystem:
             description="Re-embedded tool collection with updated embedding model",
             vectorizer_config=weaviate.classes.config.Configure.Vectorizer.text2vec_ollama(
                 api_endpoint=f"http://{os.getenv('OLLAMA_EMBEDDING_HOST', '192.168.50.80')}:11434",
-                model=os.getenv('OLLAMA_EMBEDDING_MODEL', 'dengcao/Qwen3-Embedding-4B:Q4_K_M'),
-                vectorize_collection_name=False
+                model=os.getenv("OLLAMA_EMBEDDING_MODEL", "dengcao/Qwen3-Embedding-4B:Q4_K_M"),
+                vectorize_collection_name=False,
             ),
             properties=[
                 weaviate.classes.config.Property(
@@ -152,13 +157,13 @@ class BatchReembeddingSystem:
                     name="description",
                     data_type=weaviate.classes.config.DataType.TEXT,
                     description="The description of what the tool does",
-                    vectorize_property_name=False
+                    vectorize_property_name=False,
                 ),
                 weaviate.classes.config.Property(
                     name="enhanced_description",
                     data_type=weaviate.classes.config.DataType.TEXT,
                     description="Enhanced tool description for better embeddings",
-                    vectorize_property_name=False
+                    vectorize_property_name=False,
                 ),
                 weaviate.classes.config.Property(
                     name="source_type",
@@ -179,7 +184,7 @@ class BatchReembeddingSystem:
                     name="json_schema",
                     data_type=weaviate.classes.config.DataType.TEXT,
                     description="The JSON schema defining the tool's interface",
-                    vectorize_property_name=False
+                    vectorize_property_name=False,
                 ),
                 # Migration metadata
                 weaviate.classes.config.Property(
@@ -191,8 +196,8 @@ class BatchReembeddingSystem:
                     name="embedding_model_version",
                     data_type=weaviate.classes.config.DataType.TEXT,
                     description="Version of embedding model used",
-                )
-            ]
+                ),
+            ],
         )
 
         logger.info("✅ Target collection created successfully")
@@ -205,10 +210,10 @@ class BatchReembeddingSystem:
                 "checkpoint": asdict(self.checkpoint),
                 "stats": asdict(self.stats),
                 "config": asdict(self.config),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
-            with open(self.checkpoint_file_path, 'w') as f:
+            with open(self.checkpoint_file_path, "w") as f:
                 json.dump(checkpoint_data, f, indent=2)
 
             self.stats.checkpoint_saves += 1
@@ -224,7 +229,7 @@ class BatchReembeddingSystem:
                 logger.info("No checkpoint file found, starting fresh")
                 return False
 
-            with open(self.checkpoint_file_path, 'r') as f:
+            with open(self.checkpoint_file_path, "r") as f:
                 checkpoint_data = json.load(f)
 
             # Restore checkpoint
@@ -328,7 +333,7 @@ class BatchReembeddingSystem:
                         "tags": tool.get("tags", []),
                         "json_schema": json.dumps(tool.get("json_schema", {})) if tool.get("json_schema") else "",
                         "migration_timestamp": migration_timestamp,
-                        "embedding_model_version": self.stats.embedding_model_used
+                        "embedding_model_version": self.stats.embedding_model_used,
                     }
 
                     # Add to batch (Weaviate will handle embedding generation)
@@ -380,7 +385,7 @@ class BatchReembeddingSystem:
 
             # Process in batches
             for i in range(0, len(tools_to_process), self.config.batch_size):
-                batch = tools_to_process[i:i + self.config.batch_size]
+                batch = tools_to_process[i : i + self.config.batch_size]
                 batch_num = i // self.config.batch_size + 1
                 total_batches = (len(tools_to_process) + self.config.batch_size - 1) // self.config.batch_size
 
@@ -400,7 +405,9 @@ class BatchReembeddingSystem:
                 # Save checkpoint
                 self.save_checkpoint()
 
-                logger.info(f"Batch {batch_num} completed: {successes} success, {failures} failures in {batch_time:.2f}s")
+                logger.info(
+                    f"Batch {batch_num} completed: {successes} success, {failures} failures in {batch_time:.2f}s"
+                )
 
                 # Delay between batches
                 if i + self.config.batch_size < len(tools_to_process):
@@ -409,7 +416,9 @@ class BatchReembeddingSystem:
             # Calculate final statistics
             total_time = time.time() - start_time
             self.stats.total_processing_time = total_time
-            self.stats.average_processing_time = total_time / self.stats.total_tools if self.stats.total_tools > 0 else 0
+            self.stats.average_processing_time = (
+                total_time / self.stats.total_tools if self.stats.total_tools > 0 else 0
+            )
 
             # Print final results
             self.print_final_report()
@@ -433,14 +442,18 @@ class BatchReembeddingSystem:
 
     def print_final_report(self):
         """Print comprehensive final report"""
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print("🔄 BATCH RE-EMBEDDING REPORT")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
         print(f"Total Tools: {self.stats.total_tools}")
         print(f"Successfully Processed: {self.stats.processed_successfully}")
         print(f"Failed: {self.stats.failed_tools}")
         print(f"Skipped: {self.stats.skipped_tools}")
-        print(f"Success Rate: {(self.stats.processed_successfully / self.stats.total_tools * 100):.1f}%" if self.stats.total_tools > 0 else "N/A")
+        print(
+            f"Success Rate: {(self.stats.processed_successfully / self.stats.total_tools * 100):.1f}%"
+            if self.stats.total_tools > 0
+            else "N/A"
+        )
         print(f"Total Processing Time: {self.stats.total_processing_time:.2f}s")
         print(f"Average Time per Tool: {self.stats.average_processing_time:.2f}s")
         print(f"Embedding Provider: {self.stats.embedding_provider}")
@@ -539,7 +552,7 @@ async def main():
         source_collection="Tool",
         target_collection="ToolReembedded",
         batch_size=25,
-        checkpoint_file="reembedding_checkpoint.json"
+        checkpoint_file="reembedding_checkpoint.json",
     )
 
     # Initialize system
@@ -558,7 +571,7 @@ async def main():
         # Optional: retry failed tools
         if reembedding_system.checkpoint.failed_tools:
             retry_choice = input("\nRetry failed tools? (y/N): ").lower().strip()
-            if retry_choice == 'y':
+            if retry_choice == "y":
                 await reembedding_system.retry_failed_tools()
 
     except KeyboardInterrupt:

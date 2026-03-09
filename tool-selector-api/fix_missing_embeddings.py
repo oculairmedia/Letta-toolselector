@@ -23,43 +23,46 @@ WEAVIATE_HOST = os.getenv("WEAVIATE_HOST", "192.168.50.90")
 WEAVIATE_PORT = os.getenv("WEAVIATE_PORT", "8080")
 WEAVIATE_URL = f"http://{WEAVIATE_HOST}:{WEAVIATE_PORT}"
 
+
 def get_all_tools_from_weaviate() -> List[Dict[str, Any]]:
     """Fetch all tools from Weaviate"""
     tools = []
     offset = 0
     limit = 100
-    
+
     while True:
         url = f"{WEAVIATE_URL}/v1/objects?class=Tool&limit={limit}&offset={offset}"
         response = requests.get(url)
-        
+
         if response.status_code != 200:
             print(f"Error fetching tools: {response.status_code}")
             break
-            
+
         data = response.json()
         objects = data.get("objects", [])
-        
+
         if not objects:
             break
-            
+
         tools.extend(objects)
         offset += limit
         print(f"Fetched {len(tools)} tools so far...")
-        
+
     return tools
+
 
 def check_tool_has_vector(tool_uuid: str) -> bool:
     """Check if a tool has a vector"""
     url = f"{WEAVIATE_URL}/v1/objects/Tool/{tool_uuid}?include=vector"
     response = requests.get(url)
-    
+
     if response.status_code != 200:
         return False
-        
+
     data = response.json()
     vector = data.get("vector")
     return vector is not None and len(vector) > 0
+
 
 def delete_tool(tool_uuid: str) -> bool:
     """Delete a tool from Weaviate"""
@@ -67,22 +70,21 @@ def delete_tool(tool_uuid: str) -> bool:
     response = requests.delete(url)
     return response.status_code in [200, 204]
 
+
 def insert_tool_via_rest(properties: Dict[str, Any]) -> tuple[bool, str]:
     """Insert a tool via REST API (triggers vectorization)"""
     url = f"{WEAVIATE_URL}/v1/objects"
-    
-    payload = {
-        "class": "Tool",
-        "properties": properties
-    }
-    
+
+    payload = {"class": "Tool", "properties": properties}
+
     response = requests.post(url, json=payload)
-    
+
     if response.status_code in [200, 201]:
         data = response.json()
         return True, data.get("id", "")
     else:
         return False, response.text
+
 
 def fix_tool_embedding(tool: Dict[str, Any]) -> tuple[bool, str]:
     """Fix a single tool's embedding by delete and re-insert"""
@@ -91,85 +93,86 @@ def fix_tool_embedding(tool: Dict[str, Any]) -> tuple[bool, str]:
         return False, "No tool UUID found"
     properties = tool.get("properties", {})
     tool_name = properties.get("name", "Unknown")
-    
+
     # Delete the tool
     if not delete_tool(tool_uuid):
         return False, f"Failed to delete tool {tool_name}"
-    
+
     # Re-insert via REST API (triggers vectorization)
     success, result = insert_tool_via_rest(properties)
-    
+
     if success:
         return True, f"Fixed {tool_name}"
     else:
         return False, f"Failed to re-insert {tool_name}: {result}"
 
+
 def main():
     print("=" * 70)
     print("FIX MISSING EMBEDDINGS IN WEAVIATE")
     print("=" * 70)
-    
+
     # Get all tools
     print("\n1. Fetching all tools from Weaviate...")
     tools = get_all_tools_from_weaviate()
     print(f"   Found {len(tools)} tools")
-    
+
     if not tools:
         print("No tools found. Exiting.")
         return
-    
+
     # Check how many have vectors
     print("\n2. Checking which tools are missing vectors...")
     tools_without_vectors = []
     tools_with_vectors = []
-    
+
     for i, tool in enumerate(tools):
         tool_uuid = tool.get("id", "")
         if not tool_uuid:
             continue
         has_vector = check_tool_has_vector(tool_uuid)
-        
+
         if has_vector:
             tools_with_vectors.append(tool)
         else:
             tools_without_vectors.append(tool)
-        
+
         if (i + 1) % 50 == 0:
             print(f"   Checked {i + 1}/{len(tools)} tools...")
-    
+
     print(f"\n   Tools WITH vectors: {len(tools_with_vectors)}")
     print(f"   Tools WITHOUT vectors: {len(tools_without_vectors)}")
-    
+
     if not tools_without_vectors:
         print("\nAll tools have vectors. Nothing to fix!")
         return
-    
+
     # Fix tools without vectors
     print(f"\n3. Fixing {len(tools_without_vectors)} tools without vectors...")
     print("   This will delete and re-insert each tool to trigger vectorization.")
-    
+
     fixed_count = 0
     failed_count = 0
     failed_tools = []
-    
+
     for i, tool in enumerate(tools_without_vectors):
         properties = tool.get("properties", {})
         tool_name = properties.get("name", "Unknown")
-        
+
         success, message = fix_tool_embedding(tool)
-        
+
         if success:
             fixed_count += 1
         else:
             failed_count += 1
             failed_tools.append((tool_name, message))
-        
+
         if (i + 1) % 25 == 0:
             print(f"   Progress: {i + 1}/{len(tools_without_vectors)} ({fixed_count} fixed, {failed_count} failed)")
-        
+
         # Small delay to not overwhelm Ollama
         time.sleep(0.1)
-    
+
     # Print summary
     print("\n" + "=" * 70)
     print("SUMMARY")
@@ -177,14 +180,14 @@ def main():
     print(f"Total tools processed: {len(tools_without_vectors)}")
     print(f"Successfully fixed: {fixed_count}")
     print(f"Failed: {failed_count}")
-    
+
     if failed_tools:
         print(f"\nFailed tools:")
         for name, message in failed_tools[:10]:
             print(f"   - {name}: {message}")
         if len(failed_tools) > 10:
             print(f"   ... and {len(failed_tools) - 10} more")
-    
+
     # Verify fix
     print("\n4. Verifying fix...")
     sample_tool = tools_without_vectors[0] if tools_without_vectors else None
@@ -193,7 +196,7 @@ def main():
         tool_name = sample_tool.get("properties", {}).get("name")
         url = f"{WEAVIATE_URL}/v1/objects?class=Tool&limit=1"
         url += f"&where=" + json.dumps({"path": ["name"], "operator": "Equal", "valueText": tool_name})
-        
+
         # Simple check - get first tool and verify it has vector
         check_url = f"{WEAVIATE_URL}/v1/objects?class=Tool&limit=1&include=vector"
         response = requests.get(check_url)
@@ -204,6 +207,7 @@ def main():
                 print(f"   Sample tool now has vector with {vector_length} dimensions")
             else:
                 print("   WARNING: Sample tool still has no vector!")
+
 
 if __name__ == "__main__":
     main()
